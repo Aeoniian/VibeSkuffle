@@ -45,8 +45,11 @@ foreach ($name in 'VibeSkua.exe', 'VibeSkua.dll', 'VibeSkua.runtimeconfig.json',
 
 # Close only the VibeSkuffle build in this folder (clients, Manager, Mugetsu); a normal VibeSkua is left alone.
 $buildDir = (Join-Path $skua 'Build').ToLower()
+# Clients first, then the tab window: a client that sees its tab window killed starts itself again
+# (that's the tab-window crash recovery), which mustn't happen in the middle of a build.
 Get-CimInstance Win32_Process -Filter "name='VibeSkuffle.exe' or name='VibeSkuffle.Manager.exe' or name='Mugetsu.exe'" |
     Where-Object { $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($buildDir) } |
+    Sort-Object { if ($_.CommandLine -like '*--embed*') { 0 } elseif ($_.Name -eq 'VibeSkuffle.exe') { 1 } else { 2 } } |
     ForEach-Object { Write-Host "Closing $($_.Name) ($($_.ProcessId))"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 1
 
@@ -58,12 +61,22 @@ try {
     $bat = Get-Content -Raw 'BuildProject.bat'
     $bat = ($bat -split "`r?`n" | Where-Object { $_ -notmatch '^\s*taskkill\b' }) -join "`r`n"
     Set-Content -Path 'BuildProject-nokill.bat' -Value $bat -Encoding ASCII
-    # The build clears Build\; keep the user's game-window options file.
+    # The build clears Build\; keep the user's game-window options file and the recovery logs.
     $opts = Join-Path $skua 'Build\ruffle-options.txt'
     $savedOpts = if (Test-Path $opts) { Get-Content -Raw $opts } else { $null }
+    $keepDir = Join-Path $root 'logs\kept-from-build'
+    New-Item -ItemType Directory -Force $keepDir | Out-Null
+    foreach ($log in 'login-watchdog.log', 'host-recovery.log') {
+        $src = Join-Path $skua "Build\$log"
+        if (Test-Path $src) { Copy-Item -Force $src (Join-Path $keepDir $log) }
+    }
     cmd /c "echo.| BuildProject-nokill.bat nopause"
     $buildExit = $LASTEXITCODE
     if ($null -ne $savedOpts) { Set-Content -Path $opts -Value $savedOpts -NoNewline }
+    foreach ($log in 'login-watchdog.log', 'host-recovery.log') {
+        $kept = Join-Path $keepDir $log
+        if (Test-Path $kept) { Copy-Item -Force $kept (Join-Path $skua "Build\$log") }
+    }
     $global:LASTEXITCODE = $buildExit
     if ($LASTEXITCODE -ne 0) { throw "BuildProject.bat failed ($LASTEXITCODE)" }
 } finally { Pop-Location }

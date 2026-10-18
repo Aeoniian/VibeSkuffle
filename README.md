@@ -50,6 +50,8 @@ VRAM figures are still being measured.
 - Background tabs run at 2 fps / low quality while in game, and at full speed while logging in.
 
 ### Gets back up by itself (built for unattended, multi-day runs)
+Automatic re-logins go back to the **same server and room** the account was on.
+
 | Problem | What happens |
 |---|---|
 | Stuck on "Authenticating Account Info…" / "Connecting to game server…" | After 20 s: resets the login screen, then restarts the game window, avoids that server for 3 min and logs in again. It never gives up, but slows down to one try every 10 minutes if AQW is down. |
@@ -59,6 +61,9 @@ VRAM figures are still being measured.
 | A client crashes or is killed | The tab window starts it again with the same login and script. |
 | The tab window itself crashes | Every account starts itself again (one at a time) in a new tab window. |
 | A game window grows past the memory limit | Restarted when out of combat (default 6000 MB; at most once per 30 min). |
+| A script stops doing anything (no kills, drops, quests or moving for 15 min) | Logs out and back in, then starts the script again. |
+| AQW spams "Quest Complete Failed: Missing Quest Progress" | Logs out and back in (that clears it), then starts the script again. |
+| The PC itself runs low on RAM | The biggest game window restarts when it's out of combat. |
 | A script was running when any of the above happened | It is started again once the account is back in game. |
 | Windows wants to sleep | It doesn't while VibeSkuffle is open (the screen can still turn off). |
 
@@ -68,11 +73,16 @@ name, never passwords). Logs are size-capped so they can't fill your drive.
 ### Army and ButlerV5
 - **ButlerV5 "Log in all"** (next to Summon all): logs in every other open account that's logged out,
   **on your server**, so you can Summon them straight away. It shows its progress in the footer.
+- **Followers stay with their master:** if the master restarts or re-logs, its followers follow it again; if it
+  comes back on another server, they log in there by themselves; a master whose whole client restarted gets its
+  followers list back.
 - Army **Login All** reaches every tab (not just the visible one) and leaves accounts already in game alone.
 - Army messages only reach this install's clients, so a normal VibeSkua running alongside isn't affected.
 - "Jump all to map" box: the cursor is already in it; an empty box no longer sends everyone nowhere.
 
 ### Fixes that also apply to VibeSkua
+- The Manager's saved accounts could be wiped: every program sharing the settings file wrote its whole (possibly
+  stale or blank) copy back. Saves now only write what changed, and a `.bak` copy is kept.
 - Packet Interceptor "Connect" reused the old login token ("Character data could not be retrieved").
 - A dead (respawning) character was treated as logged out by Login All.
 - Building no longer force-closes every running VibeSkua.
@@ -90,6 +100,7 @@ Full list: [CHANGELOG.md](CHANGELOG.md).
 --graphics dx12                     # DirectX 12 (default). Remove for Vulkan.
 SKUA_MEMORY_LIMIT_MB=6000           # restart a game window above this
 myalt: SKUA_MEMORY_LIMIT_MB=8000    # ...or set it for one account only
+SKUA_STUCK_SCRIPT_MINUTES=15        # relog a script that does nothing this long (0 = off)
 ```
 
 Problems? See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).

@@ -18,9 +18,15 @@ SKUA_MEMORY_LIMIT_MB=6000
 # The same for one account only (the login name, not the character name)
 myalt: SKUA_MEMORY_LIMIT_MB=8000
 
+# Relog a running script that has done nothing (no kills, drops, quests, gold or moving) this long. 0 = off.
+SKUA_STUCK_SCRIPT_MINUTES=15
+
 # Size limit of each game window's own log file in MB (default 25)
 SKUA_LOG_CAP_MB=25
 ```
+
+Besides the memory limit, when the whole PC drops under 10% free RAM the biggest game window restarts
+(out of combat, at most once per 30 minutes per window).
 
 ## Where things are written
 

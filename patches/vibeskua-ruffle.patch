@@ -282,10 +282,10 @@ index 0000000..4d95294
 +#endif
 diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 new file mode 100644
-index 0000000..c7737c8
+index 0000000..90d0ed0
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
-@@ -0,0 +1,919 @@
+@@ -0,0 +1,982 @@
 +using Skua.Core.Interfaces;
 +using System;
 +using System.Xml.Linq;
@@ -612,7 +612,11 @@ index 0000000..c7737c8
 +
 +            process.Refresh();
 +            long committedMb = process.PrivateMemorySize64 >> 20;
-+            if (committedMb <= _memoryLimitMb)
++            // Also when the whole PC is running out of memory: the biggest game window goes first.
++            long freeMb = FreeRamMb(out long totalMb);
++            bool pcLow = totalMb > 0 && (freeMb < totalMb / 10 || freeMb < 1500)
++                && committedMb >= 2500 && IsBiggestGameWindow(process, committedMb);
++            if (committedMb <= _memoryLimitMb && !pcLow)
 +            {
 +                _overLimitSince = DateTime.MinValue;
 +                return;
@@ -634,7 +638,9 @@ index 0000000..c7737c8
 +                _overLimitSince = DateTime.MinValue;
 +                _lastMemoryRestart = DateTime.UtcNow;
 +                _loggedTooSoon = false;
-+                HealthLog($" the game window uses {committedMb} MB (limit {_memoryLimitMb} MB); restarting it.");
++                HealthLog(committedMb > _memoryLimitMb
++                    ? $" the game window uses {committedMb} MB (limit {_memoryLimitMb} MB); restarting it."
++                    : $" the PC is low on memory ({freeMb} MB of {totalMb} MB free) and this is the biggest game window ({committedMb} MB); restarting it.");
 +                KillPlayer(session);
 +            }
 +        }
@@ -645,6 +651,59 @@ index 0000000..c7737c8
 +        finally
 +        {
 +            _healthBusy = 0;
++        }
++    }
++
++    [StructLayout(LayoutKind.Sequential)]
++    private struct MemoryStatusEx
++    {
++        public uint dwLength, dwMemoryLoad;
++        public ulong ullTotalPhys, ullAvailPhys, ullTotalPageFile, ullAvailPageFile, ullTotalVirtual, ullAvailVirtual, ullAvailExtendedVirtual;
++    }
++
++    [DllImport("kernel32.dll", SetLastError = true)]
++    private static extern bool GlobalMemoryStatusEx(ref MemoryStatusEx status);
++
++    private static long FreeRamMb(out long totalMb)
++    {
++        var status = new MemoryStatusEx { dwLength = (uint)Marshal.SizeOf<MemoryStatusEx>() };
++        if (!GlobalMemoryStatusEx(ref status))
++        {
++            totalMb = 0;
++            return 0;
++        }
++        totalMb = (long)(status.ullTotalPhys >> 20);
++        return (long)(status.ullAvailPhys >> 20);
++    }
++
++    /// <summary>Whether this is the biggest of this install's game windows (so only one restarts at a time).</summary>
++    private static bool IsBiggestGameWindow(Process mine, long mineMb)
++    {
++        try
++        {
++            string? folder = Path.GetDirectoryName(mine.MainModule?.FileName);
++            foreach (Process other in Process.GetProcessesByName(mine.ProcessName))
++            {
++                using (other)
++                {
++                    if (other.Id == mine.Id)
++                        continue;
++                    try
++                    {
++                        if (folder != null && !string.Equals(Path.GetDirectoryName(other.MainModule?.FileName), folder, StringComparison.OrdinalIgnoreCase))
++                            continue;
++                        long otherMb = other.PrivateMemorySize64 >> 20;
++                        if (otherMb > mineMb || (otherMb == mineMb && other.Id < mine.Id))
++                            return false;
++                    }
++                    catch { }
++                }
++            }
++            return true;
++        }
++        catch
++        {
++            return false;
 +        }
 +    }
 +
@@ -854,7 +913,11 @@ index 0000000..c7737c8
 +                }
 +                else if (line.IndexOf('=') is > 0 and int eq)
 +                {
-+                    startInfo.Environment[line[..eq].Trim()] = line[(eq + 1)..].Trim();
++                    string name = line[..eq].Trim(), value = line[(eq + 1)..].Trim();
++                    startInfo.Environment[name] = value;
++                    // SKUA_* settings are for VibeSkuffle itself too (e.g. SKUA_STUCK_SCRIPT_MINUTES).
++                    if (name.StartsWith("SKUA_", StringComparison.OrdinalIgnoreCase))
++                        Environment.SetEnvironmentVariable(name, value);
 +                }
 +            }
 +        }
@@ -2062,10 +2125,10 @@ index 0000000..378eb0a
 +    void RestartGamePlayer();
 +}
 diff --git a/Skua.Core.Interfaces/Scripts/IScriptServers.cs b/Skua.Core.Interfaces/Scripts/IScriptServers.cs
-index 41b9ab1..ba65694 100644
+index 41b9ab1..f1df59f 100644
 --- a/Skua.Core.Interfaces/Scripts/IScriptServers.cs
 +++ b/Skua.Core.Interfaces/Scripts/IScriptServers.cs
-@@ -22,6 +22,31 @@ public interface IScriptServers : INotifyPropertyChanged
+@@ -22,6 +22,37 @@ public interface IScriptServers : INotifyPropertyChanged
      /// <param name="password">The password associated with the specified username. Cannot be null.</param>
      void SetLoginInfo(string username, string password);
  
@@ -2077,6 +2140,12 @@ index 41b9ab1..ba65694 100644
 +
 +    /// <summary>The server a re-login is currently trying, or null.</summary>
 +    string? CurrentLoginServer { get; set; }
++
++    /// <summary>
++    /// The server the account was last in game on. Automatic re-logins go back there (unless "relogin to any
++    /// server" is on, or that server just got stuck), so groups and ButlerV5 followers stay together.
++    /// </summary>
++    string? PreferredReloginServer { get; set; }
 +
 +    /// <summary>
 +    /// Marks a server whose login just got stuck; re-logins avoid it for a few minutes while other
@@ -2241,10 +2310,10 @@ index 7b78a10..31651f8 100644
  }
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..9734a1c
+index 0000000..9f46912
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,304 @@
+@@ -0,0 +1,492 @@
 +using Skua.Core.Interfaces;
 +
 +namespace Skua.Core.Scripts;
@@ -2271,6 +2340,12 @@ index 0000000..9734a1c
 +    private const int WatchdogSlowMs = 600000;
 +    private const int WatchdogOutOfGameMs = 180000;
 +    private int _wdOutSince;
++    private int _wdWaitSince;          // when a re-login started waiting (blank screen, nothing moving)
++    private const int WatchdogLoginTimeoutMs = 300000;
++    private bool _wdWasInGame;
++    private volatile bool _wdReturnToRoom;
++    private string? _wdLastRoom, _wdLastCell, _wdLastPad;
++    private int _wdServerCheck;
 +
 +    private string _wdText = string.Empty;
 +    private int _wdSince = Environment.TickCount;
@@ -2305,6 +2380,43 @@ index 0000000..9734a1c
 +            Servers.CurrentLoginServer = null;
 +            _wdLastInGame = Environment.TickCount | 1;
 +            _wdScriptWhenInGame = Manager.ScriptRunning;
++            _wdWasInGame = true;
++            // Timers for "out of game" start fresh every time it gets back in (a leftover start time made the
++            // 3-minute check fire the moment the next restart began).
++            _wdOutSince = 0;
++            _wdWaitSince = 0;
++            CheckStuckScript();
++            // Back from a recovery with no script to restart: go back to the room it was in (a re-login
++            // lands in a random Battleon room, and ButlerV5 followers can't follow into a full one).
++            if (_wdReturnToRoom && !_waitForLogin)
++            {
++                _wdReturnToRoom = false;
++                if (!_wdRestartScript && !Manager.ScriptRunning && _wdLastRoom is { } room)
++                    _ = Task.Run(() => ReturnToRoom(room, _wdLastCell, _wdLastPad));
++            }
++            // Remember the server and room, so automatic re-logins go back to them.
++            if (Environment.TickCount - _wdServerCheck > 10000 && !_wdReturnToRoom)
++            {
++                _wdServerCheck = Environment.TickCount;
++                try
++                {
++                    string room = Map.FullName;
++                    if (!string.IsNullOrWhiteSpace(room) && room.Contains('-'))
++                    {
++                        _wdLastRoom = room;
++                        _wdLastCell = Player.Cell;
++                        _wdLastPad = Player.Pad;
++                    }
++                }
++                catch { }
++                try
++                {
++                    string? name = Flash.GetGameObject("objServerInfo.sName")?.Trim().Trim('"').Trim();
++                    if (!string.IsNullOrEmpty(name) && name != "null")
++                        Servers.PreferredReloginServer = name;
++                }
++                catch { }
++            }
 +            if (!_wdCredsKept)
 +                _wdCredsKept = Servers.RememberLoginInfo();
 +            if (_wdRestartScript && !_waitForLogin)
@@ -2317,8 +2429,37 @@ index 0000000..9734a1c
 +            return;
 +        }
 +
++        // Just left the game. A script that was running then is started again once it's back in, however it
++        // gets back (crash, freeze, memory restart, disconnect, stuck login); unless someone logged out on purpose.
++        if (_wdWasInGame)
++        {
++            _wdWasInGame = false;
++            if (_wdScriptWhenInGame)
++                _wdRestartScript = true;
++        }
++        if (Servers.UserLoggedOut)
++            _wdRestartScript = false;
++
 +        string text = Flash.IsNull("mcConnDetail.stage") ? string.Empty : Flash.GetGameObject("mcConnDetail.txtDetail.text", string.Empty) ?? string.Empty;
 +        text = text.Trim();
++
++        // A re-login that sits on a blank screen for 5 minutes (nothing on screen for the stuck-login check to
++        // see): take over. Seen overnight: an account sat logged out for 75 minutes like this.
++        if (_waitForLogin && text.Length == 0)
++        {
++            if (_wdWaitSince == 0)
++                _wdWaitSince = Environment.TickCount | 1;
++            else if (Environment.TickCount - _wdWaitSince >= WatchdogLoginTimeoutMs && BackoffAllows())
++            {
++                _wdWaitSince = 0;
++                StartRecovery($" logging back in has been going for {WatchdogLoginTimeoutMs / 60000} minutes with nothing happening; starting over");
++                return;
++            }
++        }
++        else
++        {
++            _wdWaitSince = 0;
++        }
 +
 +        // Out of the game with nothing happening: log back in after a while, unless someone logged out on
 +        // purpose or a re-login is already under way.
@@ -2329,7 +2470,7 @@ index 0000000..9734a1c
 +            else if (Environment.TickCount - _wdOutSince >= WatchdogOutOfGameMs && BackoffAllows())
 +            {
 +                _wdOutSince = 0;
-+                StartRecovery("(logged out, nothing happening)");
++                StartRecovery($" logged out with nothing happening for {WatchdogOutOfGameMs / 60000} minutes; logging back in");
 +                return;
 +            }
 +        }
@@ -2356,7 +2497,7 @@ index 0000000..9734a1c
 +        int now = Environment.TickCount;
 +        if (now - _wdSince < WatchdogStallMs || !BackoffAllows())
 +            return;
-+        StartRecovery(text);
++        StartRecovery($" stuck on \"{text}\" for {WatchdogStallMs / 1000}s");
 +    }
 +
 +    /// <summary>After 6 recoveries in a row wait a minute between tries, after 12 ten minutes.</summary>
@@ -2370,7 +2511,8 @@ index 0000000..9734a1c
 +        return true;
 +    }
 +
-+    private void StartRecovery(string stuckOn)
++    /// <param name="why">What happened, for the log (starts with a space).</param>
++    private void StartRecovery(string why)
 +    {
 +        _wdBusy = true;
 +        _wdStalls++;
@@ -2378,7 +2520,7 @@ index 0000000..9734a1c
 +        if (_wdStalls == WatchdogSlowAfter)
 +            WdLog($" {WatchdogSlowAfter} recoveries in a row (AQW may be down); trying every {WatchdogSlowMs / 60000} minutes from now on.");
 +        int level = _wdStalls;
-+        _ = Task.Run(() => RecoverStuckLogin(stuckOn, level));
++        _ = Task.Run(() => RecoverStuckLogin(why, level));
 +    }
 +
 +    /// <summary>Writes to the script log and to login-watchdog.log next to VibeSkuffle.exe.</summary>
@@ -2407,13 +2549,12 @@ index 0000000..9734a1c
 +        _wdSince = Environment.TickCount;
 +    }
 +
-+    private async Task RecoverStuckLogin(string stuckOn, int level)
++    private async Task RecoverStuckLogin(string why, int level)
 +    {
 +        try
 +        {
-+            WdLog(stuckOn.StartsWith('(')
-+                ? $" {stuckOn} for {WatchdogOutOfGameMs / 60000} minutes; logging back in (recovery {level})."
-+                : $" stuck on \"{stuckOn}\" for {WatchdogStallMs / 1000}s (recovery {level}).");
++            WdLog($"{why} (recovery {level}).");
++            _wdReturnToRoom = true;
 +
 +            // Credentials first: a reload clears what the player typed into the game.
 +            bool canLogin = Servers.RememberLoginInfo();
@@ -2491,6 +2632,7 @@ index 0000000..9734a1c
 +        _wdLastInGame = 0;
 +        if (_wdScriptWhenInGame)
 +            _wdRestartScript = true;
++        _wdReturnToRoom = true;
 +        _ = Task.Run(async () =>
 +        {
 +            await Task.Delay(1500);
@@ -2518,6 +2660,121 @@ index 0000000..9734a1c
 +            }
 +            Relogin(3000 + Random.Shared.Next(0, 5000), false);
 +        });
++    }
++
++    // ---- A running script that stopped doing anything ---------------------------------------------------
++    // Overnight, scripts sat in game for hours doing nothing (AQW refusing quest turn-ins, a script stuck
++    // waiting). When a script runs but there have been no kills, drops, quest turn-ins/accepts, gold changes
++    // or moves for SKUA_STUCK_SCRIPT_MINUTES (default 15, 0 = off), log out and back in; the script starts
++    // again once back in game. At most once every 20 minutes.
++
++    private int _stuckCheckAt;
++    private string _stuckSignature = "";
++    private int _stuckSince;
++    private int _lastStuckRelog;
++    private static int StuckScriptMinutes =>
++        int.TryParse(Environment.GetEnvironmentVariable("SKUA_STUCK_SCRIPT_MINUTES"), out int m) && m >= 0 ? m : 15;
++
++    private void CheckStuckScript()
++    {
++        int now = Environment.TickCount;
++        if (now - _stuckCheckAt < 30000)
++            return;
++        _stuckCheckAt = now;
++        int minutes = StuckScriptMinutes;
++        if (minutes == 0 || !Manager.ScriptRunning)
++        {
++            _stuckSince = 0;
++            return;
++        }
++        string signature;
++        try
++        {
++            signature = $"{Stats.Kills}|{Stats.Drops}|{Stats.QuestsCompleted}|{Stats.QuestsAccepted}|{Player.Gold}|{Map.FullName}|{Player.Cell}";
++        }
++        catch
++        {
++            return;
++        }
++        if (signature != _stuckSignature || _stuckSince == 0)
++        {
++            _stuckSignature = signature;
++            _stuckSince = now | 1;
++            return;
++        }
++        if (now - _stuckSince < minutes * 60000)
++            return;
++        if (_lastStuckRelog != 0 && now - _lastStuckRelog < 1200000)
++            return;
++        _lastStuckRelog = now | 1;
++        _stuckSince = 0;
++        StartRecovery($" the script has done nothing for {minutes} minutes (no kills, drops, quests or moving); logging out and back in");
++    }
++
++    // ---- "Quest Complete Failed: Missing Quest Progress" ------------------------------------------------
++    // AQW sometimes gets stuck refusing every turn-in of a quest that is actually done; logging out and back
++    // in fixes it. When that message keeps coming while a script runs, relog (the script starts again after).
++
++    private const int QuestErrorCount = 5;
++    private const int QuestErrorWindowMs = 120000;
++    private const int QuestErrorCooldownMs = 600000;
++    private readonly Queue<int> _questErrors = new();
++    private readonly Dictionary<int, Queue<int>> _questFailures = new();
++    private int _lastQuestRelog;
++
++    /// <summary>A packet said "Missing Quest Progress".</summary>
++    private void OnMissingQuestProgress() => CountQuestError(_questErrors, QuestErrorCount, "\"Quest Complete Failed: Missing Quest Progress\"");
++
++    /// <summary>A quest turn-in was refused (any reason). Only counts when the same quest is refused over and over.</summary>
++    private void OnQuestTurnInFailed(int questId)
++    {
++        Queue<int> q;
++        lock (_questFailures)
++        {
++            if (!_questFailures.TryGetValue(questId, out q!))
++                _questFailures[questId] = q = new Queue<int>();
++            if (_questFailures.Count > 50)
++                _questFailures.Clear();
++        }
++        CountQuestError(q, QuestErrorCount * 2, $"quest {questId} turn-in refused");
++    }
++
++    private void CountQuestError(Queue<int> times, int needed, string what)
++    {
++        int now = Environment.TickCount;
++        lock (times)
++        {
++            times.Enqueue(now);
++            while (times.Count > 0 && now - times.Peek() > QuestErrorWindowMs)
++                times.Dequeue();
++            if (times.Count < needed)
++                return;
++            times.Clear();
++        }
++        if (_wdBusy || _waitForLogin || !Manager.ScriptRunning || !Player.LoggedIn)
++            return;
++        if (_lastQuestRelog != 0 && now - _lastQuestRelog < QuestErrorCooldownMs)
++            return;
++        _lastQuestRelog = now | 1;
++        StartRecovery($" {what} {needed} times in {QuestErrorWindowMs / 60000} minutes while farming (an AQW bug a relog fixes); logging out and back in");
++    }
++
++    private async Task ReturnToRoom(string room, string? cell, string? pad)
++    {
++        try
++        {
++            await Task.Delay(3000);
++            if (Manager.ScriptRunning || !(Player.Playing && Flash.IsWorldLoaded))
++                return;
++            if (string.Equals(Map.FullName, room, StringComparison.OrdinalIgnoreCase))
++                return;
++            WdLog($" back in game; returning to {room}.");
++            Map.Join(room, string.IsNullOrWhiteSpace(cell) ? "Enter" : cell, string.IsNullOrWhiteSpace(pad) ? "Spawn" : pad);
++        }
++        catch (Exception ex)
++        {
++            WdLog($" couldn't return to {room}: {ex.Message}");
++        }
 +    }
 +
 +    private async Task RestartScriptAfterLogin()
@@ -2550,7 +2807,7 @@ index 0000000..9734a1c
 +    }
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.cs b/Skua.Core/Scripts/ScriptInterface.cs
-index 27d2dc7..264e591 100644
+index 27d2dc7..c078175 100644
 --- a/Skua.Core/Scripts/ScriptInterface.cs
 +++ b/Skua.Core/Scripts/ScriptInterface.cs
 @@ -12,7 +12,7 @@ using System.Diagnostics;
@@ -2596,7 +2853,27 @@ index 27d2dc7..264e591 100644
                  Initialize();
                  break;
  
-@@ -696,6 +698,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -487,6 +489,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                 break;
+ 
+             case "pext":
++                if (((string)args[0]).Contains("Missing Quest Progress", StringComparison.OrdinalIgnoreCase))
++                    OnMissingQuestProgress();
+                 dynamic packet = JsonConvert.DeserializeObject<dynamic>((string)args[0])!;
+                 string type = packet["params"].type;
+                 dynamic data = packet["params"].dataObj;
+@@ -614,6 +618,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                                 Stats.QuestsCompleted++;
+                                 Messenger.Send<QuestTurninMessage, int>(new(Convert.ToInt32(data.QuestID)), (int)MessageChannels.GameEvents);
+                             }
++                            else
++                            {
++                                try { OnQuestTurnInFailed(Convert.ToInt32(data.QuestID)); } catch { }
++                            }
+                             break;
+ 
+                         case "loadBank":
+@@ -696,6 +704,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                              {
                                  Log("Normal in-game logout detected. Auto re-login skipped.");
                                  Servers.IsIntentionalLogout = true;
@@ -2605,7 +2882,7 @@ index 27d2dc7..264e591 100644
                                  CancelRelogin();
                                  if (Manager.ScriptRunning)
                                      _ = Manager.StopScript();
-@@ -740,9 +744,13 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -740,9 +750,13 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
  
          Log("Auto re-login triggered.");
          bool wasRunning = Manager.ScriptRunning;
@@ -2620,7 +2897,7 @@ index 27d2dc7..264e591 100644
          Messenger.Send<ReloginTriggeredMessage, int>(new(kicked), (int)MessageChannels.GameEvents);
  
          int delay = (Options.SafeRelogin && kicked) ? 70000 : Options.ReloginTryDelay;
-@@ -764,7 +772,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -764,7 +778,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
  
      private void Relogin(int delay, bool startScript)
      {
@@ -2631,7 +2908,7 @@ index 27d2dc7..264e591 100644
          CancellationTokenSource reloginCts = new();
          _reloginCTS = reloginCts;
 diff --git a/Skua.Core/Scripts/ScriptServers.cs b/Skua.Core/Scripts/ScriptServers.cs
-index 2868fed..31b9cfa 100644
+index 2868fed..2722074 100644
 --- a/Skua.Core/Scripts/ScriptServers.cs
 +++ b/Skua.Core/Scripts/ScriptServers.cs
 @@ -50,6 +50,44 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
@@ -2759,7 +3036,23 @@ index 2868fed..31b9cfa 100644
          Stats.Relogins++;
  
          if (_loginInfoSetted)
-@@ -548,12 +607,13 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -448,11 +507,14 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+         return Player.Playing;
+     }
+ 
++    public string? PreferredReloginServer { get; set; }
++
+     public async Task<bool> EnsureRelogin(CancellationToken token)
+     {
+         IsIntentionalLogout = false;
+         await GetServers(true);
+-        Server? server = SelectReloginServer();
++        // Back to the server the account was on (the stuck-server list still applies).
++        Server? server = SelectReloginServer(Options.AutoReloginAny ? null : PreferredReloginServer);
+         if (server is null)
+         {
+             ReloginLog("No eligible servers available for auto relogin.");
+@@ -548,12 +610,13 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                      continue;
                  }
                  attemptedServers.Add(targetServer.Name ?? string.Empty);
@@ -2774,7 +3067,7 @@ index 2868fed..31b9cfa 100644
                      await Task.Delay(2000, token);
                  }
  
-@@ -601,7 +661,11 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -601,7 +664,11 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                      await WaitReloginDelay(token);
              }
          }
@@ -2787,6 +3080,146 @@ index 2868fed..31b9cfa 100644
  
          if (!Player.Playing)
              ReloginLog("Unable to reconnect within configured retries.");
+diff --git a/Skua.Core/Services/UnifiedSettingsService.cs b/Skua.Core/Services/UnifiedSettingsService.cs
+index 41f67a7..93a5130 100644
+--- a/Skua.Core/Services/UnifiedSettingsService.cs
++++ b/Skua.Core/Services/UnifiedSettingsService.cs
+@@ -38,7 +38,13 @@ public class UnifiedSettingsService
+ 
+             try
+             {
+-                _fileMutex.WaitOne();
++                AcquireFileMutex();
++
++                // The file went missing (a crash mid-save in an older version): use the last good copy.
++                if (!File.Exists(ClientFileSources.SkuaSettingsDIR) && File.Exists(BackupPath))
++                {
++                    try { File.Copy(BackupPath, ClientFileSources.SkuaSettingsDIR); } catch { }
++                }
+ 
+                 if (!File.Exists(ClientFileSources.SkuaSettingsDIR))
+                 {
+@@ -156,6 +162,7 @@ public class UnifiedSettingsService
+                     managerProp.SetValue(_root.Manager, value);
+                 }
+ 
++                _dirtyKeys.Add(key);
+                 SaveSettings();
+             }
+             catch (Exception ex)
+@@ -531,13 +538,19 @@ public class UnifiedSettingsService
+         }
+     }
+ 
+-    private void SaveSettings()
++    /// <param name="merge">false right after loading (the copy in memory is the file's contents).</param>
++    private void SaveSettings(bool merge = true)
+     {
+         try
+         {
+-            _fileMutex.WaitOne();
++            AcquireFileMutex();
++
++            if (merge && _dirtyKeys.Count > 0)
++                MergeIntoDisk();
++            _dirtyKeys.Clear();
+ 
+-            string tempFile = ClientFileSources.SkuaSettingsDIR + ".tmp";
++            // Own temp name per program, so two saving at once can't mix their files.
++            string tempFile = ClientFileSources.SkuaSettingsDIR + $".{Environment.ProcessId}.tmp";
+ 
+             JsonSerializerOptions options = GetJsonOptions();
+             string json = JsonSerializer.Serialize(_root, options);
+@@ -545,9 +558,10 @@ public class UnifiedSettingsService
+ 
+             if (File.Exists(ClientFileSources.SkuaSettingsDIR))
+             {
+-                File.Delete(ClientFileSources.SkuaSettingsDIR);
++                try { File.Copy(ClientFileSources.SkuaSettingsDIR, BackupPath, overwrite: true); } catch { }
+             }
+ 
++            // Replaces the file in one step (it used to be deleted first, leaving a moment with no file).
+             File.Move(tempFile, ClientFileSources.SkuaSettingsDIR, overwrite: true);
+         }
+         catch (Exception ex)
+@@ -658,17 +672,76 @@ public class UnifiedSettingsService
+         lock (_lock)
+         {
+             _root.Shared.ApplicationVersion = ClientFileSources.AssemblyVersion;
++            _dirtyKeys.Add("ApplicationVersion");
+             SaveSettings();
+         }
+     }
+ 
++    // ---- Several programs share this file (every client, the Manager, a normal VibeSkua) -------------
++    // Each keeps its own copy in memory. Saving used to write the whole copy, so a program that had read the
++    // file earlier (or fell back to defaults) wrote its old values over everyone else's, which is how the
++    // Manager's saved accounts could disappear. Now a save re-reads the file and only writes the settings this
++    // program changed. The previous file is kept as Skua.settings.json.bak and used if the file goes missing.
++
++    private readonly HashSet<string> _dirtyKeys = new(StringComparer.OrdinalIgnoreCase);
++    private static string BackupPath => ClientFileSources.SkuaSettingsDIR + ".bak";
++
++    /// <summary>A program killed while holding the lock leaves it "abandoned"; that still means we have it.</summary>
++    private void AcquireFileMutex()
++    {
++        try { _fileMutex.WaitOne(); }
++        catch (AbandonedMutexException) { }
++    }
++
++    private SettingsRoot? ReadDisk()
++    {
++        try
++        {
++            if (!File.Exists(ClientFileSources.SkuaSettingsDIR))
++                return null;
++            string json = File.ReadAllText(ClientFileSources.SkuaSettingsDIR);
++            SettingsRoot? disk = JsonSerializer.Deserialize<SettingsRoot>(json, GetJsonOptions());
++            if (disk == null)
++                return null;
++            disk.Shared ??= new SharedSettings();
++            disk.Client ??= new ClientSettings();
++            disk.Manager ??= new ManagerSettings();
++            disk.Shared.InitializeDefaults();
++            disk.Client.InitializeDefaults();
++            disk.Manager.InitializeDefaults();
++            return disk;
++        }
++        catch
++        {
++            return null;
++        }
++    }
++
++    /// <summary>Copies the settings this program changed onto the file's current contents.</summary>
++    private void MergeIntoDisk()
++    {
++        SettingsRoot? disk = ReadDisk();
++        if (disk == null)
++            return;
++        foreach (string key in _dirtyKeys)
++        {
++            foreach ((object from, object to) in new (object, object)[] { (_root.Shared, disk.Shared), (_root.Client, disk.Client), (_root.Manager, disk.Manager) })
++            {
++                PropertyInfo? prop = FindPropertyByJsonName(from.GetType(), key);
++                if (prop != null && prop.CanWrite)
++                    prop.SetValue(to, prop.GetValue(from));
++            }
++        }
++        _root = disk;
++    }
++
+     public void ReloadSettings()
+     {
+         lock (_lock)
+         {
+             try
+             {
+-                _fileMutex.WaitOne();
++                AcquireFileMutex();
+                 LoadSettings();
+             }
+             finally
 diff --git a/Skua.Manager.Avalonia/App.axaml b/Skua.Manager.Avalonia/App.axaml
 index 70841b9..28f3ec6 100644
 --- a/Skua.Manager.Avalonia/App.axaml
@@ -2983,6 +3416,80 @@ index aaa4048..e091c76 100644
                         FontSize="26"
                         FontWeight="Light"
                         HorizontalAlignment="Center"
+diff --git a/Skua.Plugin.ButlerV5/Broadcaster.cs b/Skua.Plugin.ButlerV5/Broadcaster.cs
+index ad80d97..579ef23 100644
+--- a/Skua.Plugin.ButlerV5/Broadcaster.cs
++++ b/Skua.Plugin.ButlerV5/Broadcaster.cs
+@@ -64,11 +64,59 @@ public class Broadcaster
+ 
+     public void SetFollowers(IEnumerable<string> followers)
+     {
++        List<string> list;
+         lock (_writeLock)
+-            _followers = followers.Select(f => f.Trim()).Where(f => f.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
++            list = _followers = followers.Select(f => f.Trim()).Where(f => f.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
++        SaveFollowers(list);
+         WriteNow();
+     }
+ 
++    // The followers list is also kept on disk, so a master whose client is restarted (crash, the tab window
++    // starting it again) gets its followers back and they follow it again. Only within 30 minutes; after
++    // "Release all" the saved list is empty.
++    private static readonly TimeSpan FollowersKeep = TimeSpan.FromMinutes(30);
++    private static string FollowersPath(string username) =>
++        Path.Combine(SyncFile.Directory, "followers", $"{username.ToLowerInvariant()}.txt");
++
++    private void SaveFollowers(List<string> list)
++    {
++        try
++        {
++            string user = _bot.Player?.LoggedIn == true ? _bot.Player.Username ?? _lastUsername : _lastUsername;
++            if (string.IsNullOrWhiteSpace(user))
++                return;
++            string path = FollowersPath(user);
++            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
++            File.WriteAllLines(path, list);
++        }
++        catch { }
++    }
++
++    /// <summary>At login: an empty followers list gets the saved one back if it was saved recently.</summary>
++    private void RestoreFollowers(string? username)
++    {
++        try
++        {
++            if (string.IsNullOrWhiteSpace(username))
++                return;
++            lock (_writeLock)
++                if (_followers.Count > 0)
++                    return;
++            string path = FollowersPath(username);
++            if (!File.Exists(path) || DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > FollowersKeep)
++                return;
++            List<string> saved = File.ReadAllLines(path).Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
++            if (saved.Count == 0)
++                return;
++            lock (_writeLock)
++                _followers = saved;
++            File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
++            DebugLog.Log("Broadcaster", $"restored followers after a restart: {string.Join(",", saved)}");
++            _log($"Restored {saved.Count} follower{(saved.Count == 1 ? "" : "s")} from before the restart; they follow again.");
++        }
++        catch { }
++    }
++
+     public void Start()
+     {
+         DebugLog.Log("Broadcaster", "Start: polling watcher + Logout event");
+@@ -106,6 +154,8 @@ public class Broadcaster
+                         DebugLog.Log("Broadcaster", $"login state flipped -> {(loggedIn ? "logged in as " + _bot.Player?.Username : "logged out")}");
+                         if (!loggedIn)
+                             WriteOffline();
++                        else
++                            RestoreFollowers(_bot.Player?.Username);
+                     }
+ 
+                     if (loggedIn)
 diff --git a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs b/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
 index d5f32fb..983ca1e 100644
 --- a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
@@ -3109,6 +3616,59 @@ index 0b5b0e8..5dd94da 100644
                      File.AppendAllText(_path, line + Environment.NewLine);
                  }
              }
+diff --git a/Skua.Plugin.ButlerV5/Follower.cs b/Skua.Plugin.ButlerV5/Follower.cs
+index 8b9caab..5b572fb 100644
+--- a/Skua.Plugin.ButlerV5/Follower.cs
++++ b/Skua.Plugin.ButlerV5/Follower.cs
+@@ -89,6 +89,8 @@ public class Follower
+     private string? _fullCountRoom;  // the room we're currently counting full-warnings for
+     private string? _blockedRoom;    // a specific full room-instance we've parked on
+     private int _badReads;
++    private DateTime _otherServerSince = DateTime.MinValue;
++    private DateTime _lastServerHop = DateTime.MinValue;
+     private bool _suspended;
+     private bool _wasLoggedIn;
+     private bool? _lastWithMaster;
+@@ -331,9 +333,39 @@ public class Follower
+                 {
+                     ParkOnce($"{master} is on a different server (theirs='{m.Server}' mine='{GameServer.CurrentName(_bot)}'). Parked.",
+                         "The master is on a different server. Parked.");
++                    // The master came back on another server (a restart or re-login picks a server too):
++                    // after 30 s, log this account in on the master's server and follow again.
++                    // At most once every 5 minutes, so two accounts can't chase each other forever.
++                    if (_otherServerSince == DateTime.MinValue)
++                        _otherServerSince = DateTime.UtcNow;
++                    else if (DateTime.UtcNow - _otherServerSince > TimeSpan.FromSeconds(30)
++                        && DateTime.UtcNow - _lastServerHop > TimeSpan.FromMinutes(5)
++                        && !string.IsNullOrWhiteSpace(m.Server))
++                    {
++                        _lastServerHop = DateTime.UtcNow;
++                        _otherServerSince = DateTime.MinValue;
++                        _log($"{master} is on {m.Server}; logging in there to follow again.",
++                            "The master is on another server; logging in there to follow again.");
++                        try
++                        {
++                            // Spread out (several followers usually hop at once), log out, let the login screen
++                            // come up, then log in on the master's server (with retries).
++                            Thread.Sleep(Random.Shared.Next(0, 6000));
++                            _bot.Servers.LogoutForRelogin();
++                            Thread.Sleep(3000);
++                            bool ok = _bot.Servers.EnsureRelogin(m.Server);
++                            DebugLog.Log("Follower", $"server hop to {m.Server}: {(ok ? "ok" : "failed")}");
++                        }
++                        catch (Exception ex)
++                        {
++                            DebugLog.Log("Follower", $"server hop failed: {ex.Message}");
++                        }
++                        continue;
++                    }
+                     Wait(token, 2000);
+                     continue;
+                 }
++                _otherServerSince = DateTime.MinValue;
+ 
+                 // Circuit breaker: a map we repeatedly failed to enter (entry gate kept
+                 // bouncing us to battleon) is blocked until the master moves elsewhere.
 diff --git a/Skua.Plugin.ButlerV5/RosterWindow.cs b/Skua.Plugin.ButlerV5/RosterWindow.cs
 index 5f727fd..359f4b8 100644
 --- a/Skua.Plugin.ButlerV5/RosterWindow.cs

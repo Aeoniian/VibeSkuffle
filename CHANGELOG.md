@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.0.0-beta2 (2026-10-18)
+
+From the first overnight run (6 accounts running FarmerJoeDoAll):
+
+- **ButlerV5 followers re-follow** after the master restarts: automatic re-logins return to the same server and
+  room; a follower whose master is on another server logs in there after 30 s (max once per 5 min); a master's
+  followers list survives a client restart (30 min).
+- **"Quest Complete Failed: Missing Quest Progress"** spam (5 in 2 min) while a script runs → relog, script restarts.
+- **Stuck script check:** a running script with no kills, drops, quests, gold or movement for
+  `SKUA_STUCK_SCRIPT_MINUTES` (default 15, 0 = off) → relog, script restarts (max once per 20 min).
+- A re-login sitting on a blank screen for 5 minutes is started over (one account sat logged out for 75 minutes).
+- Scripts now restart after every kind of knock-out (a timing mix-up skipped some).
+- The "logged out for 3 minutes" check could fire right away after a restart (a leftover timer).
+- PC low on RAM (under 10% free): the biggest game window restarts when out of combat.
+- Memory restarts at most once per 30 minutes (a too-low limit can't loop); the limit is re-read at each start;
+  `name: ...` lines in `ruffle-options.txt` apply to one account; `SKUA_*` settings there also reach VibeSkuffle.
+- **Settings file fix:** saves only write the changed settings onto the current file (the Manager's accounts could
+  be wiped by another program's stale copy), an abandoned lock no longer leads to blank settings, a `.bak` is kept.
+- Building: closes clients before the tab window (so they don't restart themselves mid-build) and keeps
+  `login-watchdog.log` / `host-recovery.log`.
+
 ## v1.0.0-beta (2026-10-17)
 
 First public build. Based on VibeSkua `239b20d` and Mugetsu v1.4.0 (Ruffle `fda41800`).
