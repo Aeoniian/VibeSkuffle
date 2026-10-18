@@ -1,0 +1,929 @@
+diff --git a/core/src/avm2/globals/json.rs b/core/src/avm2/globals/json.rs
+index 43e196285..dbfa051c4 100644
+--- a/core/src/avm2/globals/json.rs
++++ b/core/src/avm2/globals/json.rs
+@@ -181,7 +181,20 @@ impl<'gc> AvmSerializer<'gc> {
+                 }
+             }
+         } else {
++            // Skua build: like Flash, an Event's built-in getters (type, target, ...) aren't
++            // written out; `target` would recurse into the whole dispatcher (AQW's SmartFox
++            // client). Flash gives `{"params":{...}}` for AQW's server packets.
++            let event_class = activation.avm2().classes().event.inner_class_definition();
++            let is_event = obj.is_of_type(event_class);
+             for (name, val) in obj.public_vtable_properties(activation)? {
++                if is_event
++                    && matches!(
++                        name.to_utf8_lossy().as_ref(),
++                        "type" | "bubbles" | "cancelable" | "eventPhase" | "target" | "currentTarget"
++                    )
++                {
++                    continue;
++                }
+                 let mapped = self.map_value(activation, || name, val)?;
+                 if !skip_value(mapped) {
+                     js_obj.insert(
+@@ -237,6 +250,11 @@ impl<'gc> AvmSerializer<'gc> {
+             Value::Null => JsonValue::Null,
+             Value::Undefined => JsonValue::Null,
+             Value::Integer(i) => JsonValue::from(i),
++            // Skua build: like Flash, whole numbers are written without a fraction
++            // ("383618675", not "383618675.0"); values of 2^28 and up stay `Number`s.
++            Value::Number(n) if n.is_finite() && n.fract() == 0.0 && n.abs() < 9007199254740992.0 => {
++                JsonValue::from(n as i64)
++            }
+             Value::Number(n) => JsonValue::from(n),
+             Value::Bool(b) => JsonValue::from(b),
+             Value::String(s) => JsonValue::from(s.to_utf8_lossy().deref()),
+diff --git a/desktop/Cargo.toml b/desktop/Cargo.toml
+index cd1514aa5..2c7c11d46 100644
+--- a/desktop/Cargo.toml
++++ b/desktop/Cargo.toml
+@@ -72,7 +72,7 @@ ashpd = { version = "0.13.0", features = ["settings", "game_mode"] }
+ [target.'cfg(windows)'.dependencies]
+ # AQW build: DXGI, to see which graphics chip Mugetsu will use (see `mugetsu::intel_graphics`).
+ windows = { version = "0.62", features = ["Win32_Graphics_Dxgi"] }
+-windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_Foundation", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Environment", "Win32_UI_WindowsAndMessaging"] }
++windows-sys = { version = "0.61.2", features = ["Win32_System_Console", "Win32_Storage_FileSystem", "Win32_System_Threading", "Win32_Foundation", "Win32_System_Diagnostics_Debug", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Environment", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input_KeyboardAndMouse"] }
+ 
+ [build-dependencies]
+ vergen = { version = "10.0.3", features = ["build", "cargo"] }
+diff --git a/desktop/src/app.rs b/desktop/src/app.rs
+index 6b65b0006..92c176267 100644
+--- a/desktop/src/app.rs
++++ b/desktop/src/app.rs
+@@ -362,13 +362,74 @@ fn timer_parts(before: &[u64; ruffle_render_wgpu::perf_counters::timers::LEN]) -
+     if parts.is_empty() { "none of the timed work".to_string() } else { parts }
+ }
+ 
++/// The window's Win32 handle (HWND), on Windows.
++fn native_hwnd(window: &winit::window::Window) -> Option<isize> {
++    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
++    match window.window_handle().ok()?.as_raw() {
++        RawWindowHandle::Win32(handle) => Some(handle.hwnd.get()),
++        _ => None,
++    }
++}
++
+ impl MainWindow {
++    /// Skua build: a request from Skua (see `skua.rs`).
++    fn skua_request(&mut self, event_loop: &ActiveEventLoop, request: crate::skua::Request) {
++        use crate::skua::Request;
++        match request {
++            Request::Call { id, name, args } => {
++                let value = match self.player.get() {
++                    Some(mut player) => player.call_internal_interface(&name, args),
++                    None => ruffle_core::external::Value::Undefined,
++                };
++                crate::skua::reply(id, &value);
++            }
++            Request::Headless(on) => {
++                crate::skua::set_headless(on);
++                if !on {
++                    self.frame_since_render = true;
++                    self.gui.window().request_redraw();
++                }
++            }
++            Request::Refresh => {
++                // Skua's window came back (restored, tab shown): draw again even if the last
++                // size event made us think we were minimized.
++                let size = self.gui.window().inner_size();
++                if size.width > 0 && size.height > 0 {
++                    self.minimized = false;
++                    self.gui.resize(size);
++                }
++                self.occluded = false;
++                self.frame_since_render = true;
++                self.gui.window().request_redraw();
++            }
++            Request::Trim => {
++                if let Some(mut player) = self.player.get() {
++                    // Same clean-up Mugetsu does when graphics memory runs low: shapes not drawn
++                    // for 2 minutes are tessellated again if they come back.
++                    let shapes = ruffle_core::evict_unused_shapes(120);
++                    if let Some(renderer) = <dyn std::any::Any>::downcast_mut::<
++                        ruffle_render_wgpu::backend::WgpuRenderBackend<crate::gui::MovieView>,
++                    >(player.renderer_mut())
++                    {
++                        renderer.aqw_trim_memory();
++                    }
++                    // Give memory the allocator keeps for reuse back to Windows.
++                    // SAFETY: plain call, no arguments to get wrong.
++                    unsafe { libmimalloc_sys::mi_collect(true) };
++                    tracing::info!(target: "ruffle_aqw_perf", "skua trim: freed {shapes} unused shapes and spare textures");
++                }
++            }
++            Request::Quit => event_loop.exit(),
++        }
++    }
++
+     pub fn window_event(&mut self, event_loop: &ActiveEventLoop, event: WindowEvent) {
+         if matches!(event, WindowEvent::RedrawRequested) {
+             // Don't render when nobody can see the result: while minimized, the
+             // surface also keeps the size it had before, as `GuiController::resize`
+             // refuses to reconfigure it to a zero size.
+-            if !self.minimized && !self.occluded {
++            // Skua build: nothing is drawn in Skua's headless mode (the game keeps running).
++            if !self.minimized && !self.occluded && !crate::skua::headless() {
+                 let started = Instant::now();
+                 let timers_before = ruffle_render_wgpu::perf_counters::timers::snapshot();
+                 let walk_before = ruffle_core::render_walk_micros();
+@@ -471,7 +532,8 @@ impl MainWindow {
+                 }
+             }
+             WindowEvent::Occluded(occluded) => {
+-                self.occluded = occluded;
++                // Skua build: inside Skua's panel, Skua says when not to draw (headless mode).
++                self.occluded = occluded && crate::skua::parent().is_none();
+                 if !occluded {
+                     // Nothing repaints us on its own if the movie is paused.
+                     self.gui.window().request_redraw();
+@@ -512,6 +574,13 @@ impl MainWindow {
+                 self.player.handle_event(PlayerEvent::FocusLost);
+             }
+             WindowEvent::MouseInput { button, state, .. } => {
++                // Skua build: inside Skua's panel, a click must also take the keyboard focus.
++                if state == ElementState::Pressed
++                    && crate::skua::parent().is_some()
++                    && let Some(hwnd) = native_hwnd(self.gui.window())
++                {
++                    crate::skua::focus(hwnd);
++                }
+                 if self.gui.is_context_menu_visible() {
+                     return;
+                 }
+@@ -656,7 +725,9 @@ impl MainWindow {
+ 
+         // To prevent issues like waiting on resize indefinitely (#11364) or desyncing the window state on Windows,
+         // do not resize while window is maximized.
+-        let should_resize = !self.gui.window().is_maximized();
++        // Skua build: inside Skua's panel, Skua sizes the window.
++        let should_resize =
++            !self.gui.window().is_maximized() && crate::skua::parent().is_none();
+ 
+         let (viewport_size, state) = if should_resize {
+             let movie_width = swf_header.stage_size().width().to_pixels();
+@@ -1030,11 +1101,27 @@ impl ApplicationHandler<RuffleEvent> for App {
+                 }
+             }
+ 
++            // Skua build: draw inside Skua's panel, as a child window without a frame.
++            #[cfg(windows)]
++            if let Some(parent) = crate::skua::parent()
++                && let Some(hwnd) = std::num::NonZeroIsize::new(parent)
++            {
++                let handle = winit::raw_window_handle::RawWindowHandle::Win32(
++                    winit::raw_window_handle::Win32WindowHandle::new(hwnd),
++                );
++                // SAFETY: Skua keeps its panel alive while this process runs (and this
++                // process exits when Skua's pipe closes).
++                window_attributes = unsafe { window_attributes.with_parent_window(Some(handle)) }
++                    .with_decorations(false);
++            }
++
+             let event_loop_proxy = self.event_loop_proxy.clone();
+             let preferences = self.preferences.clone();
+             let window = event_loop
+                 .create_window(window_attributes)
+                 .expect("Window should be created");
++            // Skua build: connect to Skua before the movie starts, so no call is missed.
++            crate::skua::start(event_loop_proxy.clone(), native_hwnd(&window));
+             let max_window_size = get_screen_size(&window);
+             window.set_max_inner_size(Some(max_window_size));
+             let window = Arc::new(window);
+@@ -1222,6 +1309,19 @@ impl ApplicationHandler<RuffleEvent> for App {
+                 event_loop.exit();
+             }
+ 
++            (Some(main_window), RuffleEvent::Skua(request)) => {
++                main_window.skua_request(event_loop, request);
++            }
++
++            (None, RuffleEvent::Skua(request)) => match request {
++                crate::skua::Request::Call { id, .. } => {
++                    crate::skua::reply(id, &ruffle_core::external::Value::Undefined)
++                }
++                crate::skua::Request::Quit => event_loop.exit(),
++                crate::skua::Request::Headless(on) => crate::skua::set_headless(on),
++                crate::skua::Request::Refresh | crate::skua::Request::Trim => {}
++            },
++
+             _ => {}
+         }
+     }
+diff --git a/desktop/src/custom_event.rs b/desktop/src/custom_event.rs
+index 9e739a209..4187c81bb 100644
+--- a/desktop/src/custom_event.rs
++++ b/desktop/src/custom_event.rs
+@@ -48,4 +48,7 @@ pub enum RuffleEvent {
+ 
+     /// Export Ruffle Bundle from currently playing content and open save dialog.
+     ExportBundle,
++
++    /// Skua build: a request from Skua over its pipe (see `skua.rs`).
++    Skua(crate::skua::Request),
+ }
+diff --git a/desktop/src/main.rs b/desktop/src/main.rs
+index 8fa595a42..7c339144c 100644
+--- a/desktop/src/main.rs
++++ b/desktop/src/main.rs
+@@ -15,6 +15,7 @@ mod gui;
+ mod log;
+ mod mugetsu;
+ mod player;
++mod skua;
+ mod preferences;
+ #[cfg(feature = "tracy")]
+ mod tracy;
+@@ -149,10 +150,18 @@ fn panic_hook(info: &PanicHookInfo) {
+     let message = info.payload_as_str().unwrap_or("panic occurred");
+ 
+     // AQW build: keep the crash and where it happened in ruffle.log.
+-    tracing::error!(
++    let details = format!(
+         "fatal error: {info}\n{}",
+         std::backtrace::Backtrace::force_capture()
+     );
++    tracing::error!("{details}");
++
++    // Skua mode: no dialog nobody may be there to click. Save the details and let the player
++    // close; VibeSkuffle starts a new one and logs back in.
++    if skua::enabled() {
++        skua::write_crash(&details);
++        return;
++    }
+ 
+     // AQW build (Mugetsu): no "report to the Ruffle developers" link (this is a modified build;
+     // its crashes aren't theirs to triage). Say plainly what happened instead.
+@@ -200,7 +209,11 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
+         // SAFETY: this runs first thing in `main`, before any other thread exists.
+         unsafe { env::set_var("DISABLE_VULKAN_OBS_CAPTURE", "1") };
+     }
+-    let has_movie = Opt::try_parse_from(&args).map_or(true, |opt| opt.movie_url.is_some());
++    // Skua build: started by Skua (`--skua-pipe ...`) it plays Skua's loader with the AQW
++    // settings below, and talks to Skua over the pipes (see `skua.rs`).
++    let skua_movie = skua::take_args(&mut args);
++    let has_movie = skua_movie.is_none()
++        && Opt::try_parse_from(&args).map_or(true, |opt| opt.movie_url.is_some());
+     if has_movie {
+         // A movie was given (or the arguments don't parse; let clap report that): plain Ruffle.
+         return args;
+@@ -247,7 +260,8 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
+         ("--no-gui", None, None),
+         ("--graphics", Some("-g"), Some(graphics)),
+     ];
+-    let mut full = vec![args[0].clone(), AQW_LOADER_URL.into()];
++    let movie = skua_movie.unwrap_or_else(|| AQW_LOADER_URL.into());
++    let mut full = vec![args[0].clone(), movie];
+     for (flag, short, value) in defaults {
+         if given(flag) || short.is_some_and(given) {
+             continue;
+@@ -291,7 +305,8 @@ fn main() -> Result<(), Error> {
+     let preferences = GlobalPreferences::load(opt)?;
+ 
+     let logs_path = &preferences.cli.cache_directory.join("log");
+-    let log_path = preferences.log_filename_pattern().create_path(logs_path);
++    let log_path = skua::log_path(logs_path)
++        .unwrap_or_else(|| preferences.log_filename_pattern().create_path(logs_path));
+     if let Some(parent) = log_path.parent() {
+         std::fs::create_dir_all(parent)?;
+     }
+@@ -301,7 +316,12 @@ fn main() -> Result<(), Error> {
+ 
+     // [NA] `_guard` cannot be `_` or it'll immediately drop
+     // https://docs.rs/tracing-appender/latest/tracing_appender/non_blocking/index.html
+-    let (non_blocking_file, _file_guard) = tracing_appender::non_blocking(File::create(log_path)?);
++    let log_writer: Box<dyn std::io::Write + Send> = if skua::enabled() {
++        Box::new(skua::CappedLog::create(&log_path)?)
++    } else {
++        Box::new(File::create(&log_path)?)
++    };
++    let (non_blocking_file, _file_guard) = tracing_appender::non_blocking(log_writer);
+     let (non_blocking_stdout, _stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
+ 
+     // AQW build (Mugetsu): by default the log keeps warnings, crash details and Mugetsu's
+diff --git a/desktop/src/mugetsu.rs b/desktop/src/mugetsu.rs
+index 6a0ebe3a2..a40330a86 100644
+--- a/desktop/src/mugetsu.rs
++++ b/desktop/src/mugetsu.rs
+@@ -548,7 +548,7 @@ pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power:
+ /// so and a message (once per version) offers to open the download page. Nothing is
+ /// downloaded or installed; a `no-update-check` file next to Mugetsu.exe turns this off.
+ pub fn spawn_update_check(window: Arc<Window>) {
+-    if exe_flag("no-update-check") {
++    if exe_flag("no-update-check") || crate::skua::enabled() {
+         return;
+     }
+     let _ = std::thread::Builder::new()
+diff --git a/desktop/src/player.rs b/desktop/src/player.rs
+index b37bdd8ad..67bd4275a 100644
+--- a/desktop/src/player.rs
++++ b/desktop/src/player.rs
+@@ -276,7 +276,14 @@ impl ActivePlayer {
+             .expect("Couldn't create wgpu rendering backend");
+         RENDER_INFO.with(|i| *i.borrow_mut() = Some(renderer.debug_info().to_string()));
+ 
+-        if opt.player.dummy_external_interface.unwrap_or_default() {
++        if crate::skua::enabled() {
++            // Skua build: ExternalInterface goes to Skua.
++            builder = builder.with_external_interface(Box::new(
++                crate::skua::SkuaExternalInterfaceProvider {
++                    spoof_url: opt.player.spoof_url.clone(),
++                },
++            ));
++        } else if opt.player.dummy_external_interface.unwrap_or_default() {
+             builder = builder.with_external_interface(Box::new(DesktopExternalInterfaceProvider {
+                 spoof_url: opt.player.spoof_url.clone(),
+             }));
+diff --git a/desktop/src/skua.rs b/desktop/src/skua.rs
+new file mode 100644
+index 000000000..9c43f7610
+--- /dev/null
++++ b/desktop/src/skua.rs
+@@ -0,0 +1,515 @@
++//! Skua bridge: lets Skua (a C# bot client) drive the game through `ExternalInterface`, the
++//! same way it drives the Flash ActiveX control, over two pipes:
++//!
++//! * `<name>-c2r`: Skua -> Ruffle (calls into AS3 callbacks, headless on/off, quit)
++//! * `<name>-r2c`: Ruffle -> Skua (call results, `ExternalInterface.call` events, hello)
++//!
++//! Two one-way pipes instead of one duplex pipe: on Windows a blocking read on a synchronous
++//! handle stalls writes on the same handle.
++//!
++//! Every message is a 4-byte little-endian length followed by that many bytes of UTF-8 JSON.
++//! `ExternalInterface` values map to JSON as: null -> null, undefined -> {"$u":1}, booleans,
++//! numbers (NaN/Infinity as {"$n":"NaN"} etc.), strings, arrays and objects as {"$o":{...}}.
++//!
++//! Started with `--skua-pipe <name> --skua-movie <skua.swf> [--skua-parent <hwnd>]`; those
++//! arguments are removed before Ruffle's own options are parsed (see `take_args`).
++
++use crate::custom_event::RuffleEvent;
++use ruffle_core::context::UpdateContext;
++use ruffle_core::external::{ExternalInterfaceProvider, Value};
++use serde_json::{Map, Number, Value as Json, json};
++use std::collections::BTreeMap;
++use std::ffi::OsString;
++use std::fs::{File, OpenOptions};
++use std::io::{BufReader, BufWriter, Read, Write};
++use std::path::PathBuf;
++use std::sync::OnceLock;
++use std::sync::atomic::{AtomicBool, Ordering};
++use std::sync::mpsc;
++use std::time::{Duration, Instant};
++use url::Url;
++use winit::event_loop::EventLoopProxy;
++
++pub struct Config {
++    pub pipe: String,
++    /// Window handle (HWND) of Skua's panel to draw inside, if any.
++    pub parent: Option<isize>,
++}
++
++static CONFIG: OnceLock<Config> = OnceLock::new();
++static HEADLESS: AtomicBool = AtomicBool::new(false);
++static OUTBOX: OnceLock<mpsc::Sender<Vec<u8>>> = OnceLock::new();
++
++/// A request from Skua, delivered to the event loop as `RuffleEvent::Skua`.
++pub enum Request {
++    Call {
++        id: u64,
++        name: String,
++        args: Vec<Value>,
++    },
++    Headless(bool),
++    /// Redraw now (Skua's window was restored or shown again).
++    Refresh,
++    /// Free memory the game isn't using right now (the account's tab is in the background):
++    /// shapes not drawn for a while, spare textures, and memory the allocator is holding on to.
++    Trim,
++    Quit,
++}
++
++/// Removes `--skua-pipe`, `--skua-parent` and `--skua-movie` from `args`. Returns the movie
++/// to play when Skua started this process.
++pub fn take_args(args: &mut Vec<OsString>) -> Option<OsString> {
++    let mut pipe = None;
++    let mut parent = None;
++    let mut movie = None;
++    let mut rest = Vec::with_capacity(args.len());
++    let mut iter = std::mem::take(args).into_iter();
++    while let Some(arg) = iter.next() {
++        let text = arg.to_string_lossy().to_string();
++        let (flag, inline) = match text.split_once('=') {
++            Some((flag, value)) if flag.starts_with("--skua-") => (flag.to_string(), Some(value.to_string())),
++            _ => (text.clone(), None),
++        };
++        let slot = match flag.as_str() {
++            "--skua-pipe" => &mut pipe,
++            "--skua-parent" => &mut parent,
++            "--skua-movie" => &mut movie,
++            _ => {
++                rest.push(arg);
++                continue;
++            }
++        };
++        *slot = match inline {
++            Some(value) => Some(OsString::from(value)),
++            None => iter.next(),
++        };
++    }
++    *args = rest;
++
++    let pipe = pipe?.to_string_lossy().to_string();
++    let parent = parent.and_then(|p| {
++        let p = p.to_string_lossy();
++        let p = p.trim();
++        match p.strip_prefix("0x") {
++            Some(hex) => isize::from_str_radix(hex, 16).ok(),
++            None => p.parse::<isize>().ok(),
++        }
++    });
++    let _ = CONFIG.set(Config { pipe, parent });
++    Some(movie.unwrap_or_else(|| OsString::from("skua.swf")))
++}
++
++pub fn enabled() -> bool {
++    CONFIG.get().is_some()
++}
++
++static LOG_DIR: OnceLock<PathBuf> = OnceLock::new();
++
++/// Skua mode runs several players at once; sharing Mugetsu's single ruffle.log makes them overwrite
++/// each other's lines (a crash's details got lost that way). Each player gets its own
++/// `skua-<time>-<pid>.log`; ones older than three days are removed.
++pub fn log_path(dir: &std::path::Path) -> Option<PathBuf> {
++    if !enabled() {
++        return None;
++    }
++    let _ = LOG_DIR.set(dir.to_path_buf());
++    if let Ok(entries) = std::fs::read_dir(dir) {
++        let cutoff = std::time::SystemTime::now() - Duration::from_secs(3 * 24 * 3600);
++        for entry in entries.flatten() {
++            let name = entry.file_name();
++            let name = name.to_string_lossy();
++            // Crash reports are kept two weeks, other logs three days.
++            let keep_until = if name.starts_with("skua-crash-") {
++                cutoff - Duration::from_secs(11 * 24 * 3600)
++            } else {
++                cutoff
++            };
++            if name.starts_with("skua-") && name.ends_with(".log")
++                && entry.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < keep_until)
++            {
++                let _ = std::fs::remove_file(entry.path());
++            }
++        }
++    }
++    Some(dir.join(format!(
++        "skua-{}-{}.log",
++        chrono::Utc::now().format("%Y%m%d-%H%M%S"),
++        std::process::id()
++    )))
++}
++
++/// Skua mode: the log file a player writes to, capped so week-long runs can't fill the disk. Past the cap
++/// (25 MB, `SKUA_LOG_CAP_MB` to change) the file is renamed to `*-prev.log` (replacing an older one) and
++/// a new one is started.
++pub struct CappedLog {
++    path: PathBuf,
++    file: Option<File>,
++    written: u64,
++    cap: u64,
++}
++
++impl CappedLog {
++    pub fn create(path: &std::path::Path) -> std::io::Result<Self> {
++        let cap_mb = std::env::var("SKUA_LOG_CAP_MB")
++            .ok()
++            .and_then(|v| v.parse::<u64>().ok())
++            .filter(|&mb| mb > 0)
++            .unwrap_or(25);
++        Ok(Self {
++            path: path.to_path_buf(),
++            file: Some(File::create(path)?),
++            written: 0,
++            cap: cap_mb << 20,
++        })
++    }
++
++    fn rotate(&mut self) -> std::io::Result<()> {
++        self.file = None; // close it so it can be renamed
++        let prev = self.path.with_file_name(format!(
++            "{}-prev.log",
++            self.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
++        ));
++        let _ = std::fs::remove_file(&prev);
++        let _ = std::fs::rename(&self.path, &prev);
++        self.file = Some(File::create(&self.path)?);
++        self.written = 0;
++        Ok(())
++    }
++}
++
++impl Write for CappedLog {
++    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
++        if self.written + buf.len() as u64 > self.cap {
++            self.rotate()?;
++        }
++        let file = match self.file.as_mut() {
++            Some(file) => file,
++            None => return Ok(buf.len()),
++        };
++        let n = file.write(buf)?;
++        self.written += n as u64;
++        Ok(n)
++    }
++
++    fn flush(&mut self) -> std::io::Result<()> {
++        self.file.as_mut().map_or(Ok(()), |f| f.flush())
++    }
++}
++
++/// Writes crash details straight to their own file. The normal log is written in the background and
++/// the crash handler ends the process right away, so its last lines can be lost.
++pub fn write_crash(details: &str) {
++    if let Some(dir) = LOG_DIR.get() {
++        let path = dir.join(format!(
++            "skua-crash-{}-{}.log",
++            chrono::Utc::now().format("%Y%m%d-%H%M%S"),
++            std::process::id()
++        ));
++        let _ = std::fs::write(path, details);
++    }
++}
++
++pub fn parent() -> Option<isize> {
++    CONFIG.get().and_then(|c| c.parent)
++}
++
++/// Skua asked for no drawing at all (the game keeps running).
++pub fn headless() -> bool {
++    HEADLESS.load(Ordering::Relaxed)
++}
++
++pub fn set_headless(on: bool) {
++    HEADLESS.store(on, Ordering::Relaxed);
++}
++
++fn pipe_path(name: &str, direction: &str) -> PathBuf {
++    if cfg!(windows) {
++        PathBuf::from(format!(r"\\.\pipe\{name}-{direction}"))
++    } else {
++        // For testing on Linux/macOS: two FIFOs (mkfifo) in the temp directory.
++        std::env::temp_dir().join(format!("{name}-{direction}"))
++    }
++}
++
++/// Opens one end of a pipe Skua created, retrying while Skua is still setting it up.
++fn open_pipe(path: &PathBuf, write: bool) -> std::io::Result<File> {
++    let deadline = Instant::now() + Duration::from_secs(30);
++    loop {
++        let result = if write {
++            OpenOptions::new().write(true).open(path)
++        } else {
++            OpenOptions::new().read(true).open(path)
++        };
++        match result {
++            Ok(file) => return Ok(file),
++            Err(e) if Instant::now() < deadline => {
++                tracing::debug!("Skua pipe {} not ready yet: {e}", path.display());
++                std::thread::sleep(Duration::from_millis(50));
++            }
++            Err(e) => return Err(e),
++        }
++    }
++}
++
++/// Connects to Skua's pipes and starts the reader and writer threads. `hwnd` is this
++/// window's handle, sent to Skua so it can size the window inside its panel.
++pub fn start(proxy: EventLoopProxy<RuffleEvent>, hwnd: Option<isize>) {
++    let Some(config) = CONFIG.get() else {
++        return;
++    };
++    let (sender, receiver) = mpsc::channel::<Vec<u8>>();
++    if OUTBOX.set(sender).is_err() {
++        return; // Already started.
++    }
++
++    let write_path = pipe_path(&config.pipe, "r2c");
++    std::thread::Builder::new()
++        .name("skua-pipe-writer".into())
++        .spawn(move || {
++            let file = match open_pipe(&write_path, true) {
++                Ok(file) => file,
++                Err(e) => {
++                    tracing::error!("Couldn't open Skua pipe {}: {e}", write_path.display());
++                    return;
++                }
++            };
++            let mut writer = BufWriter::with_capacity(64 * 1024, file);
++            while let Ok(first) = receiver.recv() {
++                let mut message = Some(first);
++                // Write everything queued, then flush once.
++                while let Some(bytes) = message.take() {
++                    let length = (bytes.len() as u32).to_le_bytes();
++                    if writer.write_all(&length).and_then(|_| writer.write_all(&bytes)).is_err() {
++                        return;
++                    }
++                    message = receiver.try_recv().ok();
++                }
++                if writer.flush().is_err() {
++                    return;
++                }
++            }
++        })
++        .expect("Skua writer thread");
++
++    send(json!({ "t": "hello", "hwnd": hwnd, "pid": std::process::id() }));
++
++    let read_path = pipe_path(&config.pipe, "c2r");
++    std::thread::Builder::new()
++        .name("skua-pipe-reader".into())
++        .spawn(move || {
++            let file = match open_pipe(&read_path, false) {
++                Ok(file) => file,
++                Err(e) => {
++                    tracing::error!("Couldn't open Skua pipe {}: {e}", read_path.display());
++                    let _ = proxy.send_event(RuffleEvent::ExitRequested);
++                    return;
++                }
++            };
++            let mut reader = BufReader::with_capacity(64 * 1024, file);
++            loop {
++                let mut length = [0u8; 4];
++                if reader.read_exact(&mut length).is_err() {
++                    break;
++                }
++                let mut bytes = vec![0u8; u32::from_le_bytes(length) as usize];
++                if reader.read_exact(&mut bytes).is_err() {
++                    break;
++                }
++                let request = match serde_json::from_slice::<Json>(&bytes) {
++                    Ok(message) => parse_request(message),
++                    Err(e) => {
++                        tracing::warn!("Bad message from Skua: {e}");
++                        continue;
++                    }
++                };
++                if let Some(request) = request
++                    && proxy.send_event(RuffleEvent::Skua(request)).is_err()
++                {
++                    return;
++                }
++            }
++            // Skua closed the pipe (exited or crashed): close the game with it.
++            tracing::info!("Skua disconnected; exiting");
++            let _ = proxy.send_event(RuffleEvent::ExitRequested);
++        })
++        .expect("Skua reader thread");
++}
++
++fn parse_request(message: Json) -> Option<Request> {
++    match message.get("t")?.as_str()? {
++        "call" => Some(Request::Call {
++            id: message.get("id")?.as_u64()?,
++            name: message.get("n")?.as_str()?.to_string(),
++            args: message
++                .get("a")
++                .and_then(Json::as_array)
++                .map(|args| args.iter().map(from_json).collect())
++                .unwrap_or_default(),
++        }),
++        "headless" => Some(Request::Headless(
++            message.get("on").and_then(Json::as_bool).unwrap_or(false),
++        )),
++        "refresh" => Some(Request::Refresh),
++        "trim" => Some(Request::Trim),
++        "quit" => Some(Request::Quit),
++        other => {
++            tracing::warn!("Unknown message from Skua: {other}");
++            None
++        }
++    }
++}
++
++fn send(message: Json) {
++    if let Some(outbox) = OUTBOX.get()
++        && let Ok(bytes) = serde_json::to_vec(&message)
++    {
++        let _ = outbox.send(bytes);
++    }
++}
++
++/// The result of a call Skua made.
++pub fn reply(id: u64, value: &Value) {
++    send(json!({ "t": "ret", "id": id, "v": to_json(value) }));
++}
++
++pub fn to_json(value: &Value) -> Json {
++    match value {
++        Value::Undefined => json!({ "$u": 1 }),
++        Value::Null => Json::Null,
++        Value::Bool(b) => Json::Bool(*b),
++        Value::Number(n) => match Number::from_f64(*n) {
++            Some(number) => Json::Number(number),
++            None => {
++                let name = if n.is_nan() {
++                    "NaN"
++                } else if *n > 0.0 {
++                    "Infinity"
++                } else {
++                    "-Infinity"
++                };
++                json!({ "$n": name })
++            }
++        },
++        Value::String(s) => Json::String(s.clone()),
++        Value::List(list) => Json::Array(list.iter().map(to_json).collect()),
++        Value::Object(map) => {
++            let inner: Map<String, Json> =
++                map.iter().map(|(k, v)| (k.clone(), to_json(v))).collect();
++            json!({ "$o": inner })
++        }
++    }
++}
++
++pub fn from_json(json: &Json) -> Value {
++    match json {
++        Json::Null => Value::Null,
++        Json::Bool(b) => Value::Bool(*b),
++        Json::Number(n) => Value::Number(n.as_f64().unwrap_or(f64::NAN)),
++        Json::String(s) => Value::String(s.clone()),
++        Json::Array(list) => Value::List(list.iter().map(from_json).collect()),
++        Json::Object(map) => {
++            if map.contains_key("$u") {
++                return Value::Undefined;
++            }
++            if let Some(special) = map.get("$n").and_then(Json::as_str) {
++                return Value::Number(match special {
++                    "Infinity" => f64::INFINITY,
++                    "-Infinity" => f64::NEG_INFINITY,
++                    _ => f64::NAN,
++                });
++            }
++            let fields = map.get("$o").and_then(Json::as_object).unwrap_or(map);
++            Value::Object(
++                fields
++                    .iter()
++                    .map(|(k, v)| (k.clone(), from_json(v)))
++                    .collect::<BTreeMap<_, _>>(),
++            )
++        }
++    }
++}
++
++/// `ExternalInterface.call` from the movie goes to Skua as an event (Skua never returns a
++/// value to the movie, the same as with the Flash control).
++pub struct SkuaExternalInterfaceProvider {
++    pub spoof_url: Option<Url>,
++}
++
++impl ExternalInterfaceProvider for SkuaExternalInterfaceProvider {
++    fn call_method(&self, _context: &mut UpdateContext<'_>, name: &str, args: &[Value]) -> Value {
++        // Like the desktop provider: answer "where am I" questions locally.
++        if let Some(url) = &self.spoof_url {
++            let asks_location = |code: &str| {
++                matches!(
++                    code,
++                    "document.location.href" | "window.location.href" | "top.location.href"
++                )
++            };
++            if name.strip_suffix(".toString").is_some_and(asks_location)
++                || (name == "eval"
++                    && matches!(args, [Value::String(code)] if asks_location(code)))
++            {
++                return Value::String(url.to_string());
++            }
++        }
++        send(json!({
++            "t": "ev",
++            "n": name,
++            "a": args.iter().map(to_json).collect::<Vec<_>>(),
++        }));
++        Value::Undefined
++    }
++
++    fn on_callback_available(&self, name: &str) {
++        send(json!({ "t": "cb", "n": name }));
++    }
++
++    fn get_id(&self) -> Option<String> {
++        None
++    }
++}
++
++/// Gives keyboard focus to the game window when it's clicked inside Skua's panel (a child
++/// window doesn't get it on its own).
++#[cfg(windows)]
++pub fn focus(hwnd: isize) {
++    // SAFETY: a plain Win32 call on our own window handle.
++    unsafe {
++        windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(hwnd as _);
++    }
++}
++
++#[cfg(not(windows))]
++pub fn focus(_hwnd: isize) {}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn values_round_trip() {
++        let value = Value::List(vec![
++            Value::Undefined,
++            Value::Null,
++            Value::Bool(true),
++            Value::Number(1.5),
++            Value::Number(f64::INFINITY),
++            Value::String("a & <b>".into()),
++            Value::Object(BTreeMap::from([("k".to_string(), Value::Number(3.0))])),
++        ]);
++        let back = from_json(&to_json(&value));
++        assert_eq!(format!("{back:?}"), format!("{value:?}"));
++    }
++
++    #[test]
++    fn args_are_taken() {
++        let mut args: Vec<OsString> = ["ruffle", "--skua-pipe", "p1", "--skua-parent=0x1F", "--skua-movie", "C:\\s.swf", "--width", "5"]
++            .into_iter()
++            .map(OsString::from)
++            .collect();
++        let movie = take_args(&mut args);
++        assert_eq!(movie, Some(OsString::from("C:\\s.swf")));
++        assert_eq!(args, ["ruffle", "--width", "5"].map(OsString::from).to_vec());
++        assert_eq!(parent(), Some(0x1F));
++    }
++}
+diff --git a/desktop/src/windows.rs b/desktop/src/windows.rs
+index 2db65b443..35b573ea8 100644
+--- a/desktop/src/windows.rs
++++ b/desktop/src/windows.rs
+@@ -132,7 +132,7 @@ unsafe extern "system" fn crash_filter(
+         },
+     );
+     let vulkan_starting = crate::mugetsu::vulkan_starting();
+-    tracing::error!(
++    let details = format!(
+         "fatal native crash: exception 0x{code:08X} in {} at offset 0x{:X} (Vulkan starting: \
+         {vulkan_starting})\n{}",
+         module
+@@ -141,8 +141,13 @@ unsafe extern "system" fn crash_filter(
+         module.as_ref().map_or(0, |m| m.offset),
+         std::backtrace::Backtrace::force_capture()
+     );
++    tracing::error!("{details}");
+ 
+-    if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {
++    if crate::skua::enabled() {
++        // Skua mode: no dialog (it waits for a click while the account sits dead). Save the
++        // details and end; VibeSkuffle starts a new player and logs back in.
++        crate::skua::write_crash(&details);
++    } else if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {
+         message_box(
+             "Mugetsu can't run on this PC: it needs a processor with AVX2 (Intel Core 4th \
+             generation from 2013 or newer, AMD Ryzen or newer). Some budget Celeron and Pentium \
+diff --git a/frontend-utils/src/backends/navigator.rs b/frontend-utils/src/backends/navigator.rs
+index 798dfe58e..5fae11e31 100644
+--- a/frontend-utils/src/backends/navigator.rs
++++ b/frontend-utils/src/backends/navigator.rs
+@@ -81,7 +81,13 @@ impl<F: FutureSpawner<Error>, I: NavigatorInterface> ExternalNavigatorBackend<F,
+         content: Rc<PlayingContent>,
+         interface: I,
+     ) -> Self {
++        // Skua: a request the server never answers (e.g. AQW's login API while it's struggling) would
++        // otherwise hang forever and leave the game on "Authenticating Account Info...". Fail it
++        // instead, so the game shows its error and can be retried, like Flash and browsers do.
++        // read_timeout is per read, so big downloads that keep receiving data are not affected.
+         let mut builder = reqwest::ClientBuilder::new()
++            .connect_timeout(Duration::from_secs(15))
++            .read_timeout(Duration::from_secs(30))
+             .cookie_store(true)
+             .user_agent(concat!(
+                 "Ruffle/",
+diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
+index 31f97db4c..266de1fea 100644
+--- a/render/wgpu/src/backend.rs
++++ b/render/wgpu/src/backend.rs
+@@ -1886,7 +1886,19 @@ async fn request_device(
+             // come and go all the time in AQW (layers, cached bitmaps, filters) and left the big
+             // blocks mostly empty: 6-10 GB reserved for ~2 GB used after a session.
+             // `RUFFLE_GPU_MEMORY_HINTS=performance` restores the old block sizes.
+-            memory_hints: if std::env::var("RUFFLE_GPU_MEMORY_HINTS")
++            // Skua build: `RUFFLE_GPU_BLOCK_MB=<min>-<max>` (e.g. 4-16) sets the block sizes, to
++            // measure whether smaller blocks save memory without costing smoothness.
++            memory_hints: if let Some((min, max)) = std::env::var("RUFFLE_GPU_BLOCK_MB")
++                .ok()
++                .and_then(|v| {
++                    let (a, b) = v.split_once('-')?;
++                    Some((a.trim().parse::<u64>().ok()?, b.trim().parse::<u64>().ok()?))
++                })
++            {
++                wgpu::MemoryHints::Manual {
++                    suballocated_device_memory_block_size: (min << 20)..(max << 20),
++                }
++            } else if std::env::var("RUFFLE_GPU_MEMORY_HINTS")
+                 .is_ok_and(|v| v.eq_ignore_ascii_case("performance"))
+             {
+                 wgpu::MemoryHints::Performance

@@ -1,0 +1,8 @@
+# Downloaded and built by the scripts
+VibeSkua/
+mugetsu/
+out/
+logs/
+release/
+
+*.zip

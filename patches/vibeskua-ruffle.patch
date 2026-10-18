@@ -1,0 +1,3287 @@
+diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
+index 1211499..d72addc 100644
+--- a/Skua.App.Avalonia/App.axaml.cs
++++ b/Skua.App.Avalonia/App.axaml.cs
+@@ -88,7 +88,10 @@ public partial class App : Application
+         services.AddSingleton(HotKeys.CreateHotKeys);
+         services.AddSingleton<IHotKeyService, HotKeyService>();
+         services.AddSingleton<ISoundService, SoundService>();
+-        services.AddSingleton<IFlashUtil, FlashUtil>();
++        if (FlashBackend.UseRuffle)
++            services.AddSingleton<IFlashUtil, RuffleFlashUtil>();
++        else
++            services.AddSingleton<IFlashUtil, FlashUtil>();
+         services.AddSingleton<IScreenshotService, ScreenshotService>();
+         services.AddSingleton<SkuaStartupHandler>();
+         Skua.App.Avalonia.AppStartup.Services.AddSkuaMainAppViewModels(services);
+@@ -206,15 +209,21 @@ public partial class App : Application
+                         try
+                         {
+                             var parentProcess = System.Diagnostics.Process.GetProcessById(hostPid);
++                            _hostProcess = parentProcess;
++                            AppDomain.CurrentDomain.ProcessExit += (_, _) => Services.HostCrashRecovery.Trace("process exit");
++                            Services.HostCrashRecovery.Trace($"watching tab host {hostPid}");
+                             parentProcess.EnableRaisingEvents = true;
+                             parentProcess.Exited += (_, _) =>
+                             {
++                                // If the host crashed, start this account again before going down with it.
++                                Services.HostCrashRecovery.OnHostGone(parentProcess);
+                                 try { System.Diagnostics.Process.GetCurrentProcess().Kill(); } catch { }
+                             };
+                             while (!parentProcess.HasExited)
+                             {
+                                 await Task.Delay(1000);
+                             }
++                            Services.HostCrashRecovery.OnHostGone(parentProcess);
+                         }
+                         catch { }
+                         try { System.Diagnostics.Process.GetCurrentProcess().Kill(); } catch { }
+@@ -226,7 +235,7 @@ public partial class App : Application
+                 string[] clientArgs = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Skip(args, 1));
+                 string payload = System.Text.Json.JsonSerializer.Serialize(clientArgs);
+                 bool createdNew;
+-                AppMutex = new System.Threading.Mutex(true, "VibeSkuaTabHostMutex", out createdNew);
++                AppMutex = new System.Threading.Mutex(true, FlashBackend.TabHostMutexName, out createdNew);
+ 
+                 if (!createdNew)
+                 {
+@@ -235,7 +244,7 @@ public partial class App : Application
+                     {
+                         try
+                         {
+-                            using System.IO.Pipes.NamedPipeClientStream pipeClient = new(".", "VibeSkuaTabHostPipe", System.IO.Pipes.PipeDirection.Out, System.IO.Pipes.PipeOptions.None);
++                            using System.IO.Pipes.NamedPipeClientStream pipeClient = new(".", FlashBackend.TabHostPipeName, System.IO.Pipes.PipeDirection.Out, System.IO.Pipes.PipeOptions.None);
+                             pipeClient.Connect(1000);
+                             using System.IO.StreamWriter sw = new(pipeClient);
+                             sw.WriteLine(payload);
+@@ -260,7 +269,7 @@ public partial class App : Application
+                     try
+                     {
+                         AppMutex?.Dispose();
+-                        AppMutex = new System.Threading.Mutex(true, "VibeSkuaTabHostMutex");
++                        AppMutex = new System.Threading.Mutex(true, FlashBackend.TabHostMutexName);
+                     }
+                     catch { }
+                 }
+@@ -281,6 +290,8 @@ public partial class App : Application
+         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+         {
+             Exception ex = e.ExceptionObject as Exception ?? new Exception("Unknown unhandled exception.");
++            if (_hostProcess is not null)
++                Services.HostCrashRecovery.Trace($"unhandled exception: {ex.GetType().Name}: {ex.Message}");
+             ShowUnhandledException("AppDomain.CurrentDomain.UnhandledException", ex);
+         };
+ 
+@@ -350,8 +361,20 @@ public partial class App : Application
+         }
+     }
+ 
++    // The tab host this client is docked in (clients only).
++    private static System.Diagnostics.Process? _hostProcess;
++
+     private static void OnDesktopExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
+     {
++        // A client whose window went away because its host crashed: start this account again first.
++        try
++        {
++            if (_hostProcess is not null)
++                Services.HostCrashRecovery.Trace($"desktop exit, host exited: {_hostProcess.HasExited}");
++            if (_hostProcess is { } host && host.HasExited)
++                Services.HostCrashRecovery.OnHostGone(host);
++        }
++        catch { }
+         DisposeTrayIcon();
+         try
+         {
+diff --git a/Skua.App.Avalonia/Flash/FlashBackend.cs b/Skua.App.Avalonia/Flash/FlashBackend.cs
+new file mode 100644
+index 0000000..1fbecc5
+--- /dev/null
++++ b/Skua.App.Avalonia/Flash/FlashBackend.cs
+@@ -0,0 +1,35 @@
++using System;
++using System.IO;
++using System.Linq;
++
++namespace Skua.App.Avalonia.Flash;
++
++/// <summary>
++/// Picks the game player: the Flash ActiveX control (default) or Ruffle.
++/// Ruffle is used when Skua is started with <c>--ruffle</c>, or when a file named <c>use-ruffle</c>
++/// (or <c>use-ruffle.txt</c>) sits next to Skua's exe; <c>--flash</c> forces Flash.
++/// </summary>
++public static class FlashBackend
++{
++    private static readonly Lazy<bool> _useRuffle = new(() =>
++    {
++        string[] args = Environment.GetCommandLineArgs();
++        if (args.Any(a => a.Equals("--flash", StringComparison.OrdinalIgnoreCase)))
++            return false;
++        if (args.Any(a => a.Equals("--ruffle", StringComparison.OrdinalIgnoreCase)))
++            return true;
++        string dir = AppContext.BaseDirectory;
++        return File.Exists(Path.Combine(dir, "use-ruffle")) || File.Exists(Path.Combine(dir, "use-ruffle.txt"));
++    });
++
++    public static bool UseRuffle => OperatingSystem.IsWindows() && _useRuffle.Value;
++
++    /// <summary>
++    /// Name of the tab host's mutex and pipe. The Ruffle build uses its own, so it runs next to a normal
++    /// (Flash) VibeSkua instead of handing its tabs over to it.
++    /// </summary>
++    public static string TabHostMutexName => UseRuffle ? "VibeSkuaRuffleTabHostMutex" : "VibeSkuaTabHostMutex";
++
++    /// <inheritdoc cref="TabHostMutexName"/>
++    public static string TabHostPipeName => UseRuffle ? "VibeSkuaRuffleTabHostPipe" : "VibeSkuaTabHostPipe";
++}
+diff --git a/Skua.App.Avalonia/Flash/RuffleControl.cs b/Skua.App.Avalonia/Flash/RuffleControl.cs
+new file mode 100644
+index 0000000..4d95294
+--- /dev/null
++++ b/Skua.App.Avalonia/Flash/RuffleControl.cs
+@@ -0,0 +1,140 @@
++namespace Skua.App.Avalonia.Flash;
++
++#if IS_WINDOWS
++using System;
++using System.Runtime.InteropServices;
++using WinForms = System.Windows.Forms;
++
++/// <summary>
++/// The panel the Ruffle game window lives in. Ruffle creates its window as a child of this control
++/// (it gets <see cref="WinForms.Control.Handle"/> on its command line); this control keeps it sized
++/// to fill the panel.
++/// </summary>
++public sealed class RuffleControl : WinForms.Control
++{
++    private IntPtr _game;
++    private readonly WinForms.Timer _watch = new() { Interval = 500 };
++    private bool _wasShowing;
++
++    /// <summary>
++    /// Raised when the panel becomes visible again: the window was restored from the taskbar or its tab
++    /// was shown. The game window doesn't always notice that itself, so Ruffle is told to draw again.
++    /// </summary>
++    public event Action? ShownAgain;
++
++    public RuffleControl()
++    {
++        BackColor = System.Drawing.Color.FromArgb(20, 20, 20);
++        SetStyle(WinForms.ControlStyles.Opaque | WinForms.ControlStyles.UserPaint, true);
++        TabStop = true;
++        _watch.Tick += (_, _) => CheckShowing();
++    }
++
++    private void CheckShowing()
++    {
++        if (!IsHandleCreated)
++            return;
++        IntPtr root = GetAncestor(Handle, GA_ROOT);
++        bool showing = IsWindowVisible(Handle) && (root == IntPtr.Zero || !IsIconic(root))
++                       && ClientSize.Width > 1 && ClientSize.Height > 1;
++        if (showing && !_wasShowing)
++        {
++            FitGameWindow();
++            ShownAgain?.Invoke();
++        }
++        _wasShowing = showing;
++    }
++
++    protected override void Dispose(bool disposing)
++    {
++        if (disposing)
++            _watch.Dispose();
++        base.Dispose(disposing);
++    }
++
++    /// <summary>Called (from any thread) once Ruffle reports its window, or with zero when it goes away.</summary>
++    public void SetGameWindow(IntPtr hwnd)
++    {
++        _game = hwnd;
++        if (hwnd == IntPtr.Zero || !IsHandleCreated)
++            return;
++        try
++        {
++            BeginInvoke(new Action(FitGameWindow));
++        }
++        catch (InvalidOperationException)
++        {
++            // Handle went away meanwhile.
++        }
++    }
++
++    protected override void OnHandleCreated(EventArgs e)
++    {
++        base.OnHandleCreated(e);
++        FitGameWindow();
++        _watch.Start();
++    }
++
++    protected override void OnResize(EventArgs e)
++    {
++        base.OnResize(e);
++        FitGameWindow();
++    }
++
++    protected override void OnGotFocus(EventArgs e)
++    {
++        base.OnGotFocus(e);
++        // Pass keyboard focus on to the game.
++        if (_game != IntPtr.Zero && IsWindow(_game))
++            SetFocus(_game);
++    }
++
++    private void FitGameWindow()
++    {
++        IntPtr game = _game;
++        if (game == IntPtr.Zero || !IsWindow(game))
++            return;
++        // Asynchronous: Ruffle's thread may be busy with a frame; don't block Skua's UI on it.
++        SetWindowPos(game, IntPtr.Zero, 0, 0, Math.Max(1, ClientSize.Width), Math.Max(1, ClientSize.Height),
++            SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | SWP_SHOWWINDOW);
++    }
++
++    protected override void OnPaintBackground(WinForms.PaintEventArgs pevent)
++    {
++        // The game window covers everything; only paint while there is none.
++        if (_game == IntPtr.Zero)
++            base.OnPaintBackground(pevent);
++    }
++
++    protected override void OnPaint(WinForms.PaintEventArgs e)
++    {
++        if (_game == IntPtr.Zero)
++            e.Graphics.Clear(BackColor);
++    }
++
++    private const uint SWP_NOZORDER = 0x0004;
++    private const uint SWP_NOACTIVATE = 0x0010;
++    private const uint SWP_SHOWWINDOW = 0x0040;
++    private const uint SWP_ASYNCWINDOWPOS = 0x4000;
++
++    [DllImport("user32.dll", SetLastError = true)]
++    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
++
++    [DllImport("user32.dll")]
++    private static extern bool IsWindow(IntPtr hWnd);
++
++    [DllImport("user32.dll")]
++    private static extern bool IsWindowVisible(IntPtr hWnd);
++
++    [DllImport("user32.dll")]
++    private static extern bool IsIconic(IntPtr hWnd);
++
++    [DllImport("user32.dll")]
++    private static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
++
++    private const uint GA_ROOT = 2;
++
++    [DllImport("user32.dll")]
++    private static extern IntPtr SetFocus(IntPtr hWnd);
++}
++#endif
+diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
+new file mode 100644
+index 0000000..c7737c8
+--- /dev/null
++++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
+@@ -0,0 +1,919 @@
++using Skua.Core.Interfaces;
++using System;
++using System.Xml.Linq;
++
++namespace Skua.App.Avalonia.Flash;
++
++#if IS_WINDOWS
++using Dispatcher = global::Avalonia.Threading.Dispatcher;
++using CommunityToolkit.Mvvm.Messaging;
++using Newtonsoft.Json;
++using Newtonsoft.Json.Linq;
++using Skua.Core.Flash;
++using Skua.Core.Messaging;
++using Skua.Core.Utils;
++using System.Collections.Concurrent;
++using System.Collections.Generic;
++using System.Diagnostics;
++using System.Dynamic;
++using System.Globalization;
++using System.IO;
++using System.IO.Pipes;
++using System.Linq;
++using System.Runtime.InteropServices;
++using System.Text;
++using System.Threading;
++using System.Threading.Tasks;
++using WinForms = System.Windows.Forms;
++
++/// <summary>
++/// <see cref="IFlashUtil"/> backed by a Ruffle process (Mugetsu build with the Skua bridge) instead of
++/// the Flash ActiveX control. Ruffle draws inside a <see cref="RuffleControl"/> as a child window and
++/// talks to Skua over two named pipes; see <c>skua.rs</c> in the Ruffle patch for the protocol.
++/// </summary>
++/// <remarks>
++/// Behaves like <see cref="FlashUtil"/> towards the rest of Skua: <see cref="Call(string, Type, object[])"/>
++/// blocks until the movie answers, and <see cref="FlashCall"/> is raised on the UI thread, in order.
++/// </remarks>
++public sealed class RuffleFlashUtil : IFlashUtil, IRestartableGamePlayer
++{
++    /// <summary>Longest a call waits for the game before giving up and returning the default value.</summary>
++    private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(20);
++
++    /// <summary>Longest a call made before Ruffle has connected waits for it.</summary>
++    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(30);
++
++
++    private readonly IMessenger _messenger;
++    private readonly Lazy<IScriptManager> _lazyManager;
++
++    private readonly object _writeLock = new();
++    private readonly ConcurrentDictionary<long, PendingCall> _pending = new();
++    private long _nextId;
++
++    private Session? _session;
++    private RuffleControl? _control;
++    private Thread? _uiThread;
++    private bool _headless;
++    private bool _disposed;
++    private DateTime _lastRestart = DateTime.MinValue;
++
++    public event FlashCallHandler? FlashCall;
++
++    public RuffleFlashUtil(IMessenger messenger, Lazy<IScriptManager> manager)
++    {
++        _messenger = messenger;
++        _lazyManager = manager;
++    }
++
++    /// <summary>The Ruffle executable: <c>ruffle\Mugetsu.exe</c> next to Skua, or <c>SKUA_RUFFLE_EXE</c>.</summary>
++    public static string RuffleExePath =>
++        Environment.GetEnvironmentVariable("SKUA_RUFFLE_EXE") is { Length: > 0 } custom
++            ? custom
++            : Path.Combine(AppContext.BaseDirectory, "ruffle", "Mugetsu.exe");
++
++    public void InitializeFlash()
++    {
++        string swfPath = Path.Combine(AppContext.BaseDirectory, "skua.swf");
++        if (!File.Exists(swfPath))
++        {
++            WinForms.MessageBox.Show("Missing skua.swf. Build the AS3 client first.", "Missing game content",
++                WinForms.MessageBoxButtons.OK, WinForms.MessageBoxIcon.Exclamation);
++            Environment.Exit(0);
++            return;
++        }
++
++        string exe = RuffleExePath;
++        if (!File.Exists(exe))
++        {
++            WinForms.MessageBox.Show($"Ruffle mode is on, but the Ruffle player wasn't found at:\r\n{exe}\r\n\r\n" +
++                "Build it with build-ruffle.bat, or delete use-ruffle.txt to go back to Flash.", "Ruffle missing",
++                WinForms.MessageBoxButtons.OK, WinForms.MessageBoxIcon.Exclamation);
++            Environment.Exit(0);
++            return;
++        }
++
++        _uiThread = Thread.CurrentThread;
++        StopSession();
++
++        if (_control is null || _control.IsDisposed)
++        {
++            _control = new RuffleControl { Name = "ruffle", Dock = WinForms.DockStyle.Fill, TabIndex = 0 };
++            _control.ShownAgain += () =>
++            {
++                if (_session is { } current && current.Connected.IsSet)
++                    Send(current, new JObject { ["t"] = "refresh" });
++            };
++            // MainWindow puts the control into its game panel.
++            _messenger.Send<FlashChangedMessage<WinForms.Control>>(new(_control));
++        }
++
++        IntPtr parent = _control.Handle;
++        string pipeName = $"skua-ruffle-{Environment.ProcessId}-{Interlocked.Increment(ref _sessionCounter)}";
++
++        var session = new Session(pipeName);
++        _session = session;
++
++        var startInfo = new ProcessStartInfo(exe)
++        {
++            UseShellExecute = false,
++            WorkingDirectory = Path.GetDirectoryName(exe)!,
++        };
++        startInfo.ArgumentList.Add("--skua-pipe");
++        startInfo.ArgumentList.Add(pipeName);
++        startInfo.ArgumentList.Add("--skua-movie");
++        startInfo.ArgumentList.Add(swfPath);
++        startInfo.ArgumentList.Add("--skua-parent");
++        startInfo.ArgumentList.Add(parent.ToInt64().ToString(CultureInfo.InvariantCulture));
++        ApplyRuffleOptions(startInfo);
++        // Read again at every start, so editing ruffle-options.txt takes effect with the next restart.
++        _memoryLimitMb = startInfo.Environment.TryGetValue("SKUA_MEMORY_LIMIT_MB", out string? limit)
++            && long.TryParse(limit, out long limitMb) && limitMb > 0 ? limitMb : 6000;
++        StartHealthTimer();
++
++        try
++        {
++            session.Process = Process.Start(startInfo) ?? throw new InvalidOperationException("Process.Start returned null");
++        }
++        catch (Exception ex)
++        {
++            Trace.WriteLine($"Ruffle start error: {ex}");
++            WinForms.MessageBox.Show($"Couldn't start the Ruffle player:\r\n{ex.Message}", "Ruffle",
++                WinForms.MessageBoxButtons.OK, WinForms.MessageBoxIcon.Error);
++            session.Dispose();
++            _session = null;
++            return;
++        }
++
++        session.Process.EnableRaisingEvents = true;
++        session.Process.Exited += (_, _) => OnRuffleExited(session);
++
++        var thread = new Thread(() => RunSession(session)) { IsBackground = true, Name = "Ruffle pipe reader" };
++        thread.Start();
++    }
++
++    private static int _sessionCounter;
++
++    private void RunSession(Session session)
++    {
++        try
++        {
++            Task.WaitAll(new[]
++            {
++                session.ToRuffle.WaitForConnectionAsync(session.Cancel.Token),
++                session.FromRuffle.WaitForConnectionAsync(session.Cancel.Token),
++            });
++            session.Connected.Set();
++            Trace.WriteLine($"Ruffle connected (pipe {session.Name}).");
++
++            byte[] header = new byte[4];
++            while (!session.Cancel.IsCancellationRequested)
++            {
++                if (!ReadExactly(session.FromRuffle, header))
++                    break;
++                int length = BitConverter.ToInt32(header, 0);
++                byte[] body = new byte[length];
++                if (!ReadExactly(session.FromRuffle, body))
++                    break;
++                HandleMessage(session, JObject.Parse(Encoding.UTF8.GetString(body)));
++            }
++        }
++        catch (Exception ex) when (ex is OperationCanceledException || ex is ObjectDisposedException
++                                   || ex is IOException || (ex is AggregateException ae && ae.InnerExceptions.All(e => e is OperationCanceledException or IOException)))
++        {
++        }
++        catch (Exception ex)
++        {
++            Trace.WriteLine($"Ruffle pipe error: {ex}");
++        }
++        finally
++        {
++            FailPending(session);
++        }
++    }
++
++    private static bool ReadExactly(Stream stream, byte[] buffer)
++    {
++        int read = 0;
++        while (read < buffer.Length)
++        {
++            int n = stream.Read(buffer, read, buffer.Length - read);
++            if (n <= 0)
++                return false;
++            read += n;
++        }
++        return true;
++    }
++
++    private void HandleMessage(Session session, JObject message)
++    {
++        switch ((string?)message["t"])
++        {
++            case "ret":
++                long id = (long)message["id"]!;
++                if (_pending.TryRemove(id, out PendingCall? call))
++                {
++                    call.Result = message["v"];
++                    call.Done.Set();
++                }
++                break;
++
++            case "ev":
++                string name = (string?)message["n"] ?? string.Empty;
++                // Same shape FlashUtil produced: its CallHandler turned the whole <arguments> element
++                // into one string (all the text inside it, run together), and Skua's handlers rely on
++                // that, e.g. "pext" reads args[0] as the packet's JSON.
++                var text = new StringBuilder();
++                if (message["a"] is JArray rawArgs)
++                    foreach (JToken arg in rawArgs)
++                        AppendFlashText(arg, text);
++                RaiseFlashCall(name, new object[] { text.ToString() });
++                break;
++
++            case "hello":
++                long hwnd = message["hwnd"]?.Type == JTokenType.Integer ? (long)message["hwnd"]! : 0;
++                if (hwnd != 0)
++                    _control?.SetGameWindow(new IntPtr(hwnd));
++                if (_headless)
++                    SendHeadless(session, true);
++                break;
++
++            case "cb":
++                break;
++        }
++    }
++
++    private void RaiseFlashCall(string name, object[] args)
++    {
++        // Flash raised these on the UI thread, and the handlers expect that.
++        Dispatcher.UIThread.Post(() =>
++        {
++            try
++            {
++                FlashCall?.Invoke(name, args);
++            }
++            catch (Exception ex)
++            {
++                Trace.WriteLine($"Flash CallHandler exception: {ex.Message}");
++            }
++        });
++    }
++
++    private void OnRuffleExited(Session session)
++    {
++        if (!ReferenceEquals(_session, session) || _disposed)
++            return;
++
++        int code = -1;
++        try { code = session.Process!.ExitCode; } catch { /* ignored */ }
++        Trace.WriteLine($"Ruffle exited unexpectedly (code {code}).");
++        session.Cancel.Cancel();
++        FailPending(session);
++
++        // Always start a new player (the login watchdog then logs back in), but wait a little when
++        // it keeps crashing, so a crash loop doesn't hammer the PC or AQW.
++        TimeSpan delay = DateTime.UtcNow - _lastRestart < TimeSpan.FromMinutes(2) ? TimeSpan.FromSeconds(30) : TimeSpan.Zero;
++        _lastRestart = DateTime.UtcNow + delay;
++        _ = Task.Delay(delay).ContinueWith(_ => Dispatcher.UIThread.Post(() =>
++        {
++            if (!_disposed && ReferenceEquals(_session, session))
++                InitializeFlash();
++        }));
++    }
++
++    // ---- Health check (week-long runs) ----------------------------------------------------------------
++    // Every 30 s: a quick call to the game. Three unanswered in a row (about a minute and a half
++    // frozen) and the game window is restarted; the login watchdog then logs back in and restarts the
++    // script. Also a memory safety net: past SKUA_MEMORY_LIMIT_MB (ruffle-options.txt, default 6000)
++    // the window is restarted once the account is out of combat (or after 10 minutes regardless).
++
++    private System.Threading.Timer? _healthTimer;
++    private int _healthBusy;
++    private int _missedBeats;
++    private DateTime _overLimitSince = DateTime.MinValue;
++    private DateTime _lastMemoryRestart = DateTime.MinValue;
++    private bool _loggedTooSoon;
++    private static long _memoryLimitMb = 6000;
++
++    private void StartHealthTimer()
++    {
++        _healthTimer ??= new System.Threading.Timer(_ => HealthTick(), null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(30));
++    }
++
++    private void HealthTick()
++    {
++        if (_disposed || Interlocked.Exchange(ref _healthBusy, 1) == 1)
++            return;
++        try
++        {
++            Session? session = _session;
++            if (session is null || !session.Connected.IsSet || session.Process is not { } process || process.HasExited)
++                return;
++
++            if (Ping(session, TimeSpan.FromSeconds(15)))
++            {
++                _missedBeats = 0;
++            }
++            else if (++_missedBeats >= 3)
++            {
++                _missedBeats = 0;
++                HealthLog(" the game window stopped answering (frozen for over a minute); restarting it.");
++                KillPlayer(session);
++                return;
++            }
++
++            process.Refresh();
++            long committedMb = process.PrivateMemorySize64 >> 20;
++            if (committedMb <= _memoryLimitMb)
++            {
++                _overLimitSince = DateTime.MinValue;
++                return;
++            }
++            if (_overLimitSince == DateTime.MinValue)
++                _overLimitSince = DateTime.UtcNow;
++            bool inCombat = false;
++            try { inCombat = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<IScriptPlayer>()?.InCombat ?? false; } catch { }
++            // A limit set lower than the game needs would restart it over and over: at most once per 30 minutes.
++            if (DateTime.UtcNow - _lastMemoryRestart < TimeSpan.FromMinutes(30))
++            {
++                if (!_loggedTooSoon)
++                    HealthLog($" the game window uses {committedMb} MB (limit {_memoryLimitMb} MB), but it was restarted for memory less than 30 minutes ago; waiting. If this keeps happening, raise SKUA_MEMORY_LIMIT_MB.");
++                _loggedTooSoon = true;
++                return;
++            }
++            if (!inCombat || DateTime.UtcNow - _overLimitSince > TimeSpan.FromMinutes(10))
++            {
++                _overLimitSince = DateTime.MinValue;
++                _lastMemoryRestart = DateTime.UtcNow;
++                _loggedTooSoon = false;
++                HealthLog($" the game window uses {committedMb} MB (limit {_memoryLimitMb} MB); restarting it.");
++                KillPlayer(session);
++            }
++        }
++        catch (Exception ex)
++        {
++            Trace.WriteLine($"Ruffle health check: {ex.Message}");
++        }
++        finally
++        {
++            _healthBusy = 0;
++        }
++    }
++
++    /// <summary>A call with its own timeout: true if the game answered at all.</summary>
++    private bool Ping(Session session, TimeSpan timeout)
++    {
++        long id = Interlocked.Increment(ref _nextId);
++        var call = new PendingCall(session);
++        _pending[id] = call;
++        var request = new JObject { ["t"] = "call", ["id"] = id, ["n"] = "isTrue", ["a"] = new JArray() };
++        bool answered = Send(session, request) && call.Done.Wait(timeout);
++        _pending.TryRemove(id, out _);
++        return answered;
++    }
++
++    /// <summary>Ends the player; <see cref="OnRuffleExited"/> starts a new one as after a crash.</summary>
++    private static void KillPlayer(Session session)
++    {
++        try { session.Process?.Kill(true); } catch { }
++    }
++
++    private static readonly object HealthLogLock = new();
++
++    /// <summary>Same file and format as the login watchdog's log.</summary>
++    private static void HealthLog(string message)
++    {
++        Trace.WriteLine("Health check:" + message);
++        try
++        {
++            string path = Path.Combine(AppContext.BaseDirectory, "login-watchdog.log");
++            string who = "?";
++            try { who = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<IScriptServers>()?.CachedUsername ?? "?"; } catch { }
++            lock (HealthLogLock)
++                File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{who}]{message}{Environment.NewLine}");
++        }
++        catch { }
++    }
++
++    public void RestartGamePlayer()
++    {
++        Dispatcher.UIThread.Post(() =>
++        {
++            if (_disposed)
++                return;
++            Trace.WriteLine("Restarting the Ruffle player (login watchdog).");
++            InitializeFlash();
++        });
++    }
++
++    public string Call(string function, params object[] args)
++    {
++        return Call<string>(function, args);
++    }
++
++    public T Call<T>(string function, params object[] args)
++    {
++        try
++        {
++            object? o = Call(function, typeof(T), args);
++            return o is T value ? value : GetDefaultValue<T>();
++        }
++        catch
++        {
++            return GetDefaultValue<T>();
++        }
++    }
++
++    private static T GetDefaultValue<T>()
++    {
++        object? defaultValue = DefaultProvider.GetDefault<T>(typeof(T));
++        return defaultValue is T typed ? typed : default!;
++    }
++
++    public object Call(string function, Type type, params object[] args)
++    {
++        if (_lazyManager.Value.ShouldExit && Thread.CurrentThread.Name == "Script Thread")
++            _lazyManager.Value.ScriptCts?.Token.ThrowIfCancellationRequested();
++
++        try
++        {
++            Session? session = _session;
++            if (session is null)
++                return default!;
++
++            if (!session.Connected.IsSet && !Wait(session.Connected.WaitHandle, ConnectTimeout))
++                return default!;
++
++            long id = Interlocked.Increment(ref _nextId);
++            var call = new PendingCall(session);
++            _pending[id] = call;
++
++            var request = new JObject
++            {
++                ["t"] = "call",
++                ["id"] = id,
++                ["n"] = function,
++                ["a"] = new JArray(args.Select(ToJson)),
++            };
++            if (!Send(session, request))
++            {
++                _pending.TryRemove(id, out _);
++                return default!;
++            }
++
++            if (!Wait(call.Done.WaitHandle, CallTimeout))
++            {
++                _pending.TryRemove(id, out _);
++                Trace.WriteLine($"Ruffle call '{function}' timed out.");
++                return default!;
++            }
++
++            string? text = ReturnText(call.Result);
++            if (text is null)
++                return default!;
++
++            object? value = Convert.ChangeType(text, type);
++            return value ?? default!;
++        }
++        catch (Exception e)
++        {
++            if (function != "isKicked")
++                _messenger.Send<FlashErrorMessage>(new(e, function, args));
++            return default!;
++        }
++    }
++
++    /// <summary>Turns drawing off (the game keeps running) or back on.</summary>
++    public void SetHeadless(bool on)
++    {
++        _headless = on;
++        if (_session is { } session && session.Connected.IsSet)
++            SendHeadless(session, on);
++    }
++
++    private void SendHeadless(Session session, bool on)
++    {
++        Send(session, new JObject { ["t"] = "headless", ["on"] = on });
++    }
++
++    /// <summary>
++    /// Asks the game player to free memory it isn't using right now (shapes not drawn for a while,
++    /// spare textures, memory its allocator keeps for reuse). For accounts in background tabs.
++    /// </summary>
++    public void TrimGameMemory()
++    {
++        if (_session is not { } session || !session.Connected.IsSet)
++            return;
++        Send(session, new JObject { ["t"] = "trim" });
++        // Then hand the memory the game isn't touching back to Windows (it comes back on its own
++        // when needed). Measured with 6 idle accounts: ~5.4 GB -> ~1.8 GB, no stutter.
++        _ = Task.Delay(3000).ContinueWith(_ =>
++        {
++            try
++            {
++                if (ReferenceEquals(_session, session) && session.Process is { HasExited: false } p)
++                    EmptyWorkingSet(p.Handle);
++            }
++            catch { /* the player went away meanwhile */ }
++        });
++    }
++
++    [DllImport("psapi.dll")]
++    private static extern bool EmptyWorkingSet(IntPtr hProcess);
++
++    /// <summary>
++    /// Extra options for the game player from <c>ruffle-options.txt</c> next to VibeSkuffle.exe:
++    /// lines starting with "-" are command-line options (e.g. <c>--graphics dx12</c>), lines with
++    /// "=" are environment variables (e.g. <c>RUFFLE_GPU_BLOCK_MB=4-16</c>); "#" starts a comment.
++    /// </summary>
++    /// <summary>The account this client logs in with (-u / --user), lower case, or "".</summary>
++    private static string ThisAccount()
++    {
++        string[] args = Environment.GetCommandLineArgs();
++        for (int i = 0; i + 1 < args.Length; i++)
++            if (args[i] is "-u" or "--user")
++                return args[i + 1].Trim().ToLowerInvariant();
++        return "";
++    }
++
++    private static void ApplyRuffleOptions(ProcessStartInfo startInfo)
++    {
++        string path = Path.Combine(AppContext.BaseDirectory, "ruffle-options.txt");
++        if (!File.Exists(path))
++            return;
++        try
++        {
++            foreach (string raw in File.ReadAllLines(path))
++            {
++                string line = raw.Trim();
++                if (line.Length == 0 || line.StartsWith('#'))
++                    continue;
++                // "name: ..." applies to that account only, e.g. "myalt: SKUA_MEMORY_LIMIT_MB=8000".
++                int colon = line.IndexOf(':');
++                int equals = line.IndexOf('=');
++                if (!line.StartsWith('-') && colon > 0 && (equals < 0 || colon < equals))
++                {
++                    if (!line[..colon].Trim().Equals(ThisAccount(), StringComparison.OrdinalIgnoreCase))
++                        continue;
++                    line = line[(colon + 1)..].Trim();
++                    if (line.Length == 0)
++                        continue;
++                }
++                if (line.StartsWith('-'))
++                {
++                    foreach (string part in line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
++                        startInfo.ArgumentList.Add(part);
++                }
++                else if (line.IndexOf('=') is > 0 and int eq)
++                {
++                    startInfo.Environment[line[..eq].Trim()] = line[(eq + 1)..].Trim();
++                }
++            }
++        }
++        catch (Exception ex)
++        {
++            Trace.WriteLine($"ruffle-options.txt: {ex.Message}");
++        }
++    }
++
++    private bool Send(Session session, JObject message)
++    {
++        byte[] body = Encoding.UTF8.GetBytes(message.ToString(Formatting.None));
++        try
++        {
++            lock (_writeLock)
++            {
++                session.ToRuffle.Write(BitConverter.GetBytes(body.Length), 0, 4);
++                session.ToRuffle.Write(body, 0, body.Length);
++                session.ToRuffle.Flush();
++            }
++            return true;
++        }
++        catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException)
++        {
++            return false;
++        }
++    }
++
++    /// <summary>
++    /// Waits for <paramref name="handle"/>. On the UI thread it keeps handling messages Windows sends
++    /// synchronously (the game window is a child of Skua's window and lives in another process, so
++    /// both sides send each other messages); posted messages stay queued, so no UI code re-enters.
++    /// </summary>
++    private bool Wait(WaitHandle handle, TimeSpan timeout)
++    {
++        if (Thread.CurrentThread != _uiThread)
++            return handle.WaitOne(timeout);
++
++        long deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
++        IntPtr[] handles = { handle.SafeWaitHandle.DangerousGetHandle() };
++        while (true)
++        {
++            long left = deadline - Environment.TickCount64;
++            if (left <= 0)
++                return handle.WaitOne(0);
++            uint result = MsgWaitForMultipleObjectsEx(1, handles, (uint)left, QS_SENDMESSAGE, MWMO_INPUTAVAILABLE);
++            if (result == WAIT_OBJECT_0)
++                return true;
++            if (result == WAIT_OBJECT_0 + 1)
++                PeekMessage(out _, IntPtr.Zero, 0, 0, PM_NOREMOVE | PM_QS_SENDMESSAGE);
++            else if (result == WAIT_TIMEOUT)
++                return handle.WaitOne(0);
++            else
++                return handle.WaitOne(timeout); // WAIT_FAILED: plain wait
++        }
++    }
++
++    private void FailPending(Session session)
++    {
++        foreach (var (id, call) in _pending)
++        {
++            if (ReferenceEquals(call.Session, session) && _pending.TryRemove(id, out _))
++                call.Done.Set();
++        }
++    }
++
++    private void StopSession()
++    {
++        Session? old = _session;
++        _session = null;
++        if (old is null)
++            return;
++        try
++        {
++            if (old.Connected.IsSet)
++                Send(old, new JObject { ["t"] = "quit" });
++        }
++        catch { /* ignored */ }
++        old.Cancel.Cancel();
++        FailPending(old);
++        try
++        {
++            if (old.Process is { HasExited: false } p && !p.WaitForExit(1500))
++                p.Kill(true);
++        }
++        catch { /* ignored */ }
++        old.Dispose();
++        _control?.SetGameWindow(IntPtr.Zero);
++    }
++
++    // ---- Value conversion (mirrors FlashUtil's XML conversion) ------------------------------------
++
++    /// <summary>Same mapping as <see cref="FlashUtil.ToFlashXml(object)"/>.</summary>
++    private static JToken ToJson(object? o)
++    {
++        switch (o)
++        {
++            case null:
++                return JValue.CreateNull();
++            case bool b:
++                return new JValue(b);
++            case double d:
++                return Number(d);
++            case float f:
++                return Number(f);
++            case long l:
++                return new JValue(l);
++            case int i:
++                return new JValue(i);
++            case ExpandoObject expando:
++                var fields = new JObject();
++                foreach (KeyValuePair<string, object?> kvp in (IDictionary<string, object?>)expando)
++                    fields[kvp.Key] = ToJson(kvp.Value);
++                return new JObject { ["$o"] = fields };
++            case Array array:
++                var list = new JArray();
++                foreach (object? el in array)
++                    list.Add(ToJson(el));
++                return list;
++            default:
++                return new JValue(o.ToString());
++        }
++    }
++
++    private static JToken Number(double d)
++    {
++        if (double.IsNaN(d))
++            return new JObject { ["$n"] = "NaN" };
++        if (double.IsInfinity(d))
++            return new JObject { ["$n"] = d > 0 ? "Infinity" : "-Infinity" };
++        return new JValue(d);
++    }
++
++    /// <summary>
++    /// Appends what <c>XElement.Value</c> gives for Flash's XML form of <paramref name="token"/>: the text of
++    /// strings and numbers, nothing for booleans, null and undefined, and the values of arrays and objects.
++    /// </summary>
++    private static void AppendFlashText(JToken token, StringBuilder text)
++    {
++        switch (token.Type)
++        {
++            case JTokenType.String:
++                text.Append(token.Value<string>());
++                break;
++            case JTokenType.Integer:
++                text.Append(token.Value<long>().ToString(CultureInfo.InvariantCulture));
++                break;
++            case JTokenType.Float:
++                double d = token.Value<double>();
++                text.Append(d == Math.Floor(d) && Math.Abs(d) < 1e15
++                    ? ((long)d).ToString(CultureInfo.InvariantCulture)
++                    : d.ToString("R", CultureInfo.InvariantCulture));
++                break;
++            case JTokenType.Array:
++                foreach (JToken item in token)
++                    AppendFlashText(item, text);
++                break;
++            case JTokenType.Object:
++                var obj = (JObject)token;
++                if (obj["$n"] is JValue special)
++                    text.Append((string?)special);
++                else if (!obj.ContainsKey("$u"))
++                    foreach (var (_, value) in (obj["$o"] as JObject) ?? obj)
++                        if (value is not null)
++                            AppendFlashText(value, text);
++                break;
++        }
++    }
++
++    /// <summary>Same mapping as <see cref="FlashUtil.FromFlashXml(XElement)"/>.</summary>
++    private static object FromJson(JToken token)
++    {
++        switch (token.Type)
++        {
++            case JTokenType.Integer:
++            case JTokenType.Float:
++                double d = token.Value<double>();
++                if (d == Math.Floor(d) && d >= int.MinValue && d <= int.MaxValue)
++                    return (int)d;
++                return (float)d;
++            case JTokenType.Boolean:
++                return token.Value<bool>();
++            case JTokenType.Null:
++                return null!;
++            case JTokenType.String:
++                return token.Value<string>()!;
++            case JTokenType.Array:
++                return token.Select(FromJson).ToArray();
++            case JTokenType.Object:
++                var obj = (JObject)token;
++                if (obj.ContainsKey("$u"))
++                    return string.Empty; // Flash's <undefined/> became "" as well.
++                if (obj["$n"] is JValue special)
++                    return (string?)special switch { "Infinity" => float.PositiveInfinity, "-Infinity" => float.NegativeInfinity, _ => float.NaN };
++                var expando = new ExpandoObject();
++                var dict = (IDictionary<string, object?>)expando;
++                foreach (var (key, value) in (obj["$o"] as JObject) ?? obj)
++                    dict[key] = value is null ? null : FromJson(value);
++                return expando;
++            default:
++                return token.ToString();
++        }
++    }
++
++    /// <summary>
++    /// The text <see cref="FlashUtil"/> would have read from Flash's XML answer (the first node of the
++    /// value element), or <see langword="null"/> where it got none (booleans, null, undefined).
++    /// One difference: strings come back exactly as the game has them, where the XML path returned
++    /// them XML-escaped (an item named "A &amp; B" came back as "A &amp;amp; B").
++    /// </summary>
++    private static string? ReturnText(JToken? token)
++    {
++        if (token is null)
++            return null;
++        switch (token.Type)
++        {
++            case JTokenType.String:
++                string s = token.Value<string>()!;
++                return s.Length == 0 ? null : s;
++            case JTokenType.Integer:
++                return token.Value<long>().ToString(CultureInfo.CurrentCulture);
++            case JTokenType.Float:
++                double d = token.Value<double>();
++                return d == Math.Floor(d) && Math.Abs(d) < 1e15
++                    ? ((long)d).ToString(CultureInfo.CurrentCulture)
++                    : d.ToString("R", CultureInfo.CurrentCulture);
++            case JTokenType.Object when token["$n"] is JValue special:
++                return (string?)special;
++            case JTokenType.Object when token["$u"] is not null:
++                return null;
++            case JTokenType.Array:
++            case JTokenType.Object:
++                return token.ToString(Formatting.None);
++            default:
++                return null;
++        }
++    }
++
++    public object FromFlashXml(XElement el)
++    {
++        switch (el.Name.ToString())
++        {
++            case "number":
++                return int.TryParse(el.Value, out int i) ? i : float.TryParse(el.Value, out float f) ? f : 0;
++            case "true":
++                return true;
++            case "false":
++                return false;
++            case "null":
++                return null!;
++            case "array":
++                return el.Elements().Select(e => FromFlashXml(e)).ToArray();
++            case "object":
++                var d = new ExpandoObject();
++                var dict = (IDictionary<string, object?>)d;
++                foreach (XElement e in el.Elements())
++                    dict[e.Attribute("id")!.Value] = FromFlashXml(e.Elements().First());
++                return d;
++            default:
++                return el.Value;
++        }
++    }
++
++    public IFlashObject<T> CreateFlashObject<T>(string path)
++    {
++        return new FlashObject<T>(Call<int>("lnkCreate", path), this);
++    }
++
++    public void Dispose()
++    {
++        _disposed = true;
++        try { StopSession(); } catch { /* ignored */ }
++    }
++
++    // ---- Plumbing ---------------------------------------------------------------------------
++
++    private sealed class PendingCall
++    {
++        public PendingCall(Session session) => Session = session;
++        public Session Session { get; }
++        public ManualResetEventSlim Done { get; } = new(false);
++        public JToken? Result { get; set; }
++    }
++
++    private sealed class Session : IDisposable
++    {
++        public Session(string name)
++        {
++            Name = name;
++            ToRuffle = new NamedPipeServerStream(name + "-c2r", PipeDirection.Out, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 64 * 1024);
++            FromRuffle = new NamedPipeServerStream(name + "-r2c", PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 64 * 1024, 0);
++        }
++
++        public string Name { get; }
++        public NamedPipeServerStream ToRuffle { get; }
++        public NamedPipeServerStream FromRuffle { get; }
++        public Process? Process { get; set; }
++        public ManualResetEventSlim Connected { get; } = new(false);
++        public CancellationTokenSource Cancel { get; } = new();
++
++        public void Dispose()
++        {
++            try { Cancel.Cancel(); } catch { /* ignored */ }
++            try { ToRuffle.Dispose(); } catch { /* ignored */ }
++            try { FromRuffle.Dispose(); } catch { /* ignored */ }
++            try { Process?.Dispose(); } catch { /* ignored */ }
++        }
++    }
++
++    private const uint QS_SENDMESSAGE = 0x0040;
++    private const uint MWMO_INPUTAVAILABLE = 0x0004;
++    private const uint WAIT_OBJECT_0 = 0;
++    private const uint WAIT_TIMEOUT = 0x102;
++    private const uint PM_NOREMOVE = 0x0000;
++    private const uint PM_QS_SENDMESSAGE = QS_SENDMESSAGE << 16;
++
++    [StructLayout(LayoutKind.Sequential)]
++    private struct MSG
++    {
++        public IntPtr hwnd;
++        public uint message;
++        public IntPtr wParam;
++        public IntPtr lParam;
++        public uint time;
++        public int ptX;
++        public int ptY;
++    }
++
++    [DllImport("user32.dll")]
++    private static extern uint MsgWaitForMultipleObjectsEx(uint nCount, IntPtr[] pHandles, uint dwMilliseconds, uint dwWakeMask, uint dwFlags);
++
++    [DllImport("user32.dll")]
++    private static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
++}
++#else
++public sealed class RuffleFlashUtil : IFlashUtil
++{
++    public event FlashCallHandler? FlashCall;
++    public void Dispose() { }
++    public void InitializeFlash() => throw new PlatformNotSupportedException();
++    public string? Call(string function, params object[] args) => throw new PlatformNotSupportedException();
++    public T? Call<T>(string function, params object[] args) => throw new PlatformNotSupportedException();
++    public object? Call(string function, Type type, params object[] args) => throw new PlatformNotSupportedException();
++    public object FromFlashXml(XElement el) => throw new PlatformNotSupportedException();
++    public IFlashObject<T> CreateFlashObject<T>(string path) => throw new PlatformNotSupportedException();
++    public void SetHeadless(bool on) { }
++
++    public void TrimGameMemory() { }
++}
++#endif
+diff --git a/Skua.App.Avalonia/Services/DialogService.cs b/Skua.App.Avalonia/Services/DialogService.cs
+index 4ff0f7f..6eab1e5 100644
+--- a/Skua.App.Avalonia/Services/DialogService.cs
++++ b/Skua.App.Avalonia/Services/DialogService.cs
+@@ -107,7 +107,7 @@ public class DialogService : IDialogService
+         {
+             OptionContainerViewModel options => ShowOptionContainerDialog(options, string.IsNullOrWhiteSpace(title) || title == nameof(OptionContainerViewModel) ? options.Title : title),
+             IOptionContainerViewModel optionsVm => ShowOptionContainerDialog(optionsVm as OptionContainerViewModel ?? new OptionContainerViewModel(optionsVm.Container), title),
+-            InputDialogViewModel input => ShowInputDialog(input, title),
++            InputDialogViewModel input => ShowInputDialog(input, string.IsNullOrWhiteSpace(title) || title == nameof(InputDialogViewModel) ? input.Title : title),
+             AssignHotKeyDialogViewModel hotKey => ShowAssignHotKeyDialog(hotKey, title),
+             SkillRuleEditorDialogViewModel skillRules => ShowSkillRuleEditorDialog(skillRules, title),
+             MessageBoxDialogViewModel messageBox => ShowMessageBoxInternal(messageBox.Message, messageBox.Title, messageBox.YesAndNo),
+@@ -170,6 +170,12 @@ public class DialogService : IDialogService
+         };
+ 
+         dialog.Content = WrapWithShell(title, content);
++        // Type straight away: put the cursor in the box with the old text selected.
++        dialog.Opened += (_, _) => Dispatcher.UIThread.Post(() =>
++        {
++            input.Focus();
++            input.SelectAll();
++        }, DispatcherPriority.Input);
+         Show(dialog);
+         return result;
+     }
+diff --git a/Skua.App.Avalonia/Services/HostCrashRecovery.cs b/Skua.App.Avalonia/Services/HostCrashRecovery.cs
+new file mode 100644
+index 0000000..715fe20
+--- /dev/null
++++ b/Skua.App.Avalonia/Services/HostCrashRecovery.cs
+@@ -0,0 +1,207 @@
++using System;
++using System.Collections.Generic;
++using System.Diagnostics;
++using System.IO;
++using System.Linq;
++using System.Threading;
++using Skua.App.Avalonia.Flash;
++using Skua.App.Avalonia.Views;
++
++namespace Skua.App.Avalonia.Services;
++
++/// <summary>
++/// When the tab host (the window that holds every account's tab) crashes or is killed, every client in it
++/// goes down with it. Each client then starts itself again with the same login (and the script it had
++/// loaded or running), one at a time: the first one starts a new tab host, the rest join it as tabs.
++/// </summary>
++/// <remarks>
++/// Not when the host was closed on purpose (it leaves a "closing" marker and closes its clients first),
++/// and at most 3 times per account per 30 minutes so a host that keeps crashing can't loop forever.
++/// </remarks>
++public static class HostCrashRecovery
++{
++    // Held for the whole relaunch: the window closing and the host watcher can both get here, and the
++    // second one must wait (the app exits as soon as it returns).
++    private static readonly object Gate = new();
++    private static bool _done;
++    private static string Dir => Path.Combine(Path.GetTempPath(), "VibeSkuaTabs");
++
++    /// <summary>Called by the host when it is being closed on purpose.</summary>
++    public static void MarkHostClosing()
++    {
++        try
++        {
++            Directory.CreateDirectory(Dir);
++            File.WriteAllText(Path.Combine(Dir, $"host-{Environment.ProcessId}.closing"), DateTime.UtcNow.Ticks.ToString());
++            // Tidy up markers from earlier runs.
++            foreach (string old in Directory.GetFiles(Dir, "host-*.closing"))
++                if (DateTime.UtcNow - File.GetLastWriteTimeUtc(old) > TimeSpan.FromDays(1))
++                    try { File.Delete(old); } catch { }
++        }
++        catch { }
++    }
++
++    /// <summary>Called by a client when its host process is gone. Blocks until its relaunch is under way.</summary>
++    public static void OnHostGone(Process host)
++    {
++        Trace($"host {SafeId(host)} gone, checking");
++        lock (Gate)
++        {
++            if (_done)
++                return;
++            _done = true;
++            Relaunch(host);
++        }
++    }
++
++    private static void Relaunch(Process host)
++    {
++        try
++        {
++            int hostPid = host.Id;
++            int code = 0;
++            try { code = host.ExitCode; } catch { }
++            string marker = Path.Combine(Dir, $"host-{hostPid}.closing");
++            Trace($"host exit code {code}, marker {File.Exists(marker)}");
++            if (File.Exists(marker))
++                return; // closed on purpose
++            if (code == 0)
++                return; // a normal exit (Windows shutting down, sign out)
++
++            string[] args = ClientArgs();
++            string account = TabbedHostWindow.AccountKey(args);
++            Trace($"account known: {account.Length > 0}");
++            if (account.Length == 0)
++                return; // no saved login: nothing to log back in with
++            if (!AllowRelaunch(account))
++            {
++                Log(account, " the tab host keeps crashing (3 times in 30 minutes); not starting this account again.");
++                return;
++            }
++
++            args = TabbedHostWindow.WithLastScript(args, Environment.ProcessId);
++            Log(account, $" the tab host closed unexpectedly (exit code {code}); starting this account again.");
++
++            // One client at a time, so only the first starts a new tab host and the others join it.
++            using var turn = new Mutex(false, @"Local\VibeSkuaRuffleHostRecovery");
++            bool owned = false;
++            try
++            {
++                try { owned = turn.WaitOne(TimeSpan.FromMinutes(3)); }
++                catch (AbandonedMutexException) { owned = true; }
++
++                bool hostRunning = HostRunning();
++                Process p = new();
++                p.StartInfo.FileName = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? "";
++                p.StartInfo.UseShellExecute = false;
++                p.StartInfo.WorkingDirectory = AppContext.BaseDirectory;
++                foreach (string arg in args)
++                    p.StartInfo.ArgumentList.Add(arg);
++                p.Start();
++                Trace($"started {p.Id} (host was running: {hostRunning})");
++
++                if (!hostRunning)
++                {
++                    // Wait for the new host to be up (its mutex exists and it listens for tabs).
++                    for (int i = 0; i < 60 && !HostRunning(); i++)
++                        Thread.Sleep(500);
++                    Thread.Sleep(4000);
++                }
++                else
++                {
++                    Thread.Sleep(2500);
++                }
++            }
++            finally
++            {
++                if (owned)
++                    try { turn.ReleaseMutex(); } catch { }
++            }
++        }
++        catch (Exception ex)
++        {
++            try { Log("?", $" couldn't start the account again after the tab host closed: {ex.Message}"); } catch { }
++        }
++    }
++
++    /// <summary>Step-by-step trace for diagnosing recovery (Build\host-recovery.log, kept small).</summary>
++    public static void Trace(string message)
++    {
++        try
++        {
++            string path = Path.Combine(AppContext.BaseDirectory, "host-recovery.log");
++            var info = new FileInfo(path);
++            if (info.Exists && info.Length > 200_000)
++                info.Delete();
++            lock (TraceLock)
++                File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{Environment.ProcessId}] {message}{Environment.NewLine}");
++        }
++        catch { }
++    }
++
++    private static readonly object TraceLock = new();
++
++    private static bool HostRunning()
++    {
++        if (!Mutex.TryOpenExisting(FlashBackend.TabHostMutexName, out Mutex? m))
++            return false;
++        m.Dispose();
++        return true;
++    }
++
++    /// <summary>This client's own arguments without the tab host ones (--embed, --host-pid).</summary>
++    private static string[] ClientArgs()
++    {
++        string[] all = Environment.GetCommandLineArgs();
++        List<string> result = new();
++        for (int i = 1; i < all.Length; i++)
++        {
++            if (all[i] is "--embed" or "--host-pid")
++            {
++                i++;
++                continue;
++            }
++            result.Add(all[i]);
++        }
++        return result.ToArray();
++    }
++
++    private static bool AllowRelaunch(string account)
++    {
++        try
++        {
++            Directory.CreateDirectory(Dir);
++            string file = Path.Combine(Dir, $"host-recovery-{Sanitize(account)}.txt");
++            List<DateTime> times = File.Exists(file)
++                ? File.ReadAllLines(file).Select(l => long.TryParse(l, out long t) ? new DateTime(t, DateTimeKind.Utc) : DateTime.MinValue)
++                    .Where(t => DateTime.UtcNow - t < TimeSpan.FromMinutes(30)).ToList()
++                : new();
++            if (times.Count >= 3)
++                return false;
++            times.Add(DateTime.UtcNow);
++            File.WriteAllLines(file, times.Select(t => t.Ticks.ToString()));
++            return true;
++        }
++        catch
++        {
++            return true;
++        }
++    }
++
++    private static string SafeId(Process p)
++    {
++        try { return p.Id.ToString(); } catch { return "?"; }
++    }
++
++    private static string Sanitize(string s) => new(s.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
++
++    private static void Log(string account, string message)
++    {
++        try
++        {
++            string path = Path.Combine(AppContext.BaseDirectory, "login-watchdog.log");
++            File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{account}] (client){message}{Environment.NewLine}");
++        }
++        catch { }
++    }
++}
+diff --git a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
+index 869268e..aa6f25c 100644
+--- a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
++++ b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
+@@ -68,12 +68,13 @@ public sealed class SkuaStartupHandler : IDisposable
+ 
+     private void LoadGame(string function, params object[] args)
+     {
+-        if (function != "requestLoadGame" || _clientLoadRequested)
++        // The loader asks once each time the player starts. Keep answering: the Ruffle player is started
++        // again after a crash or by the login watchdog, and its loader asks again.
++        if (function != "requestLoadGame")
+             return;
+ 
+         _clientLoadRequested = true;
+         _bot.Flash.Call("loadClient");
+-        _bot.Flash.FlashCall -= LoadGame;
+     }
+ 
+     private void Login(string function, params object[] args)
+@@ -88,9 +89,10 @@ public sealed class SkuaStartupHandler : IDisposable
+         {
+             _bot.Servers.EnsureRelogin(string.IsNullOrWhiteSpace(_options.Server) ? "Twilly" : _options.Server!);
+ 
+-            // Wait for player to be in-game and world to load
++            // Wait for player to be in-game and world to load (up to 5 minutes: after a crash the first
++            // login can need the login watchdog's help)
+             int wait = 0;
+-            while (!_bot.Player.Playing && wait < 80)
++            while (!_bot.Player.Playing && wait < 1200)
+             {
+                 await Task.Delay(250);
+                 wait++;
+diff --git a/Skua.App.Avalonia/Skua.App.Avalonia.csproj b/Skua.App.Avalonia/Skua.App.Avalonia.csproj
+index 20f585f..7d05e4d 100644
+--- a/Skua.App.Avalonia/Skua.App.Avalonia.csproj
++++ b/Skua.App.Avalonia/Skua.App.Avalonia.csproj
+@@ -9,8 +9,8 @@
+         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+         <ApplicationIcon>../Skua.Shared.Avalonia/Assets/SkuaIcon.ico</ApplicationIcon>
+         <ApplicationManifest>app.manifest</ApplicationManifest>
+-        <AssemblyName>VibeSkua</AssemblyName>
+-        <AssemblyTitle>VibeSkua</AssemblyTitle>
++        <AssemblyName>VibeSkuffle</AssemblyName>
++        <AssemblyTitle>VibeSkuffle</AssemblyTitle>
+         <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+     </PropertyGroup>
+ 
+diff --git a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
+index df73fcd..4c76abe 100644
+--- a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
++++ b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
+@@ -10,7 +10,7 @@ namespace Skua.App.Avalonia.ViewModels.MainMenu;
+ public sealed partial class MainViewModel : ObservableObject
+ {
+     [ObservableProperty]
+-    private string _title = "VibeSkua V2.0.2";
++    private string _title = "VibeSkuffle V2.0.2";
+ 
+     public MainMenuViewModel MainMenu { get; }
+ 
+@@ -21,7 +21,7 @@ public sealed partial class MainViewModel : ObservableObject
+     public MainViewModel(MainMenuViewModel mainMenu, IDiscordWebhookService discordWebhookService)
+     {
+         MainMenu = mainMenu;
+-        _title = $"VibeSkua V{ClientFileSources.DisplayVersion}";
++        _title = $"VibeSkuffle V{ClientFileSources.DisplayVersion}";
+         discordWebhookService.Initialize();
+     }
+ 
+diff --git a/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs b/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
+index 1569ff9..c29fec0 100644
+--- a/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
++++ b/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
+@@ -273,11 +273,35 @@ public partial class PacketInterceptorViewModel : BotControlViewModelBase
+         int port = SelectedServer.Port != 0 ? SelectedServer.Port : 5588;
+         _gameProxy.Destination = new IPEndPoint(ip, port);
+         _gameProxy.Start();
+-        _server.Logout();
+-        _server.Login();
+-        _server.ConnectIP("127.0.0.1", port);
+         OnPropertyChanged(nameof(Running));
+-        options.AutoRelogin = relogin;
++        // Log in again and wait for the server list (the new login token) before connecting through the
++        // proxy; connecting right after Login() reuses the old token and the server answers
++        // "Character data could not be retrieved". Done off the UI thread so the game can keep running.
++        Task.Run(async () =>
++        {
++            try
++            {
++                IFlashUtil flash = Ioc.Default.GetRequiredService<IFlashUtil>();
++                _server.LogoutForRelogin();
++                await Task.Delay(2000);
++                _server.Login();
++                DateTime until = DateTime.UtcNow.AddMilliseconds(Math.Max(options.LoginTimeout, 10000));
++                while (DateTime.UtcNow < until)
++                {
++                    if (flash.GetGameObject<bool>("mcLogin.visible", false)
++                        && !flash.IsNull("mcLogin.sl.iList")
++                        && flash.GetGameObject<int>("mcLogin.sl.iList.numChildren", 0) > 0)
++                        break;
++                    await Task.Delay(250);
++                }
++                await Task.Delay(1000);
++                _server.ConnectIP("127.0.0.1", port);
++            }
++            finally
++            {
++                options.AutoRelogin = relogin;
++            }
++        });
+     }
+ 
+     protected override void OnActivated()
+diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
+index 3892328..707d620 100644
+--- a/Skua.App.Avalonia/Views/MainWindow.axaml.cs
++++ b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
+@@ -78,6 +78,72 @@ public partial class MainWindow : Window
+     private int _preThrottleFPS = -1;
+     private string? _preThrottleQuality = null;
+ 
++    // Background tabs run at 2 fps to save CPU, but the login screen can't get through at 2 fps
++    // (the army's "Login All", auto relogin and the login watchdog all stalled on hidden tabs).
++    // So the throttle only applies while the account is in game; while it's logging in the tab runs
++    // at full speed, and the timer below puts the throttle back once it's in.
++    private bool _throttleWanted;
++    private bool _throttleApplied;
++    private DispatcherTimer? _throttleTimer;
++    private DateTime _lastTrim = DateTime.MinValue;
++
++    private int _loginRequestBusy;
++
++    /// <summary>The server ButlerV5's "Log in all" asked for (the file is only trusted for 2 minutes).</summary>
++    private static string? ReadLoginServerFile()
++    {
++        try
++        {
++            string[] lines = System.IO.File.ReadAllLines(Skua.Core.AppStartup.HotKeys.LoginServerFile);
++            if (lines.Length < 2 || !long.TryParse(lines[1].Trim(), out long ticks))
++                return null;
++            if (DateTime.UtcNow - new DateTime(ticks, DateTimeKind.Utc) > TimeSpan.FromMinutes(2))
++                return null;
++            string name = lines[0].Trim();
++            return name.Length == 0 ? null : name;
++        }
++        catch
++        {
++            return null;
++        }
++    }
++
++    private string _lastTabState = "";
++    private DateTime _lastScriptRunning = DateTime.MinValue;
++
++    /// <summary>
++    /// Tells the tab host which script this client has loaded and whether it is running, so it can start
++    /// the client again with that script if the client crashes (%TEMP%\VibeSkuaTabs\{pid}.state).
++    /// </summary>
++    private void WriteTabState()
++    {
++        try
++        {
++            var manager = Ioc.Default.GetRequiredService<IScriptManager>();
++            var player = Ioc.Default.GetRequiredService<IScriptPlayer>();
++            if (manager.ScriptRunning)
++                _lastScriptRunning = DateTime.UtcNow;
++            // Still "running" while it is being brought back after a crash or disconnect.
++            bool running = manager.ScriptRunning || (DateTime.UtcNow - _lastScriptRunning < TimeSpan.FromMinutes(5) && !player.Playing);
++            string state = $"{manager.LoadedScript}\n{(running ? 1 : 0)}";
++            if (state == _lastTabState)
++                return;
++            _lastTabState = state;
++            string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "VibeSkuaTabs");
++            System.IO.Directory.CreateDirectory(dir);
++            System.IO.File.WriteAllText(System.IO.Path.Combine(dir, $"{Environment.ProcessId}.state"), state);
++        }
++        catch { }
++    }
++
++    private void TrimGameMemory()
++    {
++        _lastTrim = DateTime.UtcNow;
++#if IS_WINDOWS
++        (_flash as Skua.App.Avalonia.Flash.RuffleFlashUtil)?.TrimGameMemory();
++#endif
++    }
++
+     public void HideTitleBar()
+     {
+         _isTitleBarPermanentlyHidden = true;
+@@ -245,6 +311,8 @@ public partial class MainWindow : Window
+     private void RegisterMessages()
+     {
+         WeakReferenceMessenger.Default.Register<MainWindow, FlashChangedMessage<AxShockwaveFlash>>(this, static (r, m) => r.OnFlashControlChanged(m.Flash));
++        // Ruffle mode: the game's panel (see Flash/RuffleFlashUtil.cs).
++        WeakReferenceMessenger.Default.Register<MainWindow, FlashChangedMessage<System.Windows.Forms.Control>>(this, static (r, m) => r.FlashHost.SetChild(m.Flash));
+     }
+     #endif
+ 
+@@ -263,6 +331,9 @@ public partial class MainWindow : Window
+                     Dispatcher.UIThread.Post(() =>
+                     {
+                         bool isHeadless = _options.HeadlessMode;
++#if IS_WINDOWS
++                        (_flash as Skua.App.Avalonia.Flash.RuffleFlashUtil)?.SetHeadless(isHeadless);
++#endif
+                         if (HeadlessOverlay != null) HeadlessOverlay.IsVisible = isHeadless;
+                         if (FlashHost != null) FlashHost.IsVisible = !isHeadless && _isFlashLoaded;
+                     });
+@@ -298,6 +369,28 @@ public partial class MainWindow : Window
+ #endif
+         }
+ 
++        _throttleTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
++        _throttleTimer.Tick += (_, _) =>
++        {
++            if (_throttleWanted || _throttleApplied)
++                UpdateThrottle();
++            // Background (or headless) account in game: free unused game memory every 10 minutes.
++            bool background = _throttleApplied;
++            if (!background && _options.HeadlessMode)
++            {
++                try
++                {
++                    var b = Ioc.Default.GetRequiredService<IScriptInterface>();
++                    background = b.Player.Playing && b.Flash.IsWorldLoaded;
++                }
++                catch { }
++            }
++            if (background && DateTime.UtcNow - _lastTrim > TimeSpan.FromMinutes(10))
++                TrimGameMemory();
++            WriteTabState();
++        };
++        _throttleTimer.Start();
++
+         _tabTitleSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+         string lastWrittenUsername = "";
+         _tabTitleSyncTimer.Tick += (s, ev) =>
+@@ -356,6 +449,9 @@ public partial class MainWindow : Window
+             Dispatcher.UIThread.Post(() =>
+             {
+                 LoadingBar.IsVisible = false;
++#if IS_WINDOWS
++                (_flash as Skua.App.Avalonia.Flash.RuffleFlashUtil)?.SetHeadless(_options.HeadlessMode);
++#endif
+                 FlashHost.IsVisible = !_options.HeadlessMode;
+                 HeadlessOverlay.IsVisible = _options.HeadlessMode;
+                 try
+@@ -368,6 +464,56 @@ public partial class MainWindow : Window
+         }
+     }
+ 
++    /// <summary>Applies or lifts the background-tab throttle (2 fps, low quality); see _throttleWanted.</summary>
++    private void UpdateThrottle()
++    {
++        var options = Ioc.Default.GetRequiredService<IScriptOption>();
++        if (!options.HeadlessMode)
++        {
++            var bot = Ioc.Default.GetRequiredService<IScriptInterface>();
++            try
++            {
++                bool inGame = bot.Player.Playing && bot.Flash.IsWorldLoaded;
++                bool throttle = _throttleWanted && inGame;
++                if (throttle == _throttleApplied)
++                    return;
++                _throttleApplied = throttle;
++                if (throttle)
++                {
++                    if (_preThrottleFPS <= 0)
++                    {
++                        int currentFPS = bot.Flash?.GetGameObject<int>("stage.frameRate") ?? -1;
++                        if (currentFPS > 2)
++                            _preThrottleFPS = currentFPS;
++                        string? currentQuality = bot.Flash?.GetGameObject<string>("stage.quality");
++                        if (!string.IsNullOrEmpty(currentQuality))
++                            _preThrottleQuality = currentQuality;
++                    }
++
++                    bot.Flash?.SetGameObject("stage.frameRate", 2);
++                    bot.Flash?.SetGameObject("stage.quality", "LOW");
++                    Skua.Core.Utils.MemoryUtils.TrimWorkingSet();
++                    TrimGameMemory();
++                }
++                else
++                {
++                    int currentFPS = bot.Flash?.GetGameObject<int>("stage.frameRate") ?? -1;
++                    int targetFPS = _preThrottleFPS > 2 ? _preThrottleFPS : (currentFPS > 2 ? currentFPS : options.SetFPS);
++                    string? targetQuality = _preThrottleQuality;
++                    
++                    _preThrottleFPS = -1;
++                    _preThrottleQuality = null;
++
++                    if (targetFPS > 0)
++                        bot.Flash?.SetGameObject("stage.frameRate", targetFPS);
++                    if (!string.IsNullOrEmpty(targetQuality))
++                        bot.Flash?.SetGameObject("stage.quality", targetQuality);
++                }
++            }
++            catch { }
++        }
++    }
++
+ #if IS_WINDOWS
+     private IntPtr WindowSubclassProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam, nuint uIdSubclass, IntPtr dwRefData)
+     {
+@@ -417,15 +563,43 @@ public partial class MainWindow : Window
+         }
+         else if (uMsg == WM_SKUA_LOGIN)
+         {
++            bool useServerFile = wParam.ToInt64() == Skua.Core.AppStartup.HotKeys.LOGIN_USE_SERVER_FILE;
+             Task.Run(() => 
+             {
+-                var options = Ioc.Default.GetRequiredService<IScriptOption>();
+-                var servers = Ioc.Default.GetRequiredService<IScriptServers>();
+-                string targetServer = string.IsNullOrWhiteSpace(options.ReloginServer) ? "Twilly" : options.ReloginServer;
+-                servers.Relogin(targetServer);
++                // One login at a time: a second click while this one is still logging in is ignored.
++                if (System.Threading.Interlocked.Exchange(ref _loginRequestBusy, 1) == 1)
++                    return;
++                try
++                {
++                    // "Login" from the army or ButlerV5: leave accounts that are already in game alone
++                    // (this used to log them out and back in).
++                    var player = Ioc.Default.GetRequiredService<IScriptPlayer>();
++                    // LoggedIn, not Playing: a character that is dead for a moment is still in game.
++                    if (player.LoggedIn)
++                        return;
++                    var options = Ioc.Default.GetRequiredService<IScriptOption>();
++                    var servers = Ioc.Default.GetRequiredService<IScriptServers>();
++                    string targetServer = string.IsNullOrWhiteSpace(options.ReloginServer) ? "Twilly" : options.ReloginServer;
++                    // ButlerV5's "Log in all" sends everyone to the clicker's server, so they can be summoned.
++                    if (useServerFile && ReadLoginServerFile() is { } fromFile)
++                        targetServer = fromFile;
++                    servers.EnsureRelogin(targetServer);
++                }
++                catch { }
++                finally
++                {
++                    System.Threading.Interlocked.Exchange(ref _loginRequestBusy, 0);
++                }
+             });
+             return IntPtr.Zero;
+         }
++        else if (uMsg == Skua.Core.AppStartup.HotKeys.WM_SKUA_LOGIN_STATE)
++        {
++            if (_loginRequestBusy == 1)
++                return new IntPtr(3);
++            var bot = Ioc.Default.GetRequiredService<IScriptInterface>();
++            return new IntPtr(bot.Player.LoggedIn ? 2 : 1);
++        }
+         else if (uMsg == 0x0400 + 448) // WM_SKUA_LOGOUT
+         {
+             Ioc.Default.GetRequiredService<IScriptServers>().Logout();
+@@ -631,46 +805,8 @@ public partial class MainWindow : Window
+         }
+         else if (uMsg == 0x0400 + 452) // WM_SKUA_THROTTLE
+         {
+-            bool throttle = wParam.ToInt32() == 1;
+-            var options = Ioc.Default.GetRequiredService<IScriptOption>();
+-            if (!options.HeadlessMode)
+-            {
+-                var bot = Ioc.Default.GetRequiredService<IScriptInterface>();
+-                try
+-                {
+-                    if (throttle)
+-                    {
+-                        if (_preThrottleFPS <= 0)
+-                        {
+-                            int currentFPS = bot.Flash?.GetGameObject<int>("stage.frameRate") ?? -1;
+-                            if (currentFPS > 2)
+-                                _preThrottleFPS = currentFPS;
+-                            string? currentQuality = bot.Flash?.GetGameObject<string>("stage.quality");
+-                            if (!string.IsNullOrEmpty(currentQuality))
+-                                _preThrottleQuality = currentQuality;
+-                        }
+-
+-                        bot.Flash?.SetGameObject("stage.frameRate", 2);
+-                        bot.Flash?.SetGameObject("stage.quality", "LOW");
+-                        Skua.Core.Utils.MemoryUtils.TrimWorkingSet();
+-                    }
+-                    else
+-                    {
+-                        int currentFPS = bot.Flash?.GetGameObject<int>("stage.frameRate") ?? -1;
+-                        int targetFPS = _preThrottleFPS > 2 ? _preThrottleFPS : (currentFPS > 2 ? currentFPS : options.SetFPS);
+-                        string? targetQuality = _preThrottleQuality;
+-                        
+-                        _preThrottleFPS = -1;
+-                        _preThrottleQuality = null;
+-
+-                        if (targetFPS > 0)
+-                            bot.Flash?.SetGameObject("stage.frameRate", targetFPS);
+-                        if (!string.IsNullOrEmpty(targetQuality))
+-                            bot.Flash?.SetGameObject("stage.quality", targetQuality);
+-                    }
+-                }
+-                catch { }
+-            }
++            _throttleWanted = wParam.ToInt32() == 1;
++            UpdateThrottle();
+             return IntPtr.Zero;
+         }
+         else if (uMsg == WM_SKUA_OPEN_BANK)
+diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
+index 274c1e7..26d8054 100644
+--- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
++++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
+@@ -7,7 +7,7 @@
+         xmlns:controls="clr-namespace:Skua.App.Avalonia.Controls"
+         x:Class="Skua.App.Avalonia.Views.TabbedHostWindow"
+         Classes="skua"
+-        Title="VibeSkua" Icon="avares://Skua.Shared.Avalonia/Assets/SkuaIcon.ico" Height="700" Width="1100"
++        Title="VibeSkuffle" Icon="avares://Skua.Shared.Avalonia/Assets/SkuaIcon.ico" Height="700" Width="1100"
+         WindowStartupLocation="CenterScreen" Background="{DynamicResource SkuaPageBrush}">
+     <Grid RowDefinitions="Auto,*">
+         
+diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
+index 1e620fe..834f3ee 100644
+--- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
++++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
+@@ -43,6 +43,11 @@ public partial class TabbedHostWindow : Window
+     private SubclassProc? _subclassProc;
+     private const int WM_SKUA_CHILD_READY = 0x0400 + 440;
+ 
++    [DllImport("kernel32.dll")]
++    private static extern uint SetThreadExecutionState(uint esFlags);
++    private const uint ES_CONTINUOUS = 0x80000000;
++    private const uint ES_SYSTEM_REQUIRED = 0x00000001;
++
+     [DllImport("user32.dll", SetLastError = true)]
+     public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
+ 
+@@ -279,7 +284,10 @@ public partial class TabbedHostWindow : Window
+     {
+         _initialArgs = initialArgs ?? Array.Empty<string>();
+         InitializeComponent();
+-        Title = $"VibeSkua V{Skua.Core.Models.ClientFileSources.DisplayVersion}";
++        // Keep Windows from going to sleep while the army runs (the screen may still turn off). Lasts as
++        // long as this window's thread does.
++        try { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED); } catch { }
++        Title = $"VibeSkuffle V{Skua.Core.Models.ClientFileSources.DisplayVersion}";
+ 
+         var options = Ioc.Default.GetRequiredService<IScriptOption>();
+         MiscOptionsMenu.DataContext = options;
+@@ -562,6 +570,8 @@ public partial class TabbedHostWindow : Window
+ 
+     private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
+     {
++        // Tell the clients this is on purpose, so they don't start themselves again (HostCrashRecovery).
++        Skua.App.Avalonia.Services.HostCrashRecovery.MarkHostClosing();
+         _isClosing = true;
+         App.DisposeTrayIcon();
+         try { _pipeCts.Cancel(); } catch { }
+@@ -616,7 +626,7 @@ public partial class TabbedHostWindow : Window
+                 try
+                 {
+                     pipeServer = new NamedPipeServerStream(
+-                        "VibeSkuaTabHostPipe",
++                        Skua.App.Avalonia.Flash.FlashBackend.TabHostPipeName,
+                         PipeDirection.In,
+                         NamedPipeServerStream.MaxAllowedServerInstances,
+                         PipeTransmissionMode.Byte,
+@@ -1161,7 +1171,8 @@ public partial class TabbedHostWindow : Window
+             string[] parts = (vm.DialogTextInput ?? "").Split(',');
+             string targetMap = parts.Length > 0 ? parts[0].Trim() : "";
+             string targetCell = parts.Length > 1 ? parts[1].Trim() : "Enter";
+-            if (!string.IsNullOrWhiteSpace(targetMap) || !string.IsNullOrWhiteSpace(targetCell))
++            // A map is required (an empty box used to send everyone to ",Enter" and remember that).
++            if (!string.IsNullOrWhiteSpace(targetMap))
+             {
+                 _lastJumpMap = targetMap;
+                 _lastJumpCell = targetCell;
+@@ -1352,6 +1363,10 @@ public partial class TabbedHostWindow : Window
+                     if (info.ChildHwnd != IntPtr.Zero)
+                         SetWindowPos(info.ChildHwnd, HWND_TOP, -32000, -32000, 0, 0, SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | SWP_NOSIZE);
+                 }
++                // The children are off-screen now: forget the last placement, or the restore below
++                // sees "same position as before" and leaves them there (a black window).
++                _lastX = int.MinValue;
++                _lastActiveHwnd = IntPtr.Zero;
+                 return;
+             }
+ 
+@@ -1579,6 +1594,81 @@ public partial class TabbedHostWindow : Window
+             InstancesTabControl.SelectedItem = remaining;
+     }
+ 
++    // ---- Client crash recovery ------------------------------------------------------------------------
++
++    private readonly Dictionary<string, List<DateTime>> _relaunches = new();
++
++    internal static string AccountKey(string[] args)
++    {
++        int i = Array.IndexOf(args, "-u");
++        if (i < 0)
++            i = Array.IndexOf(args, "--user");
++        return i >= 0 && i + 1 < args.Length ? args[i + 1].ToLowerInvariant() : "";
++    }
++
++    /// <summary>Only clients with a saved login, at most 5 restarts per account per 30 minutes.</summary>
++    private bool AllowRelaunch(string[] args)
++    {
++        string key = AccountKey(args);
++        if (key.Length == 0)
++            return false;
++        if (!_relaunches.TryGetValue(key, out List<DateTime>? times))
++            _relaunches[key] = times = new();
++        times.RemoveAll(t => DateTime.UtcNow - t > TimeSpan.FromMinutes(30));
++        if (times.Count >= 5)
++        {
++            HostLog(args, " the client keeps crashing (5 times in 30 minutes); not starting it again.");
++            return false;
++        }
++        times.Add(DateTime.UtcNow);
++        return true;
++    }
++
++    /// <summary>The client's arguments with the script it had loaded (running or not), from its state file.</summary>
++    internal static string[] WithLastScript(string[] args, int pid)
++    {
++        try
++        {
++            string file = Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", $"{pid}.state");
++            if (!File.Exists(file))
++                return args;
++            string[] lines = File.ReadAllLines(file);
++            File.Delete(file);
++            string script = lines.Length > 0 ? lines[0].Trim() : "";
++            bool running = lines.Length > 1 && lines[1].Trim() == "1";
++            if (script.Length == 0 || !File.Exists(script))
++                return args;
++            List<string> result = new();
++            for (int i = 0; i < args.Length; i++)
++            {
++                if (args[i] is "--run-script" or "--load-script")
++                {
++                    i++; // skip its value
++                    continue;
++                }
++                result.Add(args[i]);
++            }
++            result.Add(running ? "--run-script" : "--load-script");
++            result.Add(script);
++            return result.ToArray();
++        }
++        catch
++        {
++            return args;
++        }
++    }
++
++    private static void HostLog(string[] args, string message)
++    {
++        try
++        {
++            string path = Path.Combine(AppContext.BaseDirectory, "login-watchdog.log");
++            string who = AccountKey(args);
++            File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{(who.Length > 0 ? who : "?")}] (tab host){message}{Environment.NewLine}");
++        }
++        catch { }
++    }
++
+     public void AddNewInstance(string rawArgs)
+     {
+         AddNewInstance(ParseRawCommandLine(rawArgs));
+@@ -1773,6 +1863,17 @@ public partial class TabbedHostWindow : Window
+                 {
+                     if (!_isClosing)
+                     {
++                        // Still in _tabs = nobody closed it (closing a tab removes it first): it crashed or
++                        // was killed. Start it again with the same login (and its script) before closing
++                        // the old tab, so the host doesn't close with its last tab.
++                        int code = 0;
++                        try { code = p.ExitCode; } catch { }
++                        if (_tabs.ContainsKey(newTab) && code != 0 && AllowRelaunch(clientArgs))
++                        {
++                            string[] relaunchArgs = WithLastScript(clientArgs, p.Id);
++                            HostLog(clientArgs, $" the client closed unexpectedly (exit code {code}); starting it again.");
++                            AddNewInstance(relaunchArgs);
++                        }
+                         CloseTab(newTab);
+                     }
+                 });
+@@ -1780,13 +1881,9 @@ public partial class TabbedHostWindow : Window
+ 
+             p.Start();
+             info.Process = p;
+-            try
+-            {
+-                EnsureChildJobObject();
+-                if (_childJobHandle != IntPtr.Zero)
+-                    AssignProcessToJobObject(_childJobHandle, p.Handle);
+-            }
+-            catch { }
++            // No kill-on-close job object any more: it killed every client the instant the host crashed,
++            // before they could start themselves again (HostCrashRecovery). Clients still close themselves
++            // when the host goes away, and their game windows close with them.
+             HotKeys.RegisterSkuaPid((uint)p.Id);
+ 
+             int pid = p.Id;
+diff --git a/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs b/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs
+new file mode 100644
+index 0000000..378eb0a
+--- /dev/null
++++ b/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs
+@@ -0,0 +1,11 @@
++namespace Skua.Core.Interfaces;
++
++/// <summary>
++/// Implemented by game players that can be restarted from scratch (the Ruffle player runs in its own
++/// process). Used by the login watchdog when reloading the game inside the player wasn't enough.
++/// </summary>
++public interface IRestartableGamePlayer
++{
++    /// <summary>Closes the player and starts a new one; the game loads again and raises "loaded".</summary>
++    void RestartGamePlayer();
++}
+diff --git a/Skua.Core.Interfaces/Scripts/IScriptServers.cs b/Skua.Core.Interfaces/Scripts/IScriptServers.cs
+index 41b9ab1..ba65694 100644
+--- a/Skua.Core.Interfaces/Scripts/IScriptServers.cs
++++ b/Skua.Core.Interfaces/Scripts/IScriptServers.cs
+@@ -22,6 +22,31 @@ public interface IScriptServers : INotifyPropertyChanged
+     /// <param name="password">The password associated with the specified username. Cannot be null.</param>
+     void SetLoginInfo(string username, string password);
+ 
++    /// <summary>
++    /// Keeps the username and password the game currently holds (what the player typed in) so a re-login
++    /// can still use them after the game is reloaded. Returns false when there are none.
++    /// </summary>
++    bool RememberLoginInfo();
++
++    /// <summary>The server a re-login is currently trying, or null.</summary>
++    string? CurrentLoginServer { get; set; }
++
++    /// <summary>
++    /// Marks a server whose login just got stuck; re-logins avoid it for a few minutes while other
++    /// servers are available.
++    /// </summary>
++    void MarkServerStalled(string? serverName);
++
++    /// <summary>
++    /// True after a logout someone asked for (you, the army, a script, the in-game Logout button), as
++    /// opposed to the logouts re-login does on its own. The login watchdog leaves such accounts logged out.
++    /// Logging in again clears it.
++    /// </summary>
++    bool UserLoggedOut { get; set; }
++
++    /// <summary>Logs out as part of a re-login (doesn't count as <see cref="UserLoggedOut"/>).</summary>
++    void LogoutForRelogin();
++
+     /// <summary>
+     /// The IP of the last server the player was connected to.
+     /// </summary>
+diff --git a/Skua.Core/AppStartup/HotKeys.cs b/Skua.Core/AppStartup/HotKeys.cs
+index 7b78a10..31651f8 100644
+--- a/Skua.Core/AppStartup/HotKeys.cs
++++ b/Skua.Core/AppStartup/HotKeys.cs
+@@ -287,7 +287,7 @@ public class HotKeys
+ 
+             try
+             {
+-                var skuaProcesses = System.Diagnostics.Process.GetProcessesByName(System.Diagnostics.Process.GetCurrentProcess().ProcessName);
++                var skuaProcesses = SameInstallProcesses();
+                 foreach (var p in skuaProcesses)
+                     pids.Add((uint)p.Id);
+             }
+@@ -571,19 +571,122 @@ public class HotKeys
+         options.LagKiller = !options.LagKiller;
+     }
+ 
++    /// <summary>
++    /// Running clients from the same folder as this one. A Ruffle build and a normal (Flash) VibeSkua can run
++    /// side by side with the same process name; army messages must only reach this build's own clients.
++    /// </summary>
++    private static System.Diagnostics.Process[] SameInstallProcesses()
++    {
++        var current = System.Diagnostics.Process.GetCurrentProcess();
++        string? myPath = null;
++        try { myPath = current.MainModule?.FileName; } catch { }
++        var all = System.Diagnostics.Process.GetProcessesByName(current.ProcessName);
++        if (myPath is null)
++            return all;
++        return all.Where(p =>
++        {
++            try { return string.Equals(p.MainModule?.FileName, myPath, StringComparison.OrdinalIgnoreCase); }
++            catch { return false; }
++        }).ToArray();
++    }
++
+     private static void BroadcastArmyMessage(uint msg, int wParam, int lParam)
+     {
+-        var skuaProcesses = System.Diagnostics.Process.GetProcessesByName(System.Diagnostics.Process.GetCurrentProcess().ProcessName);
+-        var pids = skuaProcesses.Select(p => p.Id).ToHashSet();
+-        
+-        EnumWindows((hWnd, lp) =>
++        PostToArmyClients(msg, wParam, lParam, includeSelf: true);
++    }
++
++    [DllImport("user32.dll")]
++    private static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
++
++    [DllImport("user32.dll")]
++    private static extern IntPtr GetParent(IntPtr hWnd);
++
++    /// <summary>Process ids of the running clients from this install (optionally without this one).</summary>
++    public static List<int> ArmyClientPids(bool includeSelf) =>
++        SameInstallProcesses().Select(p => p.Id).Where(id => includeSelf || id != Environment.ProcessId).ToList();
++
++    /// <summary>
++    /// Posts a message to the main window of every client from this install, including clients docked in
++    /// the tab host (their windows are children of the host window, which EnumWindows alone doesn't see).
++    /// </summary>
++    public static int PostToArmyClients(uint msg, int wParam, int lParam, bool includeSelf, int onlyPid = 0)
++    {
++        var pids = SameInstallProcesses().Select(p => p.Id).ToHashSet();
++        if (!includeSelf)
++            pids.Remove(Environment.ProcessId);
++        if (onlyPid != 0)
++            pids.IntersectWith(new[] { onlyPid });
++        int posted = 0;
++        ForEachClientWindow(pids, hWnd =>
++        {
++            PostMessage(hWnd, msg, new IntPtr(wParam), new IntPtr(lParam));
++            posted++;
++        });
++        return posted;
++    }
++
++    /// <summary>
++    /// Sends a message to the windows of one client from this install and returns the largest answer
++    /// (0 when nothing answered, for example the tab host or a client that is busy for over 2 seconds).
++    /// </summary>
++    public static int QueryArmyClient(int pid, uint msg)
++    {
++        int best = 0;
++        ForEachClientWindow(new HashSet<int> { pid }, hWnd =>
++        {
++            const uint SMTO_ABORTIFHUNG = 0x0002;
++            if (SendMessageTimeout(hWnd, msg, IntPtr.Zero, IntPtr.Zero, SMTO_ABORTIFHUNG, 2000, out IntPtr result) != IntPtr.Zero)
++                best = Math.Max(best, result.ToInt32());
++        });
++        return best;
++    }
++
++    /// <summary>
++    /// Every top window of the given clients, including clients docked in the tab host (their windows are
++    /// children of the host window, which EnumWindows alone doesn't see).
++    /// </summary>
++    private static void ForEachClientWindow(HashSet<int> pids, Action<IntPtr> action)
++    {
++        if (pids.Count == 0)
++            return;
++        var found = new List<IntPtr>();
++
++        void Consider(IntPtr hWnd)
+         {
+             GetWindowThreadProcessId(hWnd, out uint pid);
+-            if (pids.Contains((int)pid))
++            if (!pids.Contains((int)pid))
++                return;
++            // Only a client's own top window: skip its inner child windows (same process as the parent).
++            IntPtr parent = GetParent(hWnd);
++            if (parent != IntPtr.Zero)
+             {
+-                PostMessage(hWnd, msg, new IntPtr(wParam), new IntPtr(lParam));
++                GetWindowThreadProcessId(parent, out uint parentPid);
++                if (parentPid == pid)
++                    return;
+             }
++            found.Add(hWnd);
++        }
++
++        EnumWindows((hWnd, lp) =>
++        {
++            Consider(hWnd);
++            EnumChildWindows(hWnd, (child, lp2) => { Consider(child); return true; }, IntPtr.Zero);
+             return true;
+         }, IntPtr.Zero);
++        foreach (IntPtr hWnd in found)
++            action(hWnd);
+     }
++
++    [DllImport("user32.dll", SetLastError = true)]
++    private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
++
++    /// <summary>Asks a client whether it is in game: 2 = in game, 1 = logged out, 0 = not a client.</summary>
++    public const int WM_SKUA_LOGIN_STATE = 0x0400 + 470;
++
++    /// <summary>
++    /// wParam for the login message: log in on the server named in %TEMP%\skua_login_server.txt
++    /// (written by ButlerV5's "Log in all" so everyone lands on the clicker's server).
++    /// </summary>
++    public const int LOGIN_USE_SERVER_FILE = 1;
++    public static string LoginServerFile => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "skua_login_server.txt");
+ }
+diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
+new file mode 100644
+index 0000000..9734a1c
+--- /dev/null
++++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
+@@ -0,0 +1,304 @@
++using Skua.Core.Interfaces;
++
++namespace Skua.Core.Scripts;
++
++/// <summary>
++/// Login watchdog: notices when the game sits on one connection message ("Authenticating Account Info...",
++/// "Connecting to game server...", "Loading Character Data...") for too long and gets it moving again.
++/// </summary>
++/// <remarks>
++/// Each stall in a row escalates: 1) reset the login screen and log in again, 2+) restart the whole game
++/// player and log in again (Ruffle only; with Flash it resets the login screen again).
++/// The server that got stuck is avoided for a few minutes. After six stalls in a row it waits a minute
++/// between tries, after twelve ten minutes, so it doesn't hammer AQW while AQW is down, but it never gives up.
++/// It also logs back in when an account has been out of the game for 3 minutes without anyone asking for
++/// that (auto relogin gave up, a failed start, a kick with auto relogin off). Getting into the game resets
++/// the count.
++/// </remarks>
++public partial class ScriptInterface
++{
++    private const int WatchdogStallMs = 20000;
++    private const int WatchdogBackoffAfter = 6;
++    private const int WatchdogBackoffMs = 60000;
++    private const int WatchdogSlowAfter = 12;
++    private const int WatchdogSlowMs = 600000;
++    private const int WatchdogOutOfGameMs = 180000;
++    private int _wdOutSince;
++
++    private string _wdText = string.Empty;
++    private int _wdSince = Environment.TickCount;
++    private int _wdStalls;
++    private int _wdLastAction;
++    private volatile bool _wdBusy;
++    private volatile bool _wdGameLoaded;
++    private bool _reloginStartsScript;
++
++    // Crash recovery: when the game player restarts by itself (a crash) while the account was in game,
++    // log back in. _wdOwnRestart marks restarts the watchdog made itself (it logs in on its own).
++    private int _wdLastInGame;
++    private bool _wdScriptWhenInGame;
++    private bool _wdCredsKept;
++    private volatile bool _wdOwnRestart;
++
++    // Set when the account got knocked out of the game while a script was running (crash, stuck login,
++    // disconnect). Whichever way it gets back in, the script is started again once it is in game.
++    private volatile bool _wdRestartScript;
++
++    /// <summary>Called from the script timer about twice a second.</summary>
++    private void LoginWatchdogTick()
++    {
++        if (_wdBusy)
++            return;
++
++        if (Player.Playing && Flash.IsWorldLoaded)
++        {
++            if (_wdStalls > 0)
++                WdLog($" in game again after {_wdStalls} recover{(_wdStalls == 1 ? "y" : "ies")}.");
++            _wdStalls = 0;
++            Servers.CurrentLoginServer = null;
++            _wdLastInGame = Environment.TickCount | 1;
++            _wdScriptWhenInGame = Manager.ScriptRunning;
++            if (!_wdCredsKept)
++                _wdCredsKept = Servers.RememberLoginInfo();
++            if (_wdRestartScript && !_waitForLogin)
++            {
++                _wdRestartScript = false;
++                if (!Manager.ScriptRunning)
++                    _ = Task.Run(RestartScriptAfterLogin);
++            }
++            ResetWatchdogTimer(string.Empty);
++            return;
++        }
++
++        string text = Flash.IsNull("mcConnDetail.stage") ? string.Empty : Flash.GetGameObject("mcConnDetail.txtDetail.text", string.Empty) ?? string.Empty;
++        text = text.Trim();
++
++        // Out of the game with nothing happening: log back in after a while, unless someone logged out on
++        // purpose or a re-login is already under way.
++        if (text.Length == 0 && !_waitForLogin && !Servers.UserLoggedOut && Servers.RememberLoginInfo())
++        {
++            if (_wdOutSince == 0)
++                _wdOutSince = Environment.TickCount | 1;
++            else if (Environment.TickCount - _wdOutSince >= WatchdogOutOfGameMs && BackoffAllows())
++            {
++                _wdOutSince = 0;
++                StartRecovery("(logged out, nothing happening)");
++                return;
++            }
++        }
++        else
++        {
++            _wdOutSince = 0;
++        }
++
++        // Nothing showing, or messages the existing checks already handle.
++        if (text.Length == 0
++            || text.Contains("has been lost", StringComparison.OrdinalIgnoreCase)
++            || text.Contains("loading map", StringComparison.OrdinalIgnoreCase))
++        {
++            ResetWatchdogTimer(text);
++            return;
++        }
++
++        if (text != _wdText)
++        {
++            ResetWatchdogTimer(text);
++            return;
++        }
++
++        int now = Environment.TickCount;
++        if (now - _wdSince < WatchdogStallMs || !BackoffAllows())
++            return;
++        StartRecovery(text);
++    }
++
++    /// <summary>After 6 recoveries in a row wait a minute between tries, after 12 ten minutes.</summary>
++    private bool BackoffAllows()
++    {
++        int sinceLast = Environment.TickCount - _wdLastAction;
++        if (_wdStalls >= WatchdogSlowAfter)
++            return sinceLast >= WatchdogSlowMs;
++        if (_wdStalls >= WatchdogBackoffAfter)
++            return sinceLast >= WatchdogBackoffMs;
++        return true;
++    }
++
++    private void StartRecovery(string stuckOn)
++    {
++        _wdBusy = true;
++        _wdStalls++;
++        _wdLastAction = Environment.TickCount;
++        if (_wdStalls == WatchdogSlowAfter)
++            WdLog($" {WatchdogSlowAfter} recoveries in a row (AQW may be down); trying every {WatchdogSlowMs / 60000} minutes from now on.");
++        int level = _wdStalls;
++        _ = Task.Run(() => RecoverStuckLogin(stuckOn, level));
++    }
++
++    /// <summary>Writes to the script log and to login-watchdog.log next to VibeSkuffle.exe.</summary>
++    private void WdLog(string message)
++    {
++        string line = $"Login watchdog:{message}";
++        try { Log(line); } catch { }
++        try
++        {
++            string path = Path.Combine(AppContext.BaseDirectory, "login-watchdog.log");
++            var info = new FileInfo(path);
++            if (info.Exists && info.Length > 1_000_000)
++                info.Delete();
++            string who = Servers.CachedUsername ?? "?";
++            lock (WdFileLock)
++                File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{who}]{message}{Environment.NewLine}");
++        }
++        catch { }
++    }
++
++    private static readonly object WdFileLock = new();
++
++    private void ResetWatchdogTimer(string text)
++    {
++        _wdText = text;
++        _wdSince = Environment.TickCount;
++    }
++
++    private async Task RecoverStuckLogin(string stuckOn, int level)
++    {
++        try
++        {
++            WdLog(stuckOn.StartsWith('(')
++                ? $" {stuckOn} for {WatchdogOutOfGameMs / 60000} minutes; logging back in (recovery {level})."
++                : $" stuck on \"{stuckOn}\" for {WatchdogStallMs / 1000}s (recovery {level}).");
++
++            // Credentials first: a reload clears what the player typed into the game.
++            bool canLogin = Servers.RememberLoginInfo();
++            Servers.MarkServerStalled(Servers.CurrentLoginServer);
++
++            // Take over from an auto re-login that is waiting on the stuck screen.
++            if (_waitForLogin ? _reloginStartsScript : Manager.ScriptRunning)
++                _wdRestartScript = true;
++            CancelRelogin();
++            if (Manager.ScriptRunning)
++                await Manager.StopScript();
++            _waitForLogin = true;
++
++            try
++            {
++                if (Servers.IsConnected)
++                    Flash.CallGameFunction("sfc.disconnect");
++            }
++            catch { }
++
++            if (level >= 2 && Flash is IRestartableGamePlayer player)
++            {
++                // A fresh player clears whatever the game got stuck on (hung requests, half-open
++                // connections, broken login screen).
++                WdLog(" restarting the game player.");
++                _wdGameLoaded = false;
++                _wdOwnRestart = true;
++                player.RestartGamePlayer();
++                await WaitForGameLoaded(90000);
++            }
++            else
++            {
++                WdLog(" resetting the login screen.");
++                try { Flash.CallGameFunction("gotoAndPlay", "Login"); } catch { }
++                await Task.Delay(2000);
++            }
++
++            if (!canLogin)
++            {
++                WdLog(" no saved login for this client, log in again by hand.");
++                _waitForLogin = false;
++                return;
++            }
++
++            // Same path as auto re-login: picks a server (avoiding the one that got stuck), logs in,
++            // and restarts the script if one was running.
++            // Spread out: when AQW hiccups, every client in the army recovers at once.
++            int delay = (level == 1 ? 1000 : 3000) + Random.Shared.Next(0, 5000);
++            Relogin(delay, false); // the script restart is handled by _wdRestartScript
++        }
++        catch (Exception ex)
++        {
++            WdLog($" failed: {ex.Message}");
++            _waitForLogin = false;
++        }
++        finally
++        {
++            ResetWatchdogTimer(string.Empty);
++            _wdBusy = false;
++        }
++    }
++
++    /// <summary>Called when the game finishes loading ("loaded").</summary>
++    private void OnGameLoaded()
++    {
++        _wdGameLoaded = true;
++        if (_wdOwnRestart)
++        {
++            _wdOwnRestart = false;
++            return;
++        }
++        // First start, or not in game recently: nothing to restore.
++        if (_wdLastInGame == 0 || Environment.TickCount - _wdLastInGame > 180000)
++            return;
++        _wdLastInGame = 0;
++        if (_wdScriptWhenInGame)
++            _wdRestartScript = true;
++        _ = Task.Run(async () =>
++        {
++            await Task.Delay(1500);
++            // With Auto Relogin on, VibeSkua's own re-login takes care of it; give it a moment to start.
++            for (int i = 0; i < 20 && Options.AutoRelogin && !_waitForLogin; i++)
++                await Task.Delay(500);
++            if (_waitForLogin || _wdBusy || (Player.Playing && Flash.IsWorldLoaded))
++            {
++                WdLog(" the game window restarted while in game (crash, freeze or memory limit); auto relogin is logging back in.");
++                return;
++            }
++            WdLog(" the game window restarted while in game (crash, freeze or memory limit); logging back in.");
++            if (!Servers.RememberLoginInfo())
++            {
++                WdLog(" no saved login for this client, log in again by hand.");
++                return;
++            }
++            _waitForLogin = true;
++            // The old run was talking to the crashed player; stop it so it can start fresh once back in
++            // game (VibeSkua refuses to start a script that is still running).
++            if (Manager.ScriptRunning)
++            {
++                WdLog(" stopping the script; it starts again once back in game.");
++                await Manager.StopScript();
++            }
++            Relogin(3000 + Random.Shared.Next(0, 5000), false);
++        });
++    }
++
++    private async Task RestartScriptAfterLogin()
++    {
++        try
++        {
++            await Task.Delay(2000);
++            if (Manager.ScriptRunning || !(Player.Playing && Flash.IsWorldLoaded))
++                return;
++            WdLog(" back in game; starting the script again.");
++            Exception? error = await CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetRequiredService<IScriptManager>().StartScript();
++            if (error is not null)
++                WdLog($" couldn't start the script: {error.Message}");
++        }
++        catch (Exception ex)
++        {
++            WdLog($" couldn't start the script: {ex.Message}");
++        }
++    }
++
++    private async Task WaitForGameLoaded(int timeoutMs)
++    {
++        int start = Environment.TickCount;
++        while (!_wdGameLoaded && Environment.TickCount - start < timeoutMs && !_disposed)
++            await Task.Delay(250);
++        if (!_wdGameLoaded)
++            WdLog(" the game didn't finish loading in time; trying to log in anyway.");
++        else
++            await Task.Delay(1500);
++    }
++}
+diff --git a/Skua.Core/Scripts/ScriptInterface.cs b/Skua.Core/Scripts/ScriptInterface.cs
+index 27d2dc7..264e591 100644
+--- a/Skua.Core/Scripts/ScriptInterface.cs
++++ b/Skua.Core/Scripts/ScriptInterface.cs
+@@ -12,7 +12,7 @@ using System.Diagnostics;
+ 
+ namespace Skua.Core.Scripts;
+ 
+-public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDisposable
++public partial class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDisposable
+ {
+     private CancellationTokenSource? ScriptInterfaceCTS;
+     private readonly Thread ScriptInterfaceThread;
+@@ -336,6 +336,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                 });
+ 
+                 _limit.LimitedRun("connDetail", 100, () => (lastConnChange, lastConnDetail) = CheckStuckonLoading(lastConnChange, lastConnDetail));
++                _limit.LimitedRun("loginWatchdog", 500, LoginWatchdogTick);
+ 
+                 if (Manager.ScriptRunning)
+                     RunScriptHandlers();
+@@ -405,7 +406,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                 {
+                     if (Flash.GetGameObject("mcConnDetail.txtDetail.text") == "loading map")
+                     {
+-                        Servers.Logout();
++                        Servers.LogoutForRelogin();
+                         return;
+                     }
+                     Map.Join(Map.LastMap);
+@@ -413,7 +414,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+             }
+             else
+             {
+-                Servers.Logout();
++                Servers.LogoutForRelogin();
+             }
+         }
+         if (connDetail == lastConnDetail)
+@@ -461,6 +462,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                 break;
+ 
+             case "loaded":
++                OnGameLoaded();
+                 Initialize();
+                 break;
+ 
+@@ -696,6 +698,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                             {
+                                 Log("Normal in-game logout detected. Auto re-login skipped.");
+                                 Servers.IsIntentionalLogout = true;
++                                Servers.UserLoggedOut = true;
++                                _wdRestartScript = false;
+                                 CancelRelogin();
+                                 if (Manager.ScriptRunning)
+                                     _ = Manager.StopScript();
+@@ -740,9 +744,13 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+ 
+         Log("Auto re-login triggered.");
+         bool wasRunning = Manager.ScriptRunning;
++        if (wasRunning)
++            _wdRestartScript = true; // the login watchdog restarts it once back in game, however that happens
++        // Claim the re-login before awaiting the script stop, so the crash recovery doesn't start a
++        // second login meanwhile.
++        _waitForLogin = true;
+         await Manager.StopScript();
+         bool kicked = Player.Kicked;
+-        _waitForLogin = true;
+         Messenger.Send<ReloginTriggeredMessage, int>(new(kicked), (int)MessageChannels.GameEvents);
+ 
+         int delay = (Options.SafeRelogin && kicked) ? 70000 : Options.ReloginTryDelay;
+@@ -764,7 +772,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+ 
+     private void Relogin(int delay, bool startScript)
+     {
+-        Servers.Logout();
++        _reloginStartsScript = startScript;
++        Servers.LogoutForRelogin();
+         Log($"Waiting {delay}ms for re-login.");
+         CancellationTokenSource reloginCts = new();
+         _reloginCTS = reloginCts;
+diff --git a/Skua.Core/Scripts/ScriptServers.cs b/Skua.Core/Scripts/ScriptServers.cs
+index 2868fed..31b9cfa 100644
+--- a/Skua.Core/Scripts/ScriptServers.cs
++++ b/Skua.Core/Scripts/ScriptServers.cs
+@@ -50,6 +50,44 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+     private string _password;
+ 
+     public string LastIP { get; set; } = string.Empty;
++
++    public string? CurrentLoginServer { get; set; }
++
++    private static readonly TimeSpan StalledServerCooldown = TimeSpan.FromMinutes(3);
++    private readonly Dictionary<string, DateTime> _stalledServers = new(StringComparer.OrdinalIgnoreCase);
++
++    public void MarkServerStalled(string? serverName)
++    {
++        if (string.IsNullOrWhiteSpace(serverName))
++            return;
++        lock (_stalledServers)
++            _stalledServers[serverName] = DateTime.UtcNow;
++        ReloginLog($"Avoiding {serverName} for {StalledServerCooldown.TotalMinutes:0} minutes (login got stuck there).");
++    }
++
++    private List<string> RecentlyStalledServers()
++    {
++        lock (_stalledServers)
++        {
++            DateTime cutoff = DateTime.UtcNow - StalledServerCooldown;
++            foreach (string old in _stalledServers.Where(kv => kv.Value < cutoff).Select(kv => kv.Key).ToList())
++                _stalledServers.Remove(old);
++            return _stalledServers.Keys.ToList();
++        }
++    }
++
++    public bool RememberLoginInfo()
++    {
++        if (_loginInfoSetted)
++            return true;
++        string? username = Player.Username;
++        string? password = Player.Password;
++        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password)
++            || username == "loginInfo.strUsername" || password == "loginInfo.strPassword")
++            return false;
++        SetLoginInfo(username, password);
++        return true;
++    }
+     public string LastName { get; set; } = string.Empty;
+     public bool IsIntentionalLogout { get; set; }
+     public string? CachedUsername => _loginInfoSetted && !string.IsNullOrWhiteSpace(_username) ? _username : (!string.IsNullOrWhiteSpace(Player.Username) && Player.Username != "loginInfo.strUsername" ? Player.Username : null);
+@@ -69,12 +107,25 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+     private void _login(string username, string password)
+     {
+         IsIntentionalLogout = false;
++        UserLoggedOut = false;
++    }
++
++    public bool UserLoggedOut { get; set; }
++    private bool _internalLogout;
++
++    public void LogoutForRelogin()
++    {
++        _internalLogout = true;
++        try { Logout(); }
++        finally { _internalLogout = false; }
+     }
+ 
+     [MethodCallBinding("logout", RunMethodPost = true, GameFunction = true)]
+     private void _logout()
+     {
+         IsIntentionalLogout = true;
++        if (!_internalLogout)
++            UserLoggedOut = true;
+         CommunityToolkit.Mvvm.Messaging.StrongReferenceMessenger.Default.Send<Skua.Core.Messaging.LogoutRequestedMessage, int>(new(), (int)Skua.Core.Messaging.MessageChannels.GameEvents);
+         if (IsConnected)
+             Flash.CallGameFunction("sfc.disconnect");
+@@ -273,22 +324,29 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+ 
+         HashSet<string> triedServers = attemptedServers ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+ 
+-        Server? selectedServer = FindByName(candidates, preferredName, true, triedServers);
++        // Servers where a login just got stuck count as tried, as long as some other server is left.
++        HashSet<string> avoid = new(triedServers, StringComparer.OrdinalIgnoreCase);
++        foreach (string stalled in RecentlyStalledServers())
++            avoid.Add(stalled);
++        if (!candidates.Exists(x => !avoid.Contains(x.Name ?? string.Empty)))
++            avoid = triedServers;
++
++        Server? selectedServer = FindByName(candidates, preferredName, true, avoid);
+         if (selectedServer is not null)
+             return selectedServer;
+ 
+         if (Options.AutoReloginAny)
+         {
+-            selectedServer = candidates.Find(x => x.IP != LastIP && !triedServers.Contains(x.Name ?? string.Empty));
++            selectedServer = candidates.Find(x => x.IP != LastIP && !avoid.Contains(x.Name ?? string.Empty));
+             if (selectedServer is not null)
+                 return selectedServer;
+         }
+ 
+-        selectedServer = FindByName(candidates, Options.ReloginServer, true, triedServers);
++        selectedServer = FindByName(candidates, Options.ReloginServer, true, avoid);
+         if (selectedServer is not null)
+             return selectedServer;
+ 
+-        selectedServer = candidates.Find(x => !triedServers.Contains(x.Name ?? string.Empty));
++        selectedServer = candidates.Find(x => !avoid.Contains(x.Name ?? string.Empty));
+         if (selectedServer is not null)
+             return selectedServer;
+ 
+@@ -360,7 +418,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+         ReloginLog($"Relogging using IP {ip}.");
+ 
+         Thread.Sleep(2000);
+-        Logout();
++        LogoutForRelogin();
+ 
+         Stats.Relogins++;
+         if (_loginInfoSetted)
+@@ -407,8 +465,9 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+         bool autoRelogSwitch = Options.AutoRelogin;
+         Options.AutoRelogin = false;
+         ReloginLog($"Relogging on server {server.Name} [{server.PlayerCount}/{server.MaxPlayers}].");
++        CurrentLoginServer = server.Name;
+ 
+-        Logout();
++        LogoutForRelogin();
+         Stats.Relogins++;
+ 
+         if (_loginInfoSetted)
+@@ -548,12 +607,13 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+                     continue;
+                 }
+                 attemptedServers.Add(targetServer.Name ?? string.Empty);
++                CurrentLoginServer = targetServer.Name;
+ 
+                 ReloginLog($"Attempt {tries}/{Options.ReloginTries}: trying {targetServer.Name} [{targetServer.PlayerCount}/{targetServer.MaxPlayers}].");
+ 
+                 if (IsConnected || tries > 1)
+                 {
+-                    Logout();
++                    LogoutForRelogin();
+                     await Task.Delay(2000, token);
+                 }
+ 
+@@ -601,7 +661,11 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+                     await WaitReloginDelay(token);
+             }
+         }
+-        catch { }
++        catch (OperationCanceledException) { }
++        catch (Exception ex)
++        {
++            ReloginLog($"Re-login error: {ex.Message}");
++        }
+ 
+         if (!Player.Playing)
+             ReloginLog("Unable to reconnect within configured retries.");
+diff --git a/Skua.Manager.Avalonia/App.axaml b/Skua.Manager.Avalonia/App.axaml
+index 70841b9..28f3ec6 100644
+--- a/Skua.Manager.Avalonia/App.axaml
++++ b/Skua.Manager.Avalonia/App.axaml
+@@ -33,12 +33,12 @@
+     <TrayIcon.Icons>
+         <TrayIcons>
+             <TrayIcon Icon="avares://Skua.Shared.Avalonia/Assets/SkuaIcon.ico"
+-                      ToolTipText="VibeSkua Manager"
++                      ToolTipText="VibeSkuffle Manager"
+                       Clicked="TrayIcon_Clicked">
+                 <TrayIcon.Menu>
+                     <NativeMenu>
+                         <NativeMenuItem Header="Show Manager" Click="TrayShowManager_Click" />
+-                        <NativeMenuItem Header="VibeSkua Bot AQW" Click="TrayLaunchClient_Click" />
++                        <NativeMenuItem Header="VibeSkuffle Bot AQW" Click="TrayLaunchClient_Click" />
+                         <NativeMenuItem Header="Update Scripts" Click="TrayUpdateScripts_Click" />
+                         <NativeMenuItem Header="Reset Scripts" Click="TrayResetScripts_Click" />
+                         <NativeMenuItem Header="Check Client Update" Click="TrayCheckUpdate_Click" />
+diff --git a/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs b/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs
+index 16f3732..d8c688a 100644
+--- a/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs
++++ b/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs
+@@ -36,7 +36,7 @@ internal class SkuaManager
+     {
+         List<DisplayOptionItemViewModelBase> options = new()
+         {
+-            CreateSettingOptionItem<bool>("Use Manager theme on VibeSkua", "Whether to use, when launching from the Launcher tab, the same theme as the Manager in any launched App", "syncTheme")
++            CreateSettingOptionItem<bool>("Use Manager theme on VibeSkuffle", "Whether to use, when launching from the Launcher tab, the same theme as the Manager in any launched App", "syncTheme")
+         };
+ 
+         return new(options, s.GetRequiredService<ISettingsService>(), s.GetRequiredService<IFileDialogService>());
+diff --git a/Skua.Manager.Avalonia/Program.cs b/Skua.Manager.Avalonia/Program.cs
+index 977c532..a620f60 100644
+--- a/Skua.Manager.Avalonia/Program.cs
++++ b/Skua.Manager.Avalonia/Program.cs
+@@ -37,7 +37,12 @@ internal static class Program
+             .OnRestarted(_ => AppShortcutHelper.CreateOrUpdateShortcuts(createIfMissing: true))
+             .Run();
+ 
+-        const string eventName = @"Global\VibeSkua.Manager.SingleInstance.WakeEvent";
++        // The Manager in a Ruffle build (use-ruffle.txt next to it) gets its own single-instance name, so it
++        // runs next to a normal VibeSkua Manager instead of waking that one up.
++        bool ruffleBuild = File.Exists(Path.Combine(AppContext.BaseDirectory, "use-ruffle.txt"))
++                           || File.Exists(Path.Combine(AppContext.BaseDirectory, "use-ruffle"));
++        string instanceName = ruffleBuild ? "VibeSkuaRuffle.Manager.SingleInstance.WakeEvent" : "VibeSkua.Manager.SingleInstance.WakeEvent";
++        string eventName = @"Global\" + instanceName;
+         bool createdNew;
+         try
+         {
+@@ -45,7 +50,7 @@ internal static class Program
+         }
+         catch
+         {
+-            _singleInstanceWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, "VibeSkua.Manager.SingleInstance.WakeEvent", out createdNew);
++            _singleInstanceWaitHandle = new EventWaitHandle(false, EventResetMode.AutoReset, instanceName, out createdNew);
+         }
+ 
+         if (!createdNew)
+diff --git a/Skua.Manager.Avalonia/Services/SkuaExecutableLocator.cs b/Skua.Manager.Avalonia/Services/SkuaExecutableLocator.cs
+index 162c7b3..ad4d481 100644
+--- a/Skua.Manager.Avalonia/Services/SkuaExecutableLocator.cs
++++ b/Skua.Manager.Avalonia/Services/SkuaExecutableLocator.cs
+@@ -12,7 +12,7 @@ internal static class SkuaExecutableLocator
+ 
+     private static string Resolve()
+     {
+-        string vibePath = Path.Combine(AppContext.BaseDirectory, "VibeSkua.exe");
++        string vibePath = Path.Combine(AppContext.BaseDirectory, "VibeSkuffle.exe");
+         if (File.Exists(vibePath))
+             return vibePath;
+ 
+@@ -23,15 +23,15 @@ internal static class SkuaExecutableLocator
+         string repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+         string[] candidates =
+         [
+-            Path.Combine(repositoryRoot, "Build", "VibeSkua.exe"),
++            Path.Combine(repositoryRoot, "Build", "VibeSkuffle.exe"),
+             Path.Combine(repositoryRoot, "Build", "Skua.exe"),
+-            Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Release", "net10.0-windows", "VibeSkua.exe"),
++            Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Release", "net10.0-windows", "VibeSkuffle.exe"),
+             Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Release", "net10.0-windows", "Skua.exe"),
+-            Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Release", "net10.0-windows", "win-x64", "VibeSkua.exe"),
++            Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Release", "net10.0-windows", "win-x64", "VibeSkuffle.exe"),
+             Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Release", "net10.0-windows", "win-x64", "Skua.exe"),
+-            Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Debug", "net10.0-windows", "VibeSkua.exe"),
++            Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Debug", "net10.0-windows", "VibeSkuffle.exe"),
+             Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Debug", "net10.0-windows", "Skua.exe"),
+-            Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Debug", "net10.0-windows", "win-x64", "VibeSkua.exe"),
++            Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Debug", "net10.0-windows", "win-x64", "VibeSkuffle.exe"),
+             Path.Combine(repositoryRoot, "Skua.App.Avalonia", "bin", "Debug", "net10.0-windows", "win-x64", "Skua.exe")
+         ];
+ 
+diff --git a/Skua.Manager.Avalonia/Skua.Manager.Avalonia.csproj b/Skua.Manager.Avalonia/Skua.Manager.Avalonia.csproj
+index d5e2735..4dfdb1f 100644
+--- a/Skua.Manager.Avalonia/Skua.Manager.Avalonia.csproj
++++ b/Skua.Manager.Avalonia/Skua.Manager.Avalonia.csproj
+@@ -8,8 +8,8 @@
+     <DefaultItemExcludes>$(DefaultItemExcludes);obj_run\**</DefaultItemExcludes>
+     <ApplicationIcon>../Skua.Shared.Avalonia/Assets/SkuaIcon.ico</ApplicationIcon>
+     <ApplicationManifest>app.manifest</ApplicationManifest>
+-    <AssemblyName>VibeSkua.Manager</AssemblyName>
+-    <AssemblyTitle>VibeSkua Manager</AssemblyTitle>
++    <AssemblyName>VibeSkuffle.Manager</AssemblyName>
++    <AssemblyTitle>VibeSkuffle Manager</AssemblyTitle>
+     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+   </PropertyGroup>
+ 
+diff --git a/Skua.Manager.Avalonia/UserControls/LauncherUserControl.axaml b/Skua.Manager.Avalonia/UserControls/LauncherUserControl.axaml
+index 671f5e9..3165dbc 100644
+--- a/Skua.Manager.Avalonia/UserControls/LauncherUserControl.axaml
++++ b/Skua.Manager.Avalonia/UserControls/LauncherUserControl.axaml
+@@ -26,7 +26,7 @@
+                     <TextBlock FontSize="18"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource SkuaTextBrush}"
+-                               Text="VibeSkua Process Launcher" />
++                               Text="VibeSkuffle Process Launcher" />
+                     <TextBlock Text="Spin up new game client instances and manage active processes."
+                                FontSize="12"
+                                Foreground="{DynamicResource SkuaMutedTextBrush}" />
+diff --git a/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs b/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs
+index 943a024..cca22d7 100644
+--- a/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs
++++ b/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs
+@@ -55,7 +55,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
+     {
+         if (message.Process != null)
+         {
+-            ProcessInfo procInfo = new(message.Process, message.AccountName ?? $"VibeSkua #{message.Process.Id}");
++            ProcessInfo procInfo = new(message.Process, message.AccountName ?? $"VibeSkuffle #{message.Process.Id}");
+             _dispatcherService.Invoke(() => recipient.SkuaProcesses.Add(procInfo));
+         }
+     }
+@@ -98,7 +98,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
+                 Process? proc = Process.Start(startInfo);
+                 if (proc != null)
+                 {
+-                    ProcessInfo procInfo = new(proc, $"VibeSkua #{proc.Id}");
++                    ProcessInfo procInfo = new(proc, $"VibeSkuffle #{proc.Id}");
+                     _dispatcherService.Invoke(() => SkuaProcesses.Add(procInfo));
+                 }
+             }
+@@ -106,7 +106,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
+             {
+                 IDialogService dialogService = Ioc.Default.GetService<IDialogService>()!;
+ 
+-                dialogService.ShowMessageBox($"Failed to launch VibeSkua. Executable path: {SkuaExecutableLocator.ExecutablePath}", "Error");
++                dialogService.ShowMessageBox($"Failed to launch VibeSkuffle. Executable path: {SkuaExecutableLocator.ExecutablePath}", "Error");
+             }
+         });
+     }
+diff --git a/Skua.Manager.Avalonia/ViewModels/ManagerMainViewModel.cs b/Skua.Manager.Avalonia/ViewModels/ManagerMainViewModel.cs
+index f9cde9c..979ee27 100644
+--- a/Skua.Manager.Avalonia/ViewModels/ManagerMainViewModel.cs
++++ b/Skua.Manager.Avalonia/ViewModels/ManagerMainViewModel.cs
+@@ -19,11 +19,11 @@ public partial class ManagerMainViewModel : ObservableRecipient
+         _selectedTab = Tabs[0];
+         _dialogService = dialogService;
+         _settingsService = settingsService;
+-        _title = $"VibeSkua Manager V{ClientFileSources.DisplayVersion}";
++        _title = $"VibeSkuffle Manager V{ClientFileSources.DisplayVersion}";
+     }
+ 
+     [ObservableProperty]
+-    private string _title = "VibeSkua Manager";
++    private string _title = "VibeSkuffle Manager";
+ 
+     [RelayCommand]
+     private void ShowManager()
+diff --git a/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml b/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml
+index d74c3da..092fdf9 100644
+--- a/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml
++++ b/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml
+@@ -18,7 +18,7 @@
+                                         Foreground="{DynamicResource SkuaAccentBrush}"
+                                         Margin="0,0,0,24" />
+ 
+-            <TextBlock Text="VibeSkua Client Updater"
++            <TextBlock Text="VibeSkuffle Client Updater"
+                        FontSize="26"
+                        FontWeight="Light"
+                        HorizontalAlignment="Center"
+diff --git a/Skua.Manager.Avalonia/Views/ScriptUpdaterView.axaml b/Skua.Manager.Avalonia/Views/ScriptUpdaterView.axaml
+index aaa4048..e091c76 100644
+--- a/Skua.Manager.Avalonia/Views/ScriptUpdaterView.axaml
++++ b/Skua.Manager.Avalonia/Views/ScriptUpdaterView.axaml
+@@ -18,7 +18,7 @@
+                                         Foreground="{DynamicResource SkuaAccentBrush}"
+                                         Margin="0,0,0,24" />
+ 
+-            <TextBlock Text="VibeSkua Scripts Updater"
++            <TextBlock Text="VibeSkuffle Scripts Updater"
+                        FontSize="26"
+                        FontWeight="Light"
+                        HorizontalAlignment="Center"
+diff --git a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs b/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
+index d5f32fb..983ca1e 100644
+--- a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
++++ b/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
+@@ -425,6 +425,94 @@ public class ButlerV5Plugin : ISkuaPlugin
+             index >= 0 ? "Released a butler." : "Summoned a butler to follow me.");
+     }
+ 
++    private bool _loggingInAll;
++    public bool LoggingInAll => _loggingInAll;
++
++    /// <summary>Progress of the last "Log in all" for the roster footer (shown for a minute).</summary>
++    public string? LogInAllStatus => DateTime.UtcNow - _logInAllStatusAt < TimeSpan.FromMinutes(1) ? _logInAllStatus : null;
++    private string? _logInAllStatus;
++    private DateTime _logInAllStatusAt;
++    public event Action? LogInAllStatusChanged;
++
++    private void SetLogInAllStatus(string status)
++    {
++        _logInAllStatus = status;
++        _logInAllStatusAt = DateTime.UtcNow;
++        try { LogInAllStatusChanged?.Invoke(); } catch { }
++    }
++
++    /// <summary>
++    /// Log in every other open client that is logged out, on this account's server so they can be summoned
++    /// right away. Accounts already in game are left alone.
++    /// </summary>
++    public async void LogInAll()
++    {
++        if (_loggingInAll)
++            return;
++        _loggingInAll = true;
++        DebugLog.Log("UI", "Log in all clicked");
++        try
++        {
++            // Same server as this account (if it is in game), else this client's relogin server.
++            string server = _bot?.Player?.LoggedIn == true ? MyServerName : "";
++            if (string.IsNullOrWhiteSpace(server))
++                server = _bot?.Options?.ReloginServer ?? "";
++            bool useServer = !string.IsNullOrWhiteSpace(server);
++            if (useServer)
++            {
++                try { File.WriteAllLines(Skua.Core.AppStartup.HotKeys.LoginServerFile, new[] { server, DateTime.UtcNow.Ticks.ToString() }); }
++                catch { useServer = false; }
++            }
++
++            SetLogInAllStatus("Log in all: checking the other clients...");
++            List<int> pids = Skua.Core.AppStartup.HotKeys.ArmyClientPids(includeSelf: false);
++            // 2 = in game, 1 = logged out, 3 = already logging in, 0 = not a client (the tab host).
++            var states = await Task.Run(() => pids.Select(pid => (pid, state: Skua.Core.AppStartup.HotKeys.QueryArmyClient(pid, Skua.Core.AppStartup.HotKeys.WM_SKUA_LOGIN_STATE))).ToList());
++            List<int> loggedOut = states.Where(x => x.state == 1).Select(x => x.pid).ToList();
++            int inGame = states.Count(x => x.state == 2);
++            int busy = states.Count(x => x.state == 3);
++            DebugLog.Log("UI", $"Log in all: {loggedOut.Count} logged out, {inGame} in game, {busy} already logging in, server '{server}'");
++
++            if (loggedOut.Count + inGame + busy == 0)
++            {
++                SetLogInAllStatus("Log in all: no other clients are open. Start them from the Manager first.");
++                Log("Log in all: no other clients are open.");
++                return;
++            }
++            if (loggedOut.Count == 0)
++            {
++                SetLogInAllStatus(busy > 0
++                    ? $"Log in all: {busy} already logging in, the rest are in game."
++                    : "Log in all: every other account is already in game.");
++                return;
++            }
++
++            string where = useServer ? $" on {server}" : "";
++            for (int i = 0; i < loggedOut.Count; i++)
++            {
++                SetLogInAllStatus($"Log in all: logging in {i + 1} of {loggedOut.Count}{where}...");
++                Skua.Core.AppStartup.HotKeys.PostToArmyClients(0x0400 + 447, useServer ? Skua.Core.AppStartup.HotKeys.LOGIN_USE_SERVER_FILE : 0, 0, includeSelf: false, onlyPid: loggedOut[i]);
++                // Spread out so AQW doesn't see a burst of logins.
++                if (i + 1 < loggedOut.Count)
++                    await Task.Delay(2000);
++            }
++            string done = $"Log in all: {loggedOut.Count} account{(loggedOut.Count == 1 ? " is" : "s are")} logging in{where}"
++                + (inGame > 0 ? $" ({inGame} already in game)" : "") + ". They show up here once in game.";
++            SetLogInAllStatus(done);
++            Log(done);
++        }
++        catch (Exception ex)
++        {
++            SetLogInAllStatus("Log in all failed: " + ex.Message);
++            Log("Log in all failed: " + ex.Message);
++        }
++        finally
++        {
++            _loggingInAll = false;
++            try { LogInAllStatusChanged?.Invoke(); } catch { }
++        }
++    }
++
+     /// <summary>Order every online plugin account to follow this one.</summary>
+     public void SummonAll()
+     {
+diff --git a/Skua.Plugin.ButlerV5/DebugLog.cs b/Skua.Plugin.ButlerV5/DebugLog.cs
+index 0b5b0e8..5dd94da 100644
+--- a/Skua.Plugin.ButlerV5/DebugLog.cs
++++ b/Skua.Plugin.ButlerV5/DebugLog.cs
+@@ -40,6 +40,7 @@ public static class DebugLog
+     private static readonly string _path = Path.Combine(_dir, $"debug_pid{Environment.ProcessId}.log");
+ 
+     private const int MaxMem = 2000;
++    private static int _writesSinceCheck;
+     private static readonly List<LogLine> _mem = new();
+     private static long _seq;
+     private static string? _lastNorm;
+@@ -71,6 +72,14 @@ public static class DebugLog
+                 lock (_fileLock)
+                 {
+                     Directory.CreateDirectory(_dir);
++                    // Week-long runs: past 10 MB keep one previous file and start over.
++                    if (++_writesSinceCheck >= 500)
++                    {
++                        _writesSinceCheck = 0;
++                        var info = new FileInfo(_path);
++                        if (info.Exists && info.Length > 10_000_000)
++                            File.Move(_path, _path + ".old", overwrite: true);
++                    }
+                     File.AppendAllText(_path, line + Environment.NewLine);
+                 }
+             }
+diff --git a/Skua.Plugin.ButlerV5/RosterWindow.cs b/Skua.Plugin.ButlerV5/RosterWindow.cs
+index 5f727fd..359f4b8 100644
+--- a/Skua.Plugin.ButlerV5/RosterWindow.cs
++++ b/Skua.Plugin.ButlerV5/RosterWindow.cs
+@@ -19,6 +19,7 @@ public sealed class RosterWindow : Window
+     private readonly Button _releaseAllButton;
+     private readonly Button _summonAllButton;
+     private readonly TextBlock _footerText;
++    private readonly Button _logInAllButton;
+     private string _lastSnapshot = "";
+ 
+     public RosterWindow(ButlerV5Plugin plugin)
+@@ -97,7 +98,7 @@ public sealed class RosterWindow : Window
+         Grid footer = new()
+         {
+             Margin = new Thickness(2, 10, 2, 0),
+-            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto"),
++            ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto,Auto"),
+         };
+         _footerText = AvaloniaUi.TextBlock(11, AvaloniaUi.SubText);
+         _footerText.VerticalAlignment = VerticalAlignment.Center;
+@@ -112,15 +113,27 @@ public sealed class RosterWindow : Window
+         Grid.SetColumn(_summonAllButton, 1);
+         footer.Children.Add(_summonAllButton);
+ 
++        Button logInAll = AvaloniaUi.Button("Log in all", () =>
++        {
++            _plugin.LogInAll();
++            Refresh(force: true);
++        });
++        _logInAllButton = logInAll;
++        AvaloniaUi.SetToolTip(logInAll, "Log in every other open client that is logged out (one every 2 seconds),\non this account's server so you can summon them right after.\nAccounts already in game, and this one, are left alone.");
++        logInAll.Margin = new Thickness(0, 0, 6, 0);
++        Grid.SetColumn(logInAll, 2);
++        footer.Children.Add(logInAll);
++
+         Button settings = AvaloniaUi.Button("Settings", _plugin.OpenSettings);
+         AvaloniaUi.SetToolTip(settings, "Open the ButlerV5 settings and debug log.");
+-        Grid.SetColumn(settings, 2);
++        Grid.SetColumn(settings, 3);
+         footer.Children.Add(settings);
+         Grid.SetRow(footer, 2);
+         root.Children.Add(footer);
+ 
+         Content = root;
+         _plugin.SyncFilesChanged += OnSyncFilesChanged;
++        _plugin.LogInAllStatusChanged += OnSyncFilesChanged;
+         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+         _timer.Tick += (_, _) => Refresh();
+         _timer.Start();
+@@ -130,6 +143,7 @@ public sealed class RosterWindow : Window
+         {
+             _timer.Stop();
+             _plugin.SyncFilesChanged -= OnSyncFilesChanged;
++            _plugin.LogInAllStatusChanged -= OnSyncFilesChanged;
+         };
+     }
+ 
+@@ -170,7 +184,10 @@ public sealed class RosterWindow : Window
+             _timer.Interval = interval;
+         _footerText.Text = pluginOff
+             ? "ButlerV5 is DISABLED - turn it on in Settings"
+-            : $"{online.Count} other plugin account{(online.Count == 1 ? "" : "s")} online - refreshes every {refreshSeconds}s";
++            : _plugin.LogInAllStatus
++              ?? $"{online.Count} other plugin account{(online.Count == 1 ? "" : "s")} online - refreshes every {refreshSeconds}s";
++        _footerText.TextWrapping = TextWrapping.Wrap;
++        _logInAllButton.IsEnabled = !_plugin.LoggingInAll;
+ 
+         string myServer = _plugin.MyServerName;
+         string snapshot = string.Join(";", online.Select(d =>
+diff --git a/Skua.Plugin.ButlerV5/SyncFile.cs b/Skua.Plugin.ButlerV5/SyncFile.cs
+index e2715dc..640533a 100644
+--- a/Skua.Plugin.ButlerV5/SyncFile.cs
++++ b/Skua.Plugin.ButlerV5/SyncFile.cs
+@@ -245,7 +245,7 @@ public static class SyncFile
+             // Verify process name: Windows recycles PIDs after a crash. If another program
+             // (e.g. RuntimeBroker, svchost, Discord) inherits the PID, it is NOT Skua.
+             string name = process.ProcessName.ToLowerInvariant();
+-            if (!name.Contains("skua") && !name.Contains("vibeskua") && name != "dotnet")
++            if (!name.Contains("skua") && !name.Contains("skuffle") && name != "dotnet") // "skuffle": VibeSkuffle (Ruffle build)
+                 return false;
+ 
+             // If the process started after the sync file was written, the PID was recycled to a new process.
+diff --git a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs b/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
+index 3c5ffed..e528020 100644
+--- a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
++++ b/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
+@@ -12,7 +12,7 @@ namespace Skua.Shared.Avalonia.Controls.Shell;
+ public partial class WindowTitleBar : UserControl
+ {
+     public static readonly StyledProperty<string> TitleTextProperty =
+-        AvaloniaProperty.Register<WindowTitleBar, string>(nameof(TitleText), "VibeSkua");
++        AvaloniaProperty.Register<WindowTitleBar, string>(nameof(TitleText), "VibeSkuffle");
+ 
+     private static readonly IImage DefaultIconSource = LoadDefaultIconSource();
+ 
+diff --git a/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs b/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs
+index b2431a4..bfac232 100644
+--- a/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs
++++ b/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs
+@@ -52,7 +52,7 @@ public class AboutViewModel : BotControlViewModelBase
+ 
+     private async Task GetAboutContent()
+     {
+-        MarkdownDoc = @"# VibeSkua
++        MarkdownDoc = @"# VibeSkuffle
+ > **Note:** This project is **Vibe Coded**—built entirely through AI-assisted development, and pure momentum.
+ 
+ A feature-rich, high-performance derivative of auqw/skua, engineered for advanced automation, stability, and streamlined multi-client management.
+diff --git a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
+index d09cbda..de24757 100644
+--- a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
++++ b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
+@@ -425,6 +425,6 @@ public partial class ScriptSchedulerViewModel : BotControlViewModelBase
+                 return servers.CachedUsername!;
+         }
+         catch { }
+-        return "VibeSkua Bot";
++        return "VibeSkuffle Bot";
+     }
+ }
+diff --git a/Skua.Shared.Avalonia/Views/AboutView.axaml b/Skua.Shared.Avalonia/Views/AboutView.axaml
+index 356a4da..1afe485 100644
+--- a/Skua.Shared.Avalonia/Views/AboutView.axaml
++++ b/Skua.Shared.Avalonia/Views/AboutView.axaml
+@@ -26,7 +26,7 @@
+                     <TextBlock FontSize="16"
+                                FontWeight="Bold"
+                                Foreground="{DynamicResource SkuaTextBrush}"
+-                               Text="About VibeSkua" />
++                               Text="About VibeSkuffle" />
+                 </StackPanel>
+                 <materialIcons:MaterialIcon Grid.Column="1"
+                                             Kind="Information"
+diff --git a/package-build.ps1 b/package-build.ps1
+index 3c1bc9e..607b718 100644
+--- a/package-build.ps1
++++ b/package-build.ps1
+@@ -37,7 +37,7 @@ foreach ($Target in $Targets) {
+ 
+     # 1. Copy Root Files from AppBin
+     $RootAppFiles = @(
+-        "VibeSkua.exe", "VibeSkua.dll", "VibeSkua.runtimeconfig.json", "VibeSkua.deps.json",
++        "VibeSkuffle.exe", "VibeSkuffle.dll", "VibeSkuffle.runtimeconfig.json", "VibeSkuffle.deps.json",
+         "QuestData.json", "AdvancedSkills.json", "ScriptDates.json"
+     )
+     foreach ($file in $RootAppFiles) {
+@@ -50,7 +50,7 @@ foreach ($Target in $Targets) {
+     }
+ 
+     # 2. Copy Root Files from ManagerBin
+-    $RootManagerFiles = @("VibeSkua.Manager.exe", "VibeSkua.Manager.dll", "VibeSkua.Manager.runtimeconfig.json", "Velopack.dll")
++    $RootManagerFiles = @("VibeSkuffle.Manager.exe", "VibeSkuffle.Manager.dll", "VibeSkuffle.Manager.runtimeconfig.json", "Velopack.dll")
+     foreach ($file in $RootManagerFiles) {
+         $src = Join-Path $ManagerBin $file
+         if (Test-Path $src) {
+@@ -66,7 +66,7 @@ foreach ($Target in $Targets) {
+     }
+ 
+     # 4. Copy all DLLs and XMLs into Assemblies (excluding root DLLs)
+-    $ExcludedDlls = @("VibeSkua.dll", "VibeSkua.Manager.dll", "Skua.dll", "Skua.Manager.dll")
++    $ExcludedDlls = @("VibeSkuffle.dll", "VibeSkuffle.Manager.dll", "Skua.dll", "Skua.Manager.dll")
+     $AppDlls = Get-ChildItem -Path $AppBin -Filter "*.dll" -File
+     foreach ($dll in $AppDlls) {
+         if ($ExcludedDlls -notcontains $dll.Name) {
+@@ -133,8 +133,8 @@ foreach ($Target in $Targets) {
+ 
+     # 9. Clean up stray files from target root
+     $AllowedRootFiles = @(
+-        "VibeSkua.exe", "VibeSkua.dll", "VibeSkua.runtimeconfig.json", "VibeSkua.deps.json",
+-        "VibeSkua.Manager.exe", "VibeSkua.Manager.dll", "VibeSkua.Manager.runtimeconfig.json", "VibeSkua.Manager.deps.json",
++        "VibeSkuffle.exe", "VibeSkuffle.dll", "VibeSkuffle.runtimeconfig.json", "VibeSkuffle.deps.json",
++        "VibeSkuffle.Manager.exe", "VibeSkuffle.Manager.dll", "VibeSkuffle.Manager.runtimeconfig.json", "VibeSkuffle.Manager.deps.json",
+         "Velopack.dll", "skua.swf", "AdvancedSkills.json", "QuestData.json", "ScriptDates.json"
+     )
+ 
