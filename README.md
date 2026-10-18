@@ -32,10 +32,11 @@ settings folder as VibeSkua (`%APPDATA%\VibeSkua`), and can run side by side wit
 | Windows | 10 or 11, 64-bit | 11 |
 | RAM | 16 GB | 32 GB |
 | Graphics | DirectX 12 or Vulkan capable | Any card from the last ~8 years |
-| VRAM | 4 GB | 8 GB+ |
+| VRAM | 6 GB | 8 GB+ |
 
-Each account's game window uses roughly 0.5–1.5 GB of RAM (it cleans itself up in the background).
-VRAM figures are still being measured.
+Measured with 6 accounts farming, all visible in Grid View (the heaviest case): each game window used
+**540–730 MB of VRAM (about 4.1 GB for 6)**. Background tabs use less. RAM per game window is roughly
+0.5–1.5 GB idle and grows while farming (it cleans up after itself, with a restart safety net).
 
 ---
 
