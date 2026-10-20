@@ -154,11 +154,36 @@ versions the patches were made for, apply the patches and build. See [docs/BUILD
 
 ## Credits and licenses
 
-- **[VibeSkua](https://github.com/NinjaXz/VibeSkua)** by NinjaXz, a derivative of
-  [Skua](https://github.com/auqw/skua) (MIT, as stated in VibeSkua's README). Includes the ButlerV5 plugin.
-- **[Mugetsu](https://github.com/mugetsu-aqw/mugetsu)**, GPL-3.0, built on
-  **[Ruffle](https://github.com/ruffle-rs/ruffle)** (MIT / Apache-2.0).
+VibeSkuffle exists because of the people who built the bot it's made from. Thank you all.
+
+**[VibeSkua](https://github.com/NinjaXz/VibeSkua)**
+- **[NinjaXz](https://github.com/NinjaXz)**: creator. Avalonia overhaul, the multi-client tabbed host, army controls
+  and grid view, headless mode, the script scheduler, stability work and the release pipeline.
+- **[wtffidy](https://github.com/wtffidy)** (Tato): contributor (also a long-time Skua contributor, and the author
+  of Skua Nexus).
+- **[ArrowDev](https://github.com/ArrowDev123/Skua)** (BlackArrow on Discord): the early Avalonia UI port foundation.
+
+**[ButlerV5](https://github.com/NinjaXz/VibeSkua/tree/main/Skua.Plugin.ButlerV5)** (bundled with VibeSkua)
+- **[l0newolf12](https://github.com/l0newolf12)** (lonewolf_12): author of ButlerV5 and of its Avalonia port.
+
+**[Skua](https://github.com/auqw/skua)** (MIT), the original framework and botting API, by the auqw team and
+contributors (from the project's commit history):
+[SharpTheNightmare](https://github.com/SharpTheNightmare) (Purple),
+[d3lfs](https://github.com/d3lfs) (also [slypy](https://github.com/slypy)),
+[wtffidy](https://github.com/wtffidy) (Tato),
+[BrenoHenrike](https://github.com/BrenoHenrike),
+[l0newolf12](https://github.com/l0newolf12),
+[blackarrow123](https://github.com/blackarrow123),
+[LordExelot](https://github.com/LordExelot),
+[robmart](https://github.com/robmart) and
+Lucas Correa.
+
+**The game player**
+- **[Mugetsu](https://github.com/mugetsu-aqw/mugetsu)** (GPL-3.0), built on
+  **[Ruffle](https://github.com/ruffle-rs/ruffle)** (MIT / Apache-2.0) by the Ruffle contributors.
 - **[JPEXS FFDec](https://github.com/jindrapetrik/jpexs-decompiler)** (GPL-3.0), bundled with VibeSkua.
+
+If you contributed to any of these and are missing or want your entry changed, open an [issue](../../issues).
 
 The game player shipped here is a **modified** Mugetsu (it adds the bridge VibeSkuffle talks to). Its source is
 Mugetsu v1.4.0 plus [`patches/skua.patch`](patches/skua.patch). This repository is licensed under
