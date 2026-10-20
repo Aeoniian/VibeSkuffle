@@ -51,16 +51,6 @@ each game window used **540–730 MB of VRAM** when fresh; across the runs the g
 while farming; on a 32 GB PC the free RAM never dropped below ~2.9 GB (VibeSkuffle restarts the biggest game
 window when the PC runs low). With 16 GB those restarts just happen more often.
 
----|---|---|
-| Windows | 10 or 11, 64-bit | 11 |
-| RAM | 16 GB | 32 GB |
-| Graphics | DirectX 12 or Vulkan capable | Any card from the last ~8 years |
-| VRAM | 6 GB | 8 GB+ |
-
-Measured with 6 accounts farming, all visible in Grid View (the heaviest case): each game window used
-**540–730 MB of VRAM (about 4.1 GB for 6)**. Background tabs use less. RAM per game window is roughly
-0.5–1.5 GB idle and grows while farming (it cleans up after itself, with a restart safety net).
-
 ---
 
 ## What's different from VibeSkua
@@ -100,7 +90,8 @@ name, never passwords). Logs are size-capped so they can't fill your drive.
 When an account running a script keeps dying (10 deaths without a kill, or 15 minutes of only deaths), every other
 account **on the same server** that is running a script and has *Rescue Allies* on stops its script, goes to that
 room and cell and fights there. As soon as the stuck account gets a kill they go back to where they were and their
-scripts start again. They give up after 20 minutes. Off by default; turn it on (and Save) per account.
+scripts start again. They give up after 20 minutes. Off by default; turn it on and click Save Options (this setting is shared, so it
+applies to every account started afterwards).
 
 ### Drops
 - **Ignore Script Reject Else** (Game Options → Drops & Looting): scripts can no longer throw away drops they
