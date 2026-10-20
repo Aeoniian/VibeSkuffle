@@ -2567,10 +2567,10 @@ index 513dd82..098fad3 100644
              catch (OperationCanceledException) when (token.IsCancellationRequested)
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..bd5692c
+index 0000000..c7e84d8
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,680 @@
+@@ -0,0 +1,677 @@
 +using Skua.Core.Interfaces;
 +
 +namespace Skua.Core.Scripts;
@@ -3127,17 +3127,14 @@ index 0000000..bd5692c
 +                }
 +                else
 +                {
-+                    // Make sure it got going (a script that started while the game was still settling can stop
-+                    // straight away).
++                    // Wait a moment: if it gets knocked out of the game right away, leaving the game sets up another go.
 +                    await Task.Delay(15000);
-+                    if (Manager.ScriptRunning)
-+                    {
-+                        _wdRestartScript = false;
-+                        return;
-+                    }
-+                    if (!(Player.Playing && Flash.IsWorldLoaded))
++                    if (!Manager.ScriptRunning && !(Player.Playing && Flash.IsWorldLoaded))
 +                        return; // knocked out again; leaving the game sets it up for another go
-+                    WdLog(" the script stopped right after starting.");
++                    // Running, or it finished / was stopped by itself while the game is fine: done either way
++                    // (starting a script that ends by itself over and over would be wrong).
++                    _wdRestartScript = false;
++                    return;
 +                }
 +                await Task.Delay(10000);
 +            }
