@@ -6,7 +6,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
 $env:GIT_CONFIG_PARAMETERS = "'core.autocrlf=false'"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-$commit = '239b20da5f706725aeec201d887ad3ada125ccc5'   # VibeSkua version the patch was made against
+$commit = '2fc9bb57b1bcc61703afe23363dbfbd20c17fc93'   # VibeSkua version the patch was made against (v2.0.5)
 
 $skua = Join-Path $root 'VibeSkua'
 if (-not (Test-Path (Join-Path $skua '.git'))) {
@@ -14,6 +14,17 @@ if (-not (Test-Path (Join-Path $skua '.git'))) {
     git clone -q https://github.com/NinjaXz/VibeSkua.git $skua
     if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
     git -C $skua checkout -q -b ruffle $commit
+    if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
+}
+
+# An existing download at an older VibeSkua version: move it to the version the patch is for.
+$head = (git -C $skua rev-parse HEAD 2>$null | Out-String).Trim()
+if ($head -ne $commit) {
+    Write-Host "== Updating VibeSkua to $commit"
+    git -C $skua checkout -q -- .
+    git -C $skua fetch -q origin
+    if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+    git -C $skua checkout -q -f -B ruffle $commit
     if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
 }
 
@@ -45,11 +56,17 @@ foreach ($name in 'VibeSkua.exe', 'VibeSkua.dll', 'VibeSkua.runtimeconfig.json',
 
 # Close only the VibeSkuffle build in this folder (clients, Manager, Mugetsu); a normal VibeSkua is left alone.
 $buildDir = (Join-Path $skua 'Build').ToLower()
-# Clients first, then the tab window: a client that sees its tab window killed starts itself again
-# (that's the tab-window crash recovery), which mustn't happen in the middle of a build.
-Get-CimInstance Win32_Process -Filter "name='VibeSkuffle.exe' or name='VibeSkuffle.Manager.exe' or name='Mugetsu.exe'" |
-    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($buildDir) } |
-    Sort-Object { if ($_.CommandLine -like '*--embed*') { 0 } elseif ($_.Name -eq 'VibeSkuffle.exe') { 1 } else { 2 } } |
+# Nothing may start itself again in the middle of a build: a client whose tab window dies starts itself
+# again (tab-window crash recovery), and a tab window starts a client again when it dies. So: mark each tab
+# window as "closing on purpose" (its clients then don't come back), close the tab windows, then the rest.
+$procs = Get-CimInstance Win32_Process -Filter "name='VibeSkuffle.exe' or name='VibeSkuffle.Manager.exe' or name='Mugetsu.exe'" |
+    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.ToLower().StartsWith($buildDir) }
+$markerDir = Join-Path $env:TEMP 'VibeSkuaTabs'
+New-Item -ItemType Directory -Force $markerDir | Out-Null
+$procs | Where-Object { $_.Name -eq 'VibeSkuffle.exe' -and $_.CommandLine -notlike '*--embed*' } |
+    ForEach-Object { Set-Content -Path (Join-Path $markerDir "host-$($_.ProcessId).closing") -Value ([DateTime]::UtcNow.Ticks) }
+$procs |
+    Sort-Object { if ($_.Name -eq 'VibeSkuffle.exe' -and $_.CommandLine -notlike '*--embed*') { 0 } elseif ($_.Name -eq 'VibeSkuffle.exe') { 1 } else { 2 } } |
     ForEach-Object { Write-Host "Closing $($_.Name) ($($_.ProcessId))"; Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 1
 

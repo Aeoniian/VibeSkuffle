@@ -282,10 +282,10 @@ index 0000000..4d95294
 +#endif
 diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 new file mode 100644
-index 0000000..90d0ed0
+index 0000000..fc2907c
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
-@@ -0,0 +1,982 @@
+@@ -0,0 +1,1012 @@
 +using Skua.Core.Interfaces;
 +using System;
 +using System.Xml.Linq;
@@ -740,6 +740,36 @@ index 0000000..90d0ed0
 +                File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{who}]{message}{Environment.NewLine}");
 +        }
 +        catch { }
++    }
++
++    public bool CanRestartClient
++    {
++        get
++        {
++            string[] args = Environment.GetCommandLineArgs();
++            return args.Contains("--embed") && (args.Contains("-u") || args.Contains("--user"));
++        }
++    }
++
++    public void RestartClient(bool runScript)
++    {
++        try
++        {
++            // Tell the tab window which script to bring back (the same file it reads after a crash).
++            string script = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<IScriptManager>()?.LoadedScript ?? "";
++            string dir = Path.Combine(Path.GetTempPath(), "VibeSkuaTabs");
++            Directory.CreateDirectory(dir);
++            File.WriteAllText(Path.Combine(dir, $"{Environment.ProcessId}.state"), $"{script}\n{(runScript ? 1 : 0)}");
++        }
++        catch { }
++        Trace.WriteLine("Restarting the whole client (login watchdog).");
++        _disposed = true; // no "the game window closed" handling on the way out
++        if (_session is { } session)
++            KillPlayer(session);
++        // A non-zero exit code: the tab window treats it like a crash and starts this account again.
++        // If shutting down hangs, kill the process (also a non-zero exit code).
++        new Thread(() => { Thread.Sleep(5000); try { Process.GetCurrentProcess().Kill(); } catch { } }) { IsBackground = true }.Start();
++        Environment.Exit(75);
 +    }
 +
 +    public void RestartGamePlayer()
@@ -1555,16 +1585,109 @@ index 20f585f..7d05e4d 100644
          <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
      </PropertyGroup>
  
+diff --git a/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs b/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
+index 0986fea..96a8212 100644
+--- a/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
++++ b/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
+@@ -9,16 +9,19 @@ using System;
+ using System.Collections.Generic;
+ using System.Collections.ObjectModel;
+ using System.Linq;
++using System.Threading.Tasks;
+ 
+ namespace Skua.App.Avalonia.ViewModels;
+ 
+ public partial class CurrentDropsViewModel : BotControlViewModelBase
+ {
+-    public CurrentDropsViewModel(IScriptDrop drops, IScriptPlayer player)
++    public CurrentDropsViewModel(IScriptDrop drops, IScriptPlayer player, IScriptInventory inventory, IScriptBank bank)
+         : base("Current Drops", 500, 400)
+     {
+         _drops = drops;
+         _player = player;
++        _inventory = inventory;
++        _bank = bank;
+         FilteredCurrentDrops = new ObservableCollection<ItemBase>();
+     }
+ 
+@@ -34,6 +37,14 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
+     }
+ 
+     private readonly IScriptPlayer _player;
++    private readonly IScriptInventory _inventory;
++    private readonly IScriptBank _bank;
++
++    [ObservableProperty]
++    private string _status = string.Empty;
++
++    [ObservableProperty]
++    private bool _banking;
+     private readonly IScriptDrop _drops;
+     private string _searchText = string.Empty;
+ 
+@@ -103,6 +114,52 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
+         RefreshDrops();
+     }
+ 
++    /// <summary>Picks up only the AC drops, then puts each picked-up item straight into the bank.</summary>
++    [RelayCommand]
++    private async Task PickupACToBank()
++    {
++        if (Banking || !_player.Playing)
++            return;
++        Banking = true;
++        try
++        {
++            List<string> names = _drops.CurrentDropInfos.Where(d => d.Coins).Select(d => d.Name.Trim())
++                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
++            if (names.Count == 0)
++            {
++                Status = "No AC drops to pick up.";
++                return;
++            }
++            Status = $"Picking up {names.Count} AC drop(s)...";
++            (List<string> banked, List<string> notBanked) = await Task.Run(() =>
++            {
++                _drops.Pickup(names.ToArray());
++                List<string> picked = names.Where(n => _inventory.Contains(n)).ToList();
++                List<string> ok = new(), failed = new();
++                if (picked.Count == 0)
++                    return (ok, names);
++                if (!_bank.Loaded)
++                    _bank.Load(true);
++                foreach (string n in picked)
++                    (_inventory.EnsureToBank(n) ? ok : failed).Add(n);
++                failed.AddRange(names.Except(picked, StringComparer.OrdinalIgnoreCase));
++                return (ok, failed);
++            });
++            Status = banked.Count > 0
++                ? $"Banked: {string.Join(", ", banked)}" + (notBanked.Count > 0 ? $". Not banked (no space or not picked up): {string.Join(", ", notBanked)}" : "")
++                : $"Couldn't bank: {string.Join(", ", notBanked)} (no inventory or bank space?)";
++        }
++        catch (Exception ex)
++        {
++            Status = "Failed: " + ex.Message;
++        }
++        finally
++        {
++            Banking = false;
++            RefreshDrops();
++        }
++    }
++
+     private void CurrentDropsChanged(CurrentDropsViewModel recipient, ItemDroppedMessage message)
+     {
+         recipient.RefreshDrops();
 diff --git a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
-index df73fcd..4c76abe 100644
+index 4d4bab5..28a63fb 100644
 --- a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
 @@ -10,7 +10,7 @@ namespace Skua.App.Avalonia.ViewModels.MainMenu;
  public sealed partial class MainViewModel : ObservableObject
  {
      [ObservableProperty]
--    private string _title = "VibeSkua V2.0.2";
-+    private string _title = "VibeSkuffle V2.0.2";
+-    private string _title = "VibeSkua V2.0.5";
++    private string _title = "VibeSkuffle V2.0.5";
  
      public MainMenuViewModel MainMenu { get; }
  
@@ -1621,6 +1744,41 @@ index 1569ff9..c29fec0 100644
      }
  
      protected override void OnActivated()
+diff --git a/Skua.App.Avalonia/Views/CurrentDropsView.axaml b/Skua.App.Avalonia/Views/CurrentDropsView.axaml
+index e6608e5..1594254 100644
+--- a/Skua.App.Avalonia/Views/CurrentDropsView.axaml
++++ b/Skua.App.Avalonia/Views/CurrentDropsView.axaml
+@@ -128,7 +128,7 @@
+             BorderThickness="1"
+             CornerRadius="8"
+             Padding="10">
+-      <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
++      <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+         <Button Grid.Column="0"
+                 Classes="skua-button skua-primary"
+                 Height="34"
+@@ -158,6 +158,21 @@
+             <TextBlock Text="Pickup AC Only" VerticalAlignment="Center" />
+           </StackPanel>
+         </Button>
++        <Button Grid.Row="1" Grid.ColumnSpan="3"
++                Classes="skua-button"
++                Height="34"
++                IsEnabled="{Binding !Banking}"
++                ToolTip.Tip="Picks up only the AC drops, then sends each picked-up item to the bank."
++                Command="{Binding PickupACToBankCommand}">
++          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
++            <materialIcons:MaterialIcon Kind="Bank" Width="14" Height="14" Foreground="#FFD700" />
++            <TextBlock Text="Pickup AC Only and Send to Bank" VerticalAlignment="Center" />
++          </StackPanel>
++        </Button>
++        <TextBlock Grid.Row="2" Grid.ColumnSpan="3"
++                   Text="{Binding Status}"
++                   IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
++                   TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
+       </Grid>
+     </Border>
+   </Grid>
 diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
 index 3892328..707d620 100644
 --- a/Skua.App.Avalonia/Views/MainWindow.axaml.cs
@@ -1924,10 +2082,10 @@ index 274c1e7..26d8054 100644
      <Grid RowDefinitions="Auto,*">
          
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
-index 1e620fe..834f3ee 100644
+index 4eeac58..f67fd2a 100644
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
-@@ -43,6 +43,11 @@ public partial class TabbedHostWindow : Window
+@@ -44,6 +44,11 @@ public partial class TabbedHostWindow : Window
      private SubclassProc? _subclassProc;
      private const int WM_SKUA_CHILD_READY = 0x0400 + 440;
  
@@ -1939,7 +2097,7 @@ index 1e620fe..834f3ee 100644
      [DllImport("user32.dll", SetLastError = true)]
      public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
  
-@@ -279,7 +284,10 @@ public partial class TabbedHostWindow : Window
+@@ -280,7 +285,10 @@ public partial class TabbedHostWindow : Window
      {
          _initialArgs = initialArgs ?? Array.Empty<string>();
          InitializeComponent();
@@ -1951,7 +2109,7 @@ index 1e620fe..834f3ee 100644
  
          var options = Ioc.Default.GetRequiredService<IScriptOption>();
          MiscOptionsMenu.DataContext = options;
-@@ -562,6 +570,8 @@ public partial class TabbedHostWindow : Window
+@@ -563,6 +571,8 @@ public partial class TabbedHostWindow : Window
  
      private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
      {
@@ -1960,7 +2118,7 @@ index 1e620fe..834f3ee 100644
          _isClosing = true;
          App.DisposeTrayIcon();
          try { _pipeCts.Cancel(); } catch { }
-@@ -616,7 +626,7 @@ public partial class TabbedHostWindow : Window
+@@ -617,7 +627,7 @@ public partial class TabbedHostWindow : Window
                  try
                  {
                      pipeServer = new NamedPipeServerStream(
@@ -1969,7 +2127,7 @@ index 1e620fe..834f3ee 100644
                          PipeDirection.In,
                          NamedPipeServerStream.MaxAllowedServerInstances,
                          PipeTransmissionMode.Byte,
-@@ -1161,7 +1171,8 @@ public partial class TabbedHostWindow : Window
+@@ -1162,7 +1172,8 @@ public partial class TabbedHostWindow : Window
              string[] parts = (vm.DialogTextInput ?? "").Split(',');
              string targetMap = parts.Length > 0 ? parts[0].Trim() : "";
              string targetCell = parts.Length > 1 ? parts[1].Trim() : "Enter";
@@ -1979,7 +2137,7 @@ index 1e620fe..834f3ee 100644
              {
                  _lastJumpMap = targetMap;
                  _lastJumpCell = targetCell;
-@@ -1352,6 +1363,10 @@ public partial class TabbedHostWindow : Window
+@@ -1353,6 +1364,10 @@ public partial class TabbedHostWindow : Window
                      if (info.ChildHwnd != IntPtr.Zero)
                          SetWindowPos(info.ChildHwnd, HWND_TOP, -32000, -32000, 0, 0, SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | SWP_NOSIZE);
                  }
@@ -1990,7 +2148,7 @@ index 1e620fe..834f3ee 100644
                  return;
              }
  
-@@ -1579,6 +1594,81 @@ public partial class TabbedHostWindow : Window
+@@ -1580,6 +1595,81 @@ public partial class TabbedHostWindow : Window
              InstancesTabControl.SelectedItem = remaining;
      }
  
@@ -2072,7 +2230,7 @@ index 1e620fe..834f3ee 100644
      public void AddNewInstance(string rawArgs)
      {
          AddNewInstance(ParseRawCommandLine(rawArgs));
-@@ -1773,6 +1863,17 @@ public partial class TabbedHostWindow : Window
+@@ -1774,6 +1864,17 @@ public partial class TabbedHostWindow : Window
                  {
                      if (!_isClosing)
                      {
@@ -2090,7 +2248,7 @@ index 1e620fe..834f3ee 100644
                          CloseTab(newTab);
                      }
                  });
-@@ -1780,13 +1881,9 @@ public partial class TabbedHostWindow : Window
+@@ -1781,13 +1882,9 @@ public partial class TabbedHostWindow : Window
  
              p.Start();
              info.Process = p;
@@ -2107,12 +2265,48 @@ index 1e620fe..834f3ee 100644
              HotKeys.RegisterSkuaPid((uint)p.Id);
  
              int pid = p.Id;
+@@ -1838,6 +1935,26 @@ public partial class TabbedHostWindow : Window
+         ContextMenu ctx = new ContextMenu();
+         MenuItem closeItem = new MenuItem { Header = "Close Tab" };
+         closeItem.Click += (s, ev) => CloseTab(newTab);
++        // Same as closing the tab and starting the account again from the Manager (fixes an account that is
++        // out of sync with the server, which a relog doesn't), but keeps its login and script.
++        MenuItem restartItem = new MenuItem { Header = "Restart Client (keeps login and script)" };
++        if (AccountKey(clientArgs ?? Array.Empty<string>()).Length == 0)
++        {
++            restartItem.IsEnabled = false;
++            ToolTip.SetTip(restartItem, "Only for accounts started with a saved login (from the Manager).");
++        }
++        restartItem.Click += (s, ev) =>
++        {
++            try
++            {
++                if (info.Process is { HasExited: false } proc)
++                {
++                    HostLog(clientArgs ?? Array.Empty<string>(), " restarting the client (asked for from its tab).");
++                    proc.Kill(true); // a non-zero exit: the tab watcher starts it again with its login and script
++                }
++            }
++            catch { }
++        };
+         MenuItem closeOthersItem = new MenuItem { Header = "Close Other Tabs" };
+         closeOthersItem.Click += (s, ev) =>
+         {
+@@ -1851,6 +1968,8 @@ public partial class TabbedHostWindow : Window
+             var toRemove = InstancesTabControl.Items.OfType<TabItem>().Where((t, i) => i > idx && t.Header is StackPanel).ToList();
+             foreach (var tab in toRemove) CloseTab(tab);
+         };
++        ctx.Items.Add(restartItem);
++        ctx.Items.Add(new Separator());
+         ctx.Items.Add(closeItem);
+         ctx.Items.Add(closeOthersItem);
+         ctx.Items.Add(closeRightItem);
 diff --git a/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs b/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs
 new file mode 100644
-index 0000000..378eb0a
+index 0000000..38ff1c0
 --- /dev/null
 +++ b/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs
-@@ -0,0 +1,11 @@
+@@ -0,0 +1,20 @@
 +namespace Skua.Core.Interfaces;
 +
 +/// <summary>
@@ -2123,7 +2317,39 @@ index 0000000..378eb0a
 +{
 +    /// <summary>Closes the player and starts a new one; the game loads again and raises "loaded".</summary>
 +    void RestartGamePlayer();
++
++    /// <summary>True when this client runs as a tab whose tab window starts it again after it exits.</summary>
++    bool CanRestartClient { get; }
++
++    /// <summary>
++    /// Closes this whole client (and its game window) so the tab window starts it again with the same login and
++    /// the loaded script (running again if <paramref name="runScript"/>). Doesn't return.
++    /// </summary>
++    void RestartClient(bool runScript);
 +}
+diff --git a/Skua.Core.Interfaces/Scripts/IScriptOption.cs b/Skua.Core.Interfaces/Scripts/IScriptOption.cs
+index f736e5c..e67518b 100644
+--- a/Skua.Core.Interfaces/Scripts/IScriptOption.cs
++++ b/Skua.Core.Interfaces/Scripts/IScriptOption.cs
+@@ -50,6 +50,18 @@ public interface IScriptOption : INotifyPropertyChanged
+     /// </summary>
+     bool RejectAllDrops { get; set; }
+ 
++    /// <summary>
++    /// When enabled, a script's "Reject Else" (and its RejectExcept calls) no longer throw away drops the script
++    /// didn't ask for; they stay in the drop list so they can be picked up by hand. "Reject All Drops" still works.
++    /// </summary>
++    bool IgnoreScriptRejectElse { get; set; }
++
++    /// <summary>
++    /// When enabled and a script is running, this account goes to help another account on the same server that
++    /// keeps dying (10 deaths without a kill, or 15 minutes of only deaths), then comes back and starts its script again.
++    /// </summary>
++    bool RescueAllies { get; set; }
++
+     /// <summary>
+     /// Determines whether all monsters in the MAP should be provoked. They will all attack you at the same time.
+     /// </summary>
 diff --git a/Skua.Core.Interfaces/Scripts/IScriptServers.cs b/Skua.Core.Interfaces/Scripts/IScriptServers.cs
 index 41b9ab1..f1df59f 100644
 --- a/Skua.Core.Interfaces/Scripts/IScriptServers.cs
@@ -2308,12 +2534,43 @@ index 7b78a10..31651f8 100644
 +    public const int LOGIN_USE_SERVER_FILE = 1;
 +    public static string LoginServerFile => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "skua_login_server.txt");
  }
+diff --git a/Skua.Core/Scripts/ScriptDrop.cs b/Skua.Core/Scripts/ScriptDrop.cs
+index 513dd82..098fad3 100644
+--- a/Skua.Core/Scripts/ScriptDrop.cs
++++ b/Skua.Core/Scripts/ScriptDrop.cs
+@@ -132,6 +132,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+     {
+         if (Options.AcceptACDrops)
+             PickupACItems();
++        if (Options.IgnoreScriptRejectElse)
++            return;
+         RejectExceptCore(names);
+     }
+ 
+@@ -139,6 +141,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+     {
+         if (Options.AcceptACDrops)
+             PickupACItems();
++        if (Options.IgnoreScriptRejectElse)
++            return;
+         IEnumerable<string> items = CurrentDropInfos.Where(d => ids.Contains(d.ID)).Select(d => d.Name);
+         RejectExceptCore(items);
+     }
+@@ -273,7 +277,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+                 if (pickupNames.Length > 0)
+                     Pickup(pickupNames);
+ 
+-                if (RejectElse)
++                if (RejectElse && !Options.IgnoreScriptRejectElse)
+                     RejectExcept(BuildRejectElseWhitelist(pickupNames, pickupIDs));
+             }
+             catch (OperationCanceledException) when (token.IsCancellationRequested)
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..9f46912
+index 0000000..bd5692c
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,492 @@
+@@ -0,0 +1,680 @@
 +using Skua.Core.Interfaces;
 +
 +namespace Skua.Core.Scripts;
@@ -2366,9 +2623,52 @@ index 0000000..9f46912
 +    // disconnect). Whichever way it gets back in, the script is started again once it is in game.
 +    private volatile bool _wdRestartScript;
 +
++    // When a script was last seen running. A script often stops a moment before the game is seen as gone
++    // (the player was killed, calls start failing), so "was a script running when it left the game" looks
++    // back a little instead of only at that instant.
++    private int _wdScriptSeenAt;
++    private bool ScriptRanRecently => Manager.ScriptRunning || (_wdScriptSeenAt != 0 && Environment.TickCount - _wdScriptSeenAt < 45000);
++    private int _wdRestarting;
++    private int _wdStoppedInGameAt;
++
++    /// <summary>
++    /// Keeps <see cref="_wdScriptSeenAt"/> up to date. A script that stopped while the game carried on normally
++    /// for a few seconds afterwards was stopped on purpose or finished: it isn't started again later.
++    /// </summary>
++    private void TrackScriptStops()
++    {
++        int now = Environment.TickCount;
++        if (Manager.ScriptRunning)
++        {
++            _wdScriptSeenAt = now | 1;
++            _wdStoppedInGameAt = 0;
++            return;
++        }
++        if (_wdScriptSeenAt == 0)
++            return;
++        bool inGame = !_waitForLogin && !_wdBusy && Player.Playing && Flash.IsWorldLoaded;
++        if (!inGame)
++        {
++            _wdStoppedInGameAt = 0;
++            return;
++        }
++        if (_wdStoppedInGameAt == 0)
++            _wdStoppedInGameAt = now | 1;
++        else if (now - _wdStoppedInGameAt > 5000)
++        {
++            _wdScriptSeenAt = 0;
++            _wdStoppedInGameAt = 0;
++        }
++    }
++
++    // "Communication with server has been lost" left on screen (auto relogin off, or it gave up).
++    private int _wdLostSince;
++    private const int WatchdogLostMs = 60000;
++
 +    /// <summary>Called from the script timer about twice a second.</summary>
 +    private void LoginWatchdogTick()
 +    {
++        TrackScriptStops();
 +        if (_wdBusy)
 +            return;
 +
@@ -2379,13 +2679,15 @@ index 0000000..9f46912
 +            _wdStalls = 0;
 +            Servers.CurrentLoginServer = null;
 +            _wdLastInGame = Environment.TickCount | 1;
-+            _wdScriptWhenInGame = Manager.ScriptRunning;
++            _wdScriptWhenInGame = ScriptRanRecently;
 +            _wdWasInGame = true;
++            _wdLostSince = 0;
 +            // Timers for "out of game" start fresh every time it gets back in (a leftover start time made the
 +            // 3-minute check fire the moment the next restart began).
 +            _wdOutSince = 0;
 +            _wdWaitSince = 0;
 +            CheckStuckScript();
++            RescueTick();
 +            // Back from a recovery with no script to restart: go back to the room it was in (a re-login
 +            // lands in a random Battleon room, and ButlerV5 followers can't follow into a full one).
 +            if (_wdReturnToRoom && !_waitForLogin)
@@ -2419,12 +2721,9 @@ index 0000000..9f46912
 +            }
 +            if (!_wdCredsKept)
 +                _wdCredsKept = Servers.RememberLoginInfo();
-+            if (_wdRestartScript && !_waitForLogin)
-+            {
-+                _wdRestartScript = false;
-+                if (!Manager.ScriptRunning)
-+                    _ = Task.Run(RestartScriptAfterLogin);
-+            }
++            // The flag stays set until the script is really running again (RestartScriptAfterLogin clears it).
++            if (_wdRestartScript && !_waitForLogin && _wdRestarting == 0 && !RescueActive)
++                _ = Task.Run(RestartScriptAfterLogin);
 +            ResetWatchdogTimer(string.Empty);
 +            return;
 +        }
@@ -2434,7 +2733,7 @@ index 0000000..9f46912
 +        if (_wdWasInGame)
 +        {
 +            _wdWasInGame = false;
-+            if (_wdScriptWhenInGame)
++            if (_wdScriptWhenInGame || ScriptRanRecently)
 +                _wdRestartScript = true;
 +        }
 +        if (Servers.UserLoggedOut)
@@ -2479,6 +2778,24 @@ index 0000000..9f46912
 +            _wdOutSince = 0;
 +        }
 +
++        // "Communication with server has been lost" normally starts auto relogin. Seen after a wifi restart:
++        // one account sat on it for good (auto relogin off, or it gave up). After a minute, log back in.
++        if (text.Contains("has been lost", StringComparison.OrdinalIgnoreCase))
++        {
++            if (_wdLostSince == 0)
++                _wdLostSince = Environment.TickCount | 1;
++            else if (Environment.TickCount - _wdLostSince >= WatchdogLostMs && !Servers.UserLoggedOut && BackoffAllows())
++            {
++                _wdLostSince = 0;
++                StartRecovery($" stuck on \"{text}\" for {WatchdogLostMs / 1000}s; logging back in");
++                return;
++            }
++        }
++        else
++        {
++            _wdLostSince = 0;
++        }
++
 +        // Nothing showing, or messages the existing checks already handle.
 +        if (text.Length == 0
 +            || text.Contains("has been lost", StringComparison.OrdinalIgnoreCase)
@@ -2512,14 +2829,15 @@ index 0000000..9f46912
 +    }
 +
 +    /// <param name="why">What happened, for the log (starts with a space).</param>
-+    private void StartRecovery(string why)
++    /// <param name="minLevel">2 = restart the game window straight away instead of resetting the login screen first.</param>
++    private void StartRecovery(string why, int minLevel = 1)
 +    {
 +        _wdBusy = true;
 +        _wdStalls++;
 +        _wdLastAction = Environment.TickCount;
 +        if (_wdStalls == WatchdogSlowAfter)
 +            WdLog($" {WatchdogSlowAfter} recoveries in a row (AQW may be down); trying every {WatchdogSlowMs / 60000} minutes from now on.");
-+        int level = _wdStalls;
++        int level = Math.Max(_wdStalls, minLevel);
 +        _ = Task.Run(() => RecoverStuckLogin(why, level));
 +    }
 +
@@ -2561,7 +2879,7 @@ index 0000000..9f46912
 +            Servers.MarkServerStalled(Servers.CurrentLoginServer);
 +
 +            // Take over from an auto re-login that is waiting on the stuck screen.
-+            if (_waitForLogin ? _reloginStartsScript : Manager.ScriptRunning)
++            if (_waitForLogin ? _reloginStartsScript || ScriptRanRecently : ScriptRanRecently)
 +                _wdRestartScript = true;
 +            CancelRelogin();
 +            if (Manager.ScriptRunning)
@@ -2630,7 +2948,7 @@ index 0000000..9f46912
 +        if (_wdLastInGame == 0 || Environment.TickCount - _wdLastInGame > 180000)
 +            return;
 +        _wdLastInGame = 0;
-+        if (_wdScriptWhenInGame)
++        if (_wdScriptWhenInGame || ScriptRanRecently)
 +            _wdRestartScript = true;
 +        _wdReturnToRoom = true;
 +        _ = Task.Run(async () =>
@@ -2708,7 +3026,7 @@ index 0000000..9f46912
 +            return;
 +        _lastStuckRelog = now | 1;
 +        _stuckSince = 0;
-+        StartRecovery($" the script has done nothing for {minutes} minutes (no kills, drops, quests or moving); logging out and back in");
++        StartFixRecovery($" the script has done nothing for {minutes} minutes (no kills, drops, quests or moving)");
 +    }
 +
 +    // ---- "Quest Complete Failed: Missing Quest Progress" ------------------------------------------------
@@ -2756,7 +3074,7 @@ index 0000000..9f46912
 +        if (_lastQuestRelog != 0 && now - _lastQuestRelog < QuestErrorCooldownMs)
 +            return;
 +        _lastQuestRelog = now | 1;
-+        StartRecovery($" {what} {needed} times in {QuestErrorWindowMs / 60000} minutes while farming (an AQW bug a relog fixes); logging out and back in");
++        StartFixRecovery($" {what} {needed} times in {QuestErrorWindowMs / 60000} minutes while farming (an AQW bug a relog usually fixes)");
 +    }
 +
 +    private async Task ReturnToRoom(string room, string? cell, string? pad)
@@ -2777,21 +3095,148 @@ index 0000000..9f46912
 +        }
 +    }
 +
++    /// <summary>
++    /// Starts the script again once the account is properly back in game: logged in, map loaded and nothing
++    /// changing for a few seconds. Checks that it really is running afterwards and tries up to 3 times.
++    /// </summary>
 +    private async Task RestartScriptAfterLogin()
 +    {
++        if (Interlocked.Exchange(ref _wdRestarting, 1) == 1)
++            return;
 +        try
 +        {
-+            await Task.Delay(2000);
-+            if (Manager.ScriptRunning || !(Player.Playing && Flash.IsWorldLoaded))
-+                return;
-+            WdLog(" back in game; starting the script again.");
-+            Exception? error = await CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetRequiredService<IScriptManager>().StartScript();
-+            if (error is not null)
-+                WdLog($" couldn't start the script: {error.Message}");
++            for (int attempt = 1; attempt <= 3; attempt++)
++            {
++                if (!await WaitInGameSteady(6000, 180000))
++                    return; // not back in game yet; the flag stays set and the next time in game tries again
++                if (!_wdRestartScript || Servers.UserLoggedOut)
++                {
++                    _wdRestartScript = false;
++                    return;
++                }
++                if (Manager.ScriptRunning)
++                {
++                    _wdRestartScript = false;
++                    return; // someone (or VibeSkua's own re-login) already started it
++                }
++                WdLog(attempt == 1 ? " back in game; starting the script again." : $" starting the script again (try {attempt} of 3).");
++                Exception? error = await CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetRequiredService<IScriptManager>().StartScript();
++                if (error is not null)
++                {
++                    WdLog($" couldn't start the script: {error.Message}");
++                }
++                else
++                {
++                    // Make sure it got going (a script that started while the game was still settling can stop
++                    // straight away).
++                    await Task.Delay(15000);
++                    if (Manager.ScriptRunning)
++                    {
++                        _wdRestartScript = false;
++                        return;
++                    }
++                    if (!(Player.Playing && Flash.IsWorldLoaded))
++                        return; // knocked out again; leaving the game sets it up for another go
++                    WdLog(" the script stopped right after starting.");
++                }
++                await Task.Delay(10000);
++            }
++            _wdRestartScript = false;
++            WdLog(" couldn't get the script running again after 3 tries; leaving it stopped.");
 +        }
 +        catch (Exception ex)
 +        {
 +            WdLog($" couldn't start the script: {ex.Message}");
++        }
++        finally
++        {
++            _wdRestarting = 0;
++        }
++    }
++
++    /// <summary>Waits until the account has been in game (world loaded, no login going on) for <paramref name="steadyMs"/>.</summary>
++    private async Task<bool> WaitInGameSteady(int steadyMs, int timeoutMs)
++    {
++        int start = Environment.TickCount, since = 0;
++        while (!_disposed && Environment.TickCount - start < timeoutMs)
++        {
++            bool inGame = !_waitForLogin && !_wdBusy && Player.Playing && Flash.IsWorldLoaded;
++            if (!inGame)
++                since = 0;
++            else if (since == 0)
++                since = Environment.TickCount | 1;
++            else if (Environment.TickCount - since >= steadyMs)
++                return true;
++            await Task.Delay(500);
++        }
++        return false;
++    }
++
++    // ---- When a relog doesn't fix it -------------------------------------------------------------------
++    // Seen: an account that keeps getting stuck again soon after every relog (out of sync with the server);
++    // only closing the whole client and starting it again fixed it. So: the 2nd stuck relog within 45
++    // minutes restarts the game window instead, the 3rd restarts the whole client (the tab window starts it
++    // again with the same login and script). The whole client at most once every 2 hours per account.
++
++    private readonly List<int> _wdFixTimes = new();
++
++    private void StartFixRecovery(string why)
++    {
++        int now = Environment.TickCount;
++        int count;
++        lock (_wdFixTimes)
++        {
++            _wdFixTimes.RemoveAll(t => now - t > 45 * 60000);
++            _wdFixTimes.Add(now);
++            count = _wdFixTimes.Count;
++        }
++        if (count >= 3 && Flash is IRestartableGamePlayer player && player.CanRestartClient && ClientRestartAllowed())
++        {
++            lock (_wdFixTimes)
++                _wdFixTimes.Clear();
++            WdLog($"{why}; logging out and back in hasn't fixed it ({count} times in 45 minutes). Restarting the whole client (same as closing the tab and starting it again).");
++            _wdBusy = true;
++            _ = Task.Run(async () =>
++            {
++                try
++                {
++                    bool runScript = ScriptRanRecently;
++                    if (Manager.ScriptRunning)
++                        await Manager.StopScript();
++                    player.RestartClient(runScript);
++                }
++                catch (Exception ex)
++                {
++                    WdLog($" couldn't restart the client: {ex.Message}");
++                    _wdBusy = false;
++                }
++            });
++            return;
++        }
++        if (count >= 2)
++            StartRecovery($"{why}, again within 45 minutes of the last relog; restarting the game window this time", 2);
++        else
++            StartRecovery($"{why}; logging out and back in");
++    }
++
++    /// <summary>At most one whole-client restart per account every 2 hours (kept in a file: the restart makes a new process).</summary>
++    private bool ClientRestartAllowed()
++    {
++        try
++        {
++            string who = new((Servers.CachedUsername ?? "unknown").Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
++            string dir = Path.Combine(Path.GetTempPath(), "VibeSkuaTabs");
++            Directory.CreateDirectory(dir);
++            string file = Path.Combine(dir, $"client-restart-{who}.txt");
++            if (File.Exists(file) && long.TryParse(File.ReadAllText(file).Trim(), out long ticks)
++                && DateTime.UtcNow - new DateTime(ticks, DateTimeKind.Utc) < TimeSpan.FromHours(2))
++                return false;
++            File.WriteAllText(file, DateTime.UtcNow.Ticks.ToString());
++            return true;
++        }
++        catch
++        {
++            return true;
 +        }
 +    }
 +
@@ -2806,8 +3251,301 @@ index 0000000..9f46912
 +            await Task.Delay(1500);
 +    }
 +}
+diff --git a/Skua.Core/Scripts/ScriptInterface.Rescue.cs b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
+new file mode 100644
+index 0000000..f8714df
+--- /dev/null
++++ b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
+@@ -0,0 +1,287 @@
++using Skua.Core.Interfaces;
++
++namespace Skua.Core.Scripts;
++
++/// <summary>
++/// Rescue: when an account running a script keeps dying without killing anything (10 deaths in a row, or 15
++/// minutes of only deaths), it asks for help. Every other account on the same server that is running a script
++/// and has "Rescue Allies" turned on stops its script, goes to that room and cell, fights there, and once the
++/// stuck account gets a kill (it got past) goes back to where it was and starts its own script again.
++/// </summary>
++/// <remarks>
++/// The accounts talk through small files in %TEMP%\VibeSkuaTabs\rescue (one per account asking for help,
++/// refreshed every 15 seconds; a file older than a minute counts as finished). Helpers give up after 20
++/// minutes, and help the same account again at the earliest 10 minutes after the last rescue ended.
++/// </remarks>
++public partial class ScriptInterface
++{
++    private const int RescueDeaths = 10;
++    private const int RescueOnlyDeathsMs = 15 * 60000;
++    private const int RescueStaleMs = 60000;
++    private const int RescueGiveUpMs = 20 * 60000;
++    private const int RescueCooldownMs = 10 * 60000;
++
++    private static string RescueDir => Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", "rescue");
++
++    // The account that needs help.
++    private int _rsLastDeaths = -1, _rsLastKills = -1, _rsDeathStreak, _rsStreakSince;
++    private bool _rsCalling;
++    private int _rsCallWritten;
++
++    // An account helping.
++    private volatile string? _rsHelping;
++    private int _rsScanAt;
++    private readonly Dictionary<string, int> _rsLastHelped = new(StringComparer.OrdinalIgnoreCase);
++
++    private bool RescueActive => _rsHelping is not null;
++
++    private sealed record RescueCall(string User, string Server, string Room, string Cell, string Pad);
++
++    /// <summary>Called from the login watchdog while in game.</summary>
++    private void RescueTick()
++    {
++        try
++        {
++            int now = Environment.TickCount;
++            int deaths = Stats.Deaths, kills = Stats.Kills;
++            if (_rsLastDeaths < 0)
++            {
++                _rsLastDeaths = deaths;
++                _rsLastKills = kills;
++            }
++            if (kills != _rsLastKills)
++            {
++                _rsDeathStreak = 0;
++                _rsStreakSince = 0;
++                if (_rsCalling)
++                {
++                    _rsCalling = false;
++                    ClearRescueCall();
++                    WdLog(" got a kill; the accounts helping can go back to what they were doing.");
++                }
++            }
++            else if (deaths > _rsLastDeaths)
++            {
++                _rsDeathStreak += deaths - _rsLastDeaths;
++                if (_rsStreakSince == 0)
++                    _rsStreakSince = now | 1;
++            }
++            _rsLastDeaths = deaths;
++            _rsLastKills = kills;
++
++            if (!Manager.ScriptRunning || RescueActive)
++            {
++                if (_rsCalling)
++                {
++                    _rsCalling = false;
++                    ClearRescueCall();
++                }
++                _rsDeathStreak = 0;
++                _rsStreakSince = 0;
++            }
++            else
++            {
++                bool stuck = _rsDeathStreak >= RescueDeaths
++                    || (_rsDeathStreak >= 2 && _rsStreakSince != 0 && now - _rsStreakSince >= RescueOnlyDeathsMs);
++                if (stuck && !_rsCalling)
++                {
++                    _rsCalling = true;
++                    _rsCallWritten = 0;
++                    WdLog($" died {_rsDeathStreak} times without a kill in {Math.Max(1, (now - _rsStreakSince) / 60000)} minute(s) in {Map.FullName} ({Player.Cell}); asking the other accounts for help (Rescue Allies).");
++                }
++                if (_rsCalling && now - _rsCallWritten > 15000)
++                {
++                    _rsCallWritten = now;
++                    WriteRescueCall();
++                }
++            }
++
++            if (now - _rsScanAt > 5000)
++            {
++                _rsScanAt = now;
++                ScanForRescueCalls();
++            }
++        }
++        catch { }
++    }
++
++    private string OwnName => Servers.CachedUsername ?? Player.Username ?? "";
++
++    private static string RescueFile(string user) =>
++        Path.Combine(RescueDir, new string(user.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray()).ToLowerInvariant() + ".txt");
++
++    private void WriteRescueCall()
++    {
++        try
++        {
++            string user = OwnName;
++            string server = Servers.PreferredReloginServer ?? "";
++            if (user.Length == 0 || server.Length == 0)
++                return;
++            Directory.CreateDirectory(RescueDir);
++            string file = RescueFile(user);
++            File.WriteAllLines(file + ".tmp", new[] { user, server, Map.FullName, Player.Cell, Player.Pad, DateTime.UtcNow.Ticks.ToString() });
++            File.Move(file + ".tmp", file, true);
++        }
++        catch { }
++    }
++
++    private void ClearRescueCall()
++    {
++        try { File.Delete(RescueFile(OwnName)); } catch { }
++    }
++
++    private static RescueCall? ReadRescueCall(string file)
++    {
++        try
++        {
++            string[] l = File.ReadAllLines(file);
++            if (l.Length < 6 || !long.TryParse(l[5], out long ticks))
++                return null;
++            if (DateTime.UtcNow - new DateTime(ticks, DateTimeKind.Utc) > TimeSpan.FromMilliseconds(RescueStaleMs))
++                return null;
++            return new RescueCall(l[0], l[1], l[2], l[3], l[4]);
++        }
++        catch
++        {
++            return null;
++        }
++    }
++
++    private void ScanForRescueCalls()
++    {
++        if (!Options.RescueAllies || RescueActive || _rsCalling || !Manager.ScriptRunning || _wdBusy || _waitForLogin || _wdRestarting != 0)
++            return;
++        if (!Directory.Exists(RescueDir))
++            return;
++        string me = OwnName;
++        string server = Servers.PreferredReloginServer ?? "";
++        int now = Environment.TickCount;
++        foreach (string file in Directory.GetFiles(RescueDir, "*.txt").OrderBy(File.GetCreationTimeUtc))
++        {
++            RescueCall? call = ReadRescueCall(file);
++            if (call is null)
++            {
++                // Tidy up calls nobody refreshes any more.
++                try
++                {
++                    if (DateTime.UtcNow - File.GetLastWriteTimeUtc(file) > TimeSpan.FromHours(1))
++                        File.Delete(file);
++                }
++                catch { }
++                continue;
++            }
++            if (call.User.Equals(me, StringComparison.OrdinalIgnoreCase))
++                continue;
++            if (!call.Server.Equals(server, StringComparison.OrdinalIgnoreCase))
++                continue; // a different server: can't reach it without logging out
++            lock (_rsLastHelped)
++                if (_rsLastHelped.TryGetValue(call.User, out int last) && now - last < RescueCooldownMs)
++                    continue;
++            _rsHelping = call.User;
++            _ = Task.Run(() => RescueAsync(call, file));
++            return;
++        }
++    }
++
++    private async Task RescueAsync(RescueCall call, string file)
++    {
++        string? myRoom = null, myCell = null, myPad = null;
++        try
++        {
++            myRoom = Map.FullName;
++            myCell = Player.Cell;
++            myPad = Player.Pad;
++            WdLog($" {call.User} keeps dying in {call.Room} ({call.Cell}); stopping the script to go help (Rescue Allies).");
++            await Manager.StopScript();
++            await Task.Delay(1500);
++
++            if (!await JoinForRescue(call.Room, call.Cell, call.Pad))
++            {
++                WdLog($" couldn't get into {call.Room} to help {call.User}; going back.");
++                return;
++            }
++            Auto.StartAutoAttack();
++            int start = Environment.TickCount;
++            while (!_disposed)
++            {
++                await Task.Delay(2000);
++                if (!(Player.Playing && Flash.IsWorldLoaded))
++                {
++                    WdLog(" knocked out of the game while helping; stopping the rescue.");
++                    return;
++                }
++                RescueCall? now = ReadRescueCall(file);
++                if (now is null)
++                {
++                    WdLog($" {call.User} got past it; going back.");
++                    return;
++                }
++                if (!string.Equals(Map.FullName, now.Room, StringComparison.OrdinalIgnoreCase))
++                {
++                    await Auto.StopAsync();
++                    if (!await JoinForRescue(now.Room, now.Cell, now.Pad))
++                    {
++                        WdLog($" couldn't follow {call.User} into {now.Room}; going back.");
++                        return;
++                    }
++                    Auto.StartAutoAttack();
++                }
++                else if (!string.Equals(Player.Cell, now.Cell, StringComparison.OrdinalIgnoreCase))
++                {
++                    Map.Jump(now.Cell, string.IsNullOrWhiteSpace(now.Pad) ? "Left" : now.Pad);
++                }
++                if (Environment.TickCount - start > RescueGiveUpMs)
++                {
++                    WdLog($" helped {call.User} for {RescueGiveUpMs / 60000} minutes and it's still stuck; going back.");
++                    return;
++                }
++            }
++        }
++        catch (Exception ex)
++        {
++            WdLog($" rescue failed: {ex.Message}");
++        }
++        finally
++        {
++            try { await Auto.StopAsync(); } catch { }
++            lock (_rsLastHelped)
++                _rsLastHelped[call.User] = Environment.TickCount;
++            try
++            {
++                if (myRoom is not null && Player.Playing && Flash.IsWorldLoaded
++                    && !string.Equals(Map.FullName, myRoom, StringComparison.OrdinalIgnoreCase))
++                {
++                    Map.Join(myRoom, string.IsNullOrWhiteSpace(myCell) ? "Enter" : myCell, string.IsNullOrWhiteSpace(myPad) ? "Spawn" : myPad);
++                }
++            }
++            catch { }
++            // The login watchdog starts this account's own script again once it has settled.
++            _wdRestartScript = true;
++            _rsHelping = null;
++        }
++    }
++
++    private async Task<bool> JoinForRescue(string room, string cell, string pad)
++    {
++        for (int i = 0; i < 3; i++)
++        {
++            try
++            {
++                Map.Join(room, string.IsNullOrWhiteSpace(cell) ? "Enter" : cell, string.IsNullOrWhiteSpace(pad) ? "Spawn" : pad);
++            }
++            catch { }
++            for (int w = 0; w < 20; w++)
++            {
++                await Task.Delay(500);
++                if (string.Equals(Map.FullName, room, StringComparison.OrdinalIgnoreCase) && Player.Playing && Flash.IsWorldLoaded)
++                {
++                    if (!string.IsNullOrWhiteSpace(cell) && !string.Equals(Player.Cell, cell, StringComparison.OrdinalIgnoreCase))
++                        Map.Jump(cell, string.IsNullOrWhiteSpace(pad) ? "Left" : pad);
++                    return true;
++                }
++            }
++        }
++        return false;
++    }
++}
 diff --git a/Skua.Core/Scripts/ScriptInterface.cs b/Skua.Core/Scripts/ScriptInterface.cs
-index 27d2dc7..c078175 100644
+index c9256dd..21806b1 100644
 --- a/Skua.Core/Scripts/ScriptInterface.cs
 +++ b/Skua.Core/Scripts/ScriptInterface.cs
 @@ -12,7 +12,7 @@ using System.Diagnostics;
@@ -2827,7 +3565,28 @@ index 27d2dc7..c078175 100644
  
                  if (Manager.ScriptRunning)
                      RunScriptHandlers();
-@@ -405,7 +406,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -382,6 +383,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+     /// <param name="lastConnChange">Last time the loading message changed.</param>
+     /// <param name="lastConnDetail">Last loading message.</param>
+     /// <returns>The last loading message and its time</returns>
++    private int _lastConnLostLog = Environment.TickCount - 60000;
++
+     private (int newTime, string newText) CheckStuckonLoading(int lastConnChange, string lastConnDetail)
+     {
+         string connDetail = Flash.IsNull("mcConnDetail.stage") ? "null" : Flash.GetGameObject("mcConnDetail.txtDetail.text", "null")!;
+@@ -389,8 +392,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+             return (Environment.TickCount, connDetail);
+         if (connDetail.Contains("has been lost") && !_waitForLogin)
+         {
+-            if (!Servers.IsIntentionalLogout)
++            // Checked 10 times a second: with auto relogin off this used to log (and try) every time.
++            if (!Servers.IsIntentionalLogout && Environment.TickCount - _lastConnLostLog > 15000)
+             {
++                _lastConnLostLog = Environment.TickCount;
+                 Log("Connection lost detected. Triggering auto re-login.");
+                 BeginLogout();
+             }
+@@ -405,7 +410,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  {
                      if (Flash.GetGameObject("mcConnDetail.txtDetail.text") == "loading map")
                      {
@@ -2836,7 +3595,7 @@ index 27d2dc7..c078175 100644
                          return;
                      }
                      Map.Join(Map.LastMap);
-@@ -413,7 +414,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -413,7 +418,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
              }
              else
              {
@@ -2845,7 +3604,7 @@ index 27d2dc7..c078175 100644
              }
          }
          if (connDetail == lastConnDetail)
-@@ -461,6 +462,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -461,6 +466,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "loaded":
@@ -2853,7 +3612,7 @@ index 27d2dc7..c078175 100644
                  Initialize();
                  break;
  
-@@ -487,6 +489,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -487,6 +493,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "pext":
@@ -2862,7 +3621,7 @@ index 27d2dc7..c078175 100644
                  dynamic packet = JsonConvert.DeserializeObject<dynamic>((string)args[0])!;
                  string type = packet["params"].type;
                  dynamic data = packet["params"].dataObj;
-@@ -614,6 +618,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -614,6 +622,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                                  Stats.QuestsCompleted++;
                                  Messenger.Send<QuestTurninMessage, int>(new(Convert.ToInt32(data.QuestID)), (int)MessageChannels.GameEvents);
                              }
@@ -2873,7 +3632,7 @@ index 27d2dc7..c078175 100644
                              break;
  
                          case "loadBank":
-@@ -696,6 +704,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -697,6 +709,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                              {
                                  Log("Normal in-game logout detected. Auto re-login skipped.");
                                  Servers.IsIntentionalLogout = true;
@@ -2882,7 +3641,7 @@ index 27d2dc7..c078175 100644
                                  CancelRelogin();
                                  if (Manager.ScriptRunning)
                                      _ = Manager.StopScript();
-@@ -740,9 +750,13 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -741,13 +755,19 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
  
          Log("Auto re-login triggered.");
          bool wasRunning = Manager.ScriptRunning;
@@ -2897,7 +3656,14 @@ index 27d2dc7..c078175 100644
          Messenger.Send<ReloginTriggeredMessage, int>(new(kicked), (int)MessageChannels.GameEvents);
  
          int delay = (Options.SafeRelogin && kicked) ? 70000 : Options.ReloginTryDelay;
-@@ -764,7 +778,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+-        Relogin(delay, wasRunning);
++        // The login watchdog starts the script again once the account is properly back in game (it waits for
++        // the login to finish and checks that the script really started), so the re-login doesn't start it.
++        Relogin(delay, false);
+     }
+ 
+     private async void BeginLogout()
+@@ -765,7 +785,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
  
      private void Relogin(int delay, bool startScript)
      {
@@ -2907,8 +3673,29 @@ index 27d2dc7..c078175 100644
          Log($"Waiting {delay}ms for re-login.");
          CancellationTokenSource reloginCts = new();
          _reloginCTS = reloginCts;
+diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.cs
+index 4b52722..dbf995f 100644
+--- a/Skua.Core/Scripts/ScriptOption.cs
++++ b/Skua.Core/Scripts/ScriptOption.cs
+@@ -111,6 +111,16 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+         }
+     }
+ 
++    // VibeSkuffle: scripts turn on "Reject Else", which throws away every drop the script didn't ask for
++    // (seen: a boss drop the farmer wanted was rejected, and it kept killing the boss for hours).
++    [ObservableProperty]
++    private bool _ignoreScriptRejectElse;
++
++    // VibeSkuffle: when another account on the same server keeps dying (10 deaths without a kill, or 15
++    // minutes of only deaths), stop this account's script, go help, then come back and start it again.
++    [ObservableProperty]
++    private bool _rescueAllies;
++
+     [ObservableProperty]
+     private bool _restPackets;
+ 
 diff --git a/Skua.Core/Scripts/ScriptServers.cs b/Skua.Core/Scripts/ScriptServers.cs
-index 2868fed..2722074 100644
+index d93c230..4275c2e 100644
 --- a/Skua.Core/Scripts/ScriptServers.cs
 +++ b/Skua.Core/Scripts/ScriptServers.cs
 @@ -50,6 +50,44 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
@@ -2982,7 +3769,7 @@ index 2868fed..2722074 100644
          CommunityToolkit.Mvvm.Messaging.StrongReferenceMessenger.Default.Send<Skua.Core.Messaging.LogoutRequestedMessage, int>(new(), (int)Skua.Core.Messaging.MessageChannels.GameEvents);
          if (IsConnected)
              Flash.CallGameFunction("sfc.disconnect");
-@@ -273,22 +324,29 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -276,22 +327,29 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
  
          HashSet<string> triedServers = attemptedServers ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
  
@@ -3016,7 +3803,7 @@ index 2868fed..2722074 100644
          if (selectedServer is not null)
              return selectedServer;
  
-@@ -360,7 +418,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -363,7 +421,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
          ReloginLog($"Relogging using IP {ip}.");
  
          Thread.Sleep(2000);
@@ -3025,7 +3812,7 @@ index 2868fed..2722074 100644
  
          Stats.Relogins++;
          if (_loginInfoSetted)
-@@ -407,8 +465,9 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -411,8 +469,9 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
          bool autoRelogSwitch = Options.AutoRelogin;
          Options.AutoRelogin = false;
          ReloginLog($"Relogging on server {server.Name} [{server.PlayerCount}/{server.MaxPlayers}].");
@@ -3036,7 +3823,7 @@ index 2868fed..2722074 100644
          Stats.Relogins++;
  
          if (_loginInfoSetted)
-@@ -448,11 +507,14 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -452,11 +511,14 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
          return Player.Playing;
      }
  
@@ -3052,7 +3839,7 @@ index 2868fed..2722074 100644
          if (server is null)
          {
              ReloginLog("No eligible servers available for auto relogin.");
-@@ -548,12 +610,13 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -559,12 +621,13 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                      continue;
                  }
                  attemptedServers.Add(targetServer.Name ?? string.Empty);
@@ -3067,7 +3854,7 @@ index 2868fed..2722074 100644
                      await Task.Delay(2000, token);
                  }
  
-@@ -601,7 +664,11 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -614,7 +677,11 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                      await WaitReloginDelay(token);
              }
          }
@@ -3081,10 +3868,10 @@ index 2868fed..2722074 100644
          if (!Player.Playing)
              ReloginLog("Unable to reconnect within configured retries.");
 diff --git a/Skua.Core/Services/UnifiedSettingsService.cs b/Skua.Core/Services/UnifiedSettingsService.cs
-index 41f67a7..93a5130 100644
+index e4ad755..1058b35 100644
 --- a/Skua.Core/Services/UnifiedSettingsService.cs
 +++ b/Skua.Core/Services/UnifiedSettingsService.cs
-@@ -38,7 +38,13 @@ public class UnifiedSettingsService
+@@ -39,7 +39,13 @@ public class UnifiedSettingsService
  
              try
              {
@@ -3099,7 +3886,7 @@ index 41f67a7..93a5130 100644
  
                  if (!File.Exists(ClientFileSources.SkuaSettingsDIR))
                  {
-@@ -156,6 +162,7 @@ public class UnifiedSettingsService
+@@ -157,6 +163,7 @@ public class UnifiedSettingsService
                      managerProp.SetValue(_root.Manager, value);
                  }
  
@@ -3107,7 +3894,7 @@ index 41f67a7..93a5130 100644
                  SaveSettings();
              }
              catch (Exception ex)
-@@ -531,13 +538,19 @@ public class UnifiedSettingsService
+@@ -532,13 +539,19 @@ public class UnifiedSettingsService
          }
      }
  
@@ -3130,7 +3917,7 @@ index 41f67a7..93a5130 100644
  
              JsonSerializerOptions options = GetJsonOptions();
              string json = JsonSerializer.Serialize(_root, options);
-@@ -545,9 +558,10 @@ public class UnifiedSettingsService
+@@ -546,9 +559,10 @@ public class UnifiedSettingsService
  
              if (File.Exists(ClientFileSources.SkuaSettingsDIR))
              {
@@ -3140,9 +3927,9 @@ index 41f67a7..93a5130 100644
  
 +            // Replaces the file in one step (it used to be deleted first, leaving a moment with no file).
              File.Move(tempFile, ClientFileSources.SkuaSettingsDIR, overwrite: true);
-         }
-         catch (Exception ex)
-@@ -658,17 +672,76 @@ public class UnifiedSettingsService
+ 
+             // Signal cross-process settings change event
+@@ -667,17 +681,76 @@ public class UnifiedSettingsService
          lock (_lock)
          {
              _root.Shared.ApplicationVersion = ClientFileSources.AssemblyVersion;
@@ -3342,19 +4129,19 @@ index 671f5e9..3165dbc 100644
                                 FontSize="12"
                                 Foreground="{DynamicResource SkuaMutedTextBrush}" />
 diff --git a/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs b/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs
-index 943a024..cca22d7 100644
+index 2814a1b..184818d 100644
 --- a/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs
 +++ b/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs
-@@ -55,7 +55,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
-     {
-         if (message.Process != null)
+@@ -57,7 +57,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
          {
--            ProcessInfo procInfo = new(message.Process, message.AccountName ?? $"VibeSkua #{message.Process.Id}");
-+            ProcessInfo procInfo = new(message.Process, message.AccountName ?? $"VibeSkuffle #{message.Process.Id}");
-             _dispatcherService.Invoke(() => recipient.SkuaProcesses.Add(procInfo));
-         }
-     }
-@@ -98,7 +98,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
+             try
+             {
+-                ProcessInfo procInfo = new(message.Process, message.AccountName ?? $"VibeSkua #{message.Process.Id}");
++                ProcessInfo procInfo = new(message.Process, message.AccountName ?? $"VibeSkuffle #{message.Process.Id}");
+                 _dispatcherService.Invoke(() =>
+                 {
+                     try
+@@ -109,7 +109,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
                  Process? proc = Process.Start(startInfo);
                  if (proc != null)
                  {
@@ -3363,7 +4150,7 @@ index 943a024..cca22d7 100644
                      _dispatcherService.Invoke(() => SkuaProcesses.Add(procInfo));
                  }
              }
-@@ -106,7 +106,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
+@@ -117,7 +117,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
              {
                  IDialogService dialogService = Ioc.Default.GetService<IDialogService>()!;
  
@@ -3491,7 +4278,7 @@ index ad80d97..579ef23 100644
  
                      if (loggedIn)
 diff --git a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs b/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
-index d5f32fb..983ca1e 100644
+index d5f32fb..4d9f5a5 100644
 --- a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
 +++ b/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
 @@ -425,6 +425,94 @@ public class ButlerV5Plugin : ISkuaPlugin
@@ -3589,6 +4376,38 @@ index d5f32fb..983ca1e 100644
      /// <summary>Order every online plugin account to follow this one.</summary>
      public void SummonAll()
      {
+@@ -452,7 +540,8 @@ public class ButlerV5Plugin : ISkuaPlugin
+         // never does what the per-row button forbids: busy (script) accounts; anyone
+         // already following me manually (dual-state); accounts that are themselves masters
+         // (summoning them makes them butler+master, the other way a conga line forms);
+-        // accounts on a different game world (unreachable); and accounts mid-park.
++        // and accounts mid-park. Accounts on a different server are summoned too: they log in on this
++        // server by themselves and then follow.
+         string myServer = MyServerName;
+         bool AlreadyManual(SyncData d) =>
+             d.Following.Equals(me, StringComparison.OrdinalIgnoreCase) &&
+@@ -465,14 +554,18 @@ public class ButlerV5Plugin : ISkuaPlugin
+         bool FollowingAnother(SyncData d) =>
+             !string.IsNullOrEmpty(d.Following) && !d.Following.Equals(me, StringComparison.OrdinalIgnoreCase);
+         bool Unavailable(SyncData d) =>
+-            d.ScriptOn || AlreadyManual(d) || IsMaster(d) || DifferentServer(d) || d.Parking || FollowingAnother(d);
++            d.ScriptOn || AlreadyManual(d) || IsMaster(d) || d.Parking || FollowingAnother(d);
+ 
+         List<string> skipped = roster.Where(Unavailable).Select(d => d.Username).ToList();
+         List<string> online = roster.Where(d => !Unavailable(d)).Select(d => d.Username).ToList();
++        List<string> hopping = roster.Where(d => !Unavailable(d) && DifferentServer(d)).Select(d => d.Username).ToList();
++        if (hopping.Count > 0)
++            Log($"On another server, logging in on {myServer} to follow: " + string.Join(", ", hopping),
++                $"{hopping.Count} account(s) on another server will log in on {myServer} and follow.");
+ 
+         if (skipped.Count > 0)
+-            Log("Skipped (script / already following me / following another / is a master / different server / parking): " + string.Join(", ", skipped),
+-                $"Skipped {skipped.Count} unavailable account(s) (script / following / is a master / different server / parking).");
++            Log("Skipped (script / already following me / following another / is a master / parking): " + string.Join(", ", skipped),
++                $"Skipped {skipped.Count} unavailable account(s) (script / following / is a master / parking).");
+         if (online.Count == 0)
+         {
+             Log("No available butlers to summon.");
 diff --git a/Skua.Plugin.ButlerV5/DebugLog.cs b/Skua.Plugin.ButlerV5/DebugLog.cs
 index 0b5b0e8..5dd94da 100644
 --- a/Skua.Plugin.ButlerV5/DebugLog.cs
@@ -3617,19 +4436,30 @@ index 0b5b0e8..5dd94da 100644
                  }
              }
 diff --git a/Skua.Plugin.ButlerV5/Follower.cs b/Skua.Plugin.ButlerV5/Follower.cs
-index 8b9caab..5b572fb 100644
+index 8b9caab..d12f286 100644
 --- a/Skua.Plugin.ButlerV5/Follower.cs
 +++ b/Skua.Plugin.ButlerV5/Follower.cs
-@@ -89,6 +89,8 @@ public class Follower
+@@ -89,6 +89,10 @@ public class Follower
      private string? _fullCountRoom;  // the room we're currently counting full-warnings for
      private string? _blockedRoom;    // a specific full room-instance we've parked on
      private int _badReads;
 +    private DateTime _otherServerSince = DateTime.MinValue;
++    // Just started following (summoned or Follow clicked) while on another server: hop at once, not after 30 s.
++    private bool _hopNow = true;
 +    private DateTime _lastServerHop = DateTime.MinValue;
      private bool _suspended;
      private bool _wasLoggedIn;
      private bool? _lastWithMaster;
-@@ -331,9 +333,39 @@ public class Follower
+@@ -133,6 +137,8 @@ public class Follower
+ 
+         Master = master;
+         Source = source;
++        _hopNow = true;
++        _otherServerSince = DateTime.MinValue;
+         _lastReportedOffGoto = null;
+         _directJoinTarget = null;
+         _directJoinAttempts = 0;
+@@ -331,9 +337,41 @@ public class Follower
                  {
                      ParkOnce($"{master} is on a different server (theirs='{m.Server}' mine='{GameServer.CurrentName(_bot)}'). Parked.",
                          "The master is on a different server. Parked.");
@@ -3638,12 +4468,13 @@ index 8b9caab..5b572fb 100644
 +                    // At most once every 5 minutes, so two accounts can't chase each other forever.
 +                    if (_otherServerSince == DateTime.MinValue)
 +                        _otherServerSince = DateTime.UtcNow;
-+                    else if (DateTime.UtcNow - _otherServerSince > TimeSpan.FromSeconds(30)
-+                        && DateTime.UtcNow - _lastServerHop > TimeSpan.FromMinutes(5)
++                    else if ((_hopNow || DateTime.UtcNow - _otherServerSince > TimeSpan.FromSeconds(30))
++                        && (_hopNow || DateTime.UtcNow - _lastServerHop > TimeSpan.FromMinutes(5))
 +                        && !string.IsNullOrWhiteSpace(m.Server))
 +                    {
 +                        _lastServerHop = DateTime.UtcNow;
 +                        _otherServerSince = DateTime.MinValue;
++                        _hopNow = false;
 +                        _log($"{master} is on {m.Server}; logging in there to follow again.",
 +                            "The master is on another server; logging in there to follow again.");
 +                        try
@@ -3666,11 +4497,12 @@ index 8b9caab..5b572fb 100644
                      continue;
                  }
 +                _otherServerSince = DateTime.MinValue;
++                _hopNow = false;
  
                  // Circuit breaker: a map we repeatedly failed to enter (entry gate kept
                  // bouncing us to battleon) is blocked until the master moves elsewhere.
 diff --git a/Skua.Plugin.ButlerV5/RosterWindow.cs b/Skua.Plugin.ButlerV5/RosterWindow.cs
-index 5f727fd..359f4b8 100644
+index 5f727fd..049dec4 100644
 --- a/Skua.Plugin.ButlerV5/RosterWindow.cs
 +++ b/Skua.Plugin.ButlerV5/RosterWindow.cs
 @@ -19,6 +19,7 @@ public sealed class RosterWindow : Window
@@ -3739,6 +4571,22 @@ index 5f727fd..359f4b8 100644
  
          string myServer = _plugin.MyServerName;
          string snapshot = string.Join(";", online.Select(d =>
+@@ -278,7 +295,6 @@ public sealed class RosterWindow : Window
+                 : summonedByMe ? $"Release {account.Username} before following them."
+                 : followingMe ? $"{account.Username} is following you."
+                 : followingOther ? $"{account.Username} is following {account.Following}."
+-                : differentServer ? $"{account.Username} is on {account.Server}; cross-server following is unavailable."
+                 : null;
+         if (followBlock != null)
+         {
+@@ -304,7 +320,6 @@ public sealed class RosterWindow : Window
+                 : amFollowing ? $"You're following {account.Username}; stop first."
+                 : followingMe ? $"{account.Username} is already following you manually."
+                 : followingOther ? $"{account.Username} is already following {account.Following}."
+-                : differentServer ? $"{account.Username} is on {account.Server}; cross-server summoning is unavailable."
+                 : account.ScriptOn ? $"{account.Username} is running a script."
+                 : account.Followers.Count > 0 ? $"{account.Username} has summoned butlers of their own."
+                 : account.Parking ? $"{account.Username} is parking; wait until it settles."
 diff --git a/Skua.Plugin.ButlerV5/SyncFile.cs b/Skua.Plugin.ButlerV5/SyncFile.cs
 index e2715dc..640533a 100644
 --- a/Skua.Plugin.ButlerV5/SyncFile.cs

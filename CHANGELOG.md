@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.0.0-beta3 (2026-10-20)
+
+Now based on **VibeSkua v2.0.5** (`2fc9bb5`): the Manager's account context menu, tab → Add to Group, live
+settings sync, faster first login (socket policy preloading), webhook dashboard snapshots. No conflicts with
+VibeSkuffle's changes. From three nights / two days of 6-account runs:
+
+- **Scripts restart reliably after a relog.** The watchdog now waits until the account has been in game for a few
+  seconds, starts the script, checks 15 s later that it is really running, and tries up to 3 times. A script that
+  stopped a moment *before* the game was seen as gone (the usual case after a game-window restart) is now counted
+  as running; a script that was stopped or finished while the game carried on is not.
+- **"Communication with server has been lost"** left on screen (auto relogin off or given up): logs back in after
+  1 minute. The log no longer fills with "Connection lost detected" ten times a second.
+- **Out of sync with the server:** a second stuck-script / quest-error relog within 45 minutes restarts the game
+  window; a third restarts the whole client (the tab window starts it again with its login and script), at most
+  once per 2 hours per account. New tab menu item **Restart Client (keeps login and script)**.
+- **Rescue Allies** (Game Option, off by default): accounts help an account on the same server that keeps dying,
+  then go back and restart their scripts.
+- **Ignore Script Reject Else** (Game Option): scripts can't throw away drops they didn't ask for.
+- **Current Drops → Pickup AC Only and Send to Bank.**
+- **ButlerV5 Summon all** (and the per-row Summon/Follow buttons) work for accounts on another server: they log in
+  on the master's server right away and follow.
+- Building / close-all: tab windows are marked as closing on purpose and closed first, so no client starts itself
+  again mid-build. An existing VibeSkua download is moved to the new base version automatically.
+- README: requirements split into 1 account and Armying (6 accounts), with the multi-day VRAM/RAM numbers.
+
 ## v1.0.0-beta2 (2026-10-18)
 
 From the first overnight run (6 accounts running FarmerJoeDoAll):

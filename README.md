@@ -2,7 +2,7 @@
 
 **VibeSkua, running on Mugetsu (a faster Ruffle) instead of Flash, built to run a whole army for days without babysitting.**
 
-VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) with the Flash player swapped out for
+VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (currently v2.0.5) with the Flash player swapped out for
 [Mugetsu](https://github.com/mugetsu-aqw/mugetsu), a performance-tuned build of the
 [Ruffle](https://ruffle.rs) Flash emulator. Everything VibeSkua does still works: scripts, the Manager, the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
@@ -27,8 +27,31 @@ settings folder as VibeSkua (`%APPDATA%\VibeSkua`), and can run side by side wit
 
 ### Requirements
 
-| | Minimum | Recommended for 6 accounts + normal PC use |
+**1 account (plus normal PC use)**
+
+| | Minimum | Recommended |
 |---|---|---|
+| Windows | 10 or 11, 64-bit | 11 |
+| RAM | 8 GB | 16 GB |
+| Graphics | DirectX 12 or Vulkan capable | Any card from the last ~8 years |
+| VRAM | 2 GB | 4 GB |
+
+**Armying (6 accounts, plus normal PC use)**
+
+| | Minimum | Recommended |
+|---|---|---|
+| Windows | 10 or 11, 64-bit | 11 |
+| RAM | 16 GB | 32 GB |
+| Graphics | DirectX 12 or Vulkan capable | Any card from the last ~8 years |
+| VRAM | 6 GB | 8 GB+ |
+
+Measured with 6 accounts farming FarmerJoeDoAll for several days, all visible in Grid View (the heaviest case):
+each game window used **540–730 MB of VRAM** when fresh; across the runs the game windows together averaged
+**about 3.8 GB of VRAM** with short peaks near 8 GB. RAM per game window is roughly 0.5–1.5 GB idle and grows
+while farming; on a 32 GB PC the free RAM never dropped below ~2.9 GB (VibeSkuffle restarts the biggest game
+window when the PC runs low). With 16 GB those restarts just happen more often.
+
+---|---|---|
 | Windows | 10 or 11, 64-bit | 11 |
 | RAM | 16 GB | 32 GB |
 | Graphics | DirectX 12 or Vulkan capable | Any card from the last ~8 years |
@@ -65,13 +88,28 @@ Automatic re-logins go back to the **same server and room** the account was on.
 | A script stops doing anything (no kills, drops, quests or moving for 15 min) | Logs out and back in, then starts the script again. |
 | AQW spams "Quest Complete Failed: Missing Quest Progress" | Logs out and back in (that clears it), then starts the script again. |
 | The PC itself runs low on RAM | The biggest game window restarts when it's out of combat. |
-| A script was running when any of the above happened | It is started again once the account is back in game. |
+| "Communication with server has been lost" stays on screen | Logs back in after 1 minute. |
+| An account keeps getting stuck again right after relogs (out of sync with the server) | 2nd time within 45 min: restarts the game window. 3rd time: restarts the whole client (like closing the tab and starting it from the Manager), keeping its login and script. At most once per 2 hours. |
+| A script was running when any of the above happened | It is started again once the account has been back in game for a few seconds, and checked that it really runs (up to 3 tries). |
 | Windows wants to sleep | It doesn't while VibeSkuffle is open (the screen can still turn off). |
 
 Everything recovery does is written to `login-watchdog.log` next to `VibeSkuffle.exe` (time and account
 name, never passwords). Logs are size-capped so they can't fill your drive.
 
+### Rescue Allies (Game Options → Rescue Allies)
+When an account running a script keeps dying (10 deaths without a kill, or 15 minutes of only deaths), every other
+account **on the same server** that is running a script and has *Rescue Allies* on stops its script, goes to that
+room and cell and fights there. As soon as the stuck account gets a kill they go back to where they were and their
+scripts start again. They give up after 20 minutes. Off by default; turn it on (and Save) per account.
+
+### Drops
+- **Ignore Script Reject Else** (Game Options → Drops & Looting): scripts can no longer throw away drops they
+  didn't ask for. They stay in the drop list so you can pick them up. *Reject All Drops* still works.
+- **Current Drops → Pickup AC Only and Send to Bank**: picks up only the AC drops and banks each one right away.
+
 ### Army and ButlerV5
+- **ButlerV5 "Summon all" reaches accounts on other servers**: they log in on your server and follow.
+- **Right-click a tab → Restart Client** (keeps login and script): the fix for an account that's out of sync.
 - **ButlerV5 "Log in all"** (next to Summon all): logs in every other open account that's logged out,
   **on your server**, so you can Summon them straight away. It shows its progress in the footer.
 - **Followers stay with their master:** if the master restarts or re-logs, its followers follow it again; if it
@@ -105,6 +143,10 @@ SKUA_STUCK_SCRIPT_MINUTES=15        # relog a script that does nothing this long
 ```
 
 Problems? See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+**Dashboards:** VibeSkuffle sends the same webhook snapshots as VibeSkua v2.0.5, so a dashboard like
+[Skua Nexus](https://github.com/wtffidy/Skua-Nexus) should be able to show your accounts (point the Discord webhook
+setting at its local relay). It's a separate project, not made or tested here.
 
 ---
 

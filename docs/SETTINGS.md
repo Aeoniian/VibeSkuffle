@@ -44,3 +44,13 @@ None of these contain passwords.
 
 Delete `use-ruffle.txt` next to `VibeSkuffle.exe` to use the Flash player instead (needs Flash installed,
 like normal VibeSkua).
+
+## Game Options added by VibeSkuffle
+
+Set them in **Options → Game Options** and click **Save Options** (saved per settings file, so every account
+started afterwards uses them; a script can also set `Bot.Options.RescueAllies` / `Bot.Options.IgnoreScriptRejectElse`).
+
+| Option | What it does |
+|---|---|
+| Rescue Allies | While this account runs a script, it goes to help another account on the same server that keeps dying (10 deaths without a kill, or 15 minutes of only deaths), then comes back and starts its script again. |
+| Ignore Script Reject Else | A script's "Reject Else" no longer throws away drops it didn't ask for. |
