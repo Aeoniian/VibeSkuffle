@@ -1326,10 +1326,10 @@ index 4ff0f7f..6eab1e5 100644
      }
 diff --git a/Skua.App.Avalonia/Services/HostCrashRecovery.cs b/Skua.App.Avalonia/Services/HostCrashRecovery.cs
 new file mode 100644
-index 0000000..715fe20
+index 0000000..ca8432c
 --- /dev/null
 +++ b/Skua.App.Avalonia/Services/HostCrashRecovery.cs
-@@ -0,0 +1,207 @@
+@@ -0,0 +1,208 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Diagnostics;
@@ -1408,6 +1408,7 @@ index 0000000..715fe20
 +            if (!AllowRelaunch(account))
 +            {
 +                Log(account, " the tab host keeps crashing (3 times in 30 minutes); not starting this account again.");
++                Skua.Core.Services.VibeAlerts.Send(account, "tab window keeps crashing", "The tab window crashed 3 times in 30 minutes; this account isn't being started again. Start it from the Manager when you can.");
 +                return;
 +            }
 +
@@ -2082,7 +2083,7 @@ index 274c1e7..26d8054 100644
      <Grid RowDefinitions="Auto,*">
          
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
-index 4eeac58..f67fd2a 100644
+index 4eeac58..6aed0ef 100644
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 @@ -44,6 +44,11 @@ public partial class TabbedHostWindow : Window
@@ -2109,7 +2110,19 @@ index 4eeac58..f67fd2a 100644
  
          var options = Ioc.Default.GetRequiredService<IScriptOption>();
          MiscOptionsMenu.DataContext = options;
-@@ -563,6 +571,8 @@ public partial class TabbedHostWindow : Window
+@@ -326,6 +334,11 @@ public partial class TabbedHostWindow : Window
+         titleSyncTimer.Tick += (s, e) => SyncTabTitles();
+         titleSyncTimer.Start();
+ 
++        // VibeSkuffle alerts: the once-a-day watchdog summary to Discord (alerts.txt).
++        var summaryTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
++        summaryTimer.Tick += (s, e) => System.Threading.Tasks.Task.Run(Skua.Core.Services.VibeAlerts.DailySummaryTick);
++        summaryTimer.Start();
++
+         GridViewBorder.PointerEntered += GridViewBorder_PointerEntered;
+         GridViewBorder.PointerExited += GridViewBorder_PointerExited;
+         GlobeBorder.PointerEntered += GlobeBorder_PointerEntered;
+@@ -563,6 +576,8 @@ public partial class TabbedHostWindow : Window
  
      private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
      {
@@ -2118,7 +2131,7 @@ index 4eeac58..f67fd2a 100644
          _isClosing = true;
          App.DisposeTrayIcon();
          try { _pipeCts.Cancel(); } catch { }
-@@ -617,7 +627,7 @@ public partial class TabbedHostWindow : Window
+@@ -617,7 +632,7 @@ public partial class TabbedHostWindow : Window
                  try
                  {
                      pipeServer = new NamedPipeServerStream(
@@ -2127,7 +2140,7 @@ index 4eeac58..f67fd2a 100644
                          PipeDirection.In,
                          NamedPipeServerStream.MaxAllowedServerInstances,
                          PipeTransmissionMode.Byte,
-@@ -1162,7 +1172,8 @@ public partial class TabbedHostWindow : Window
+@@ -1162,7 +1177,8 @@ public partial class TabbedHostWindow : Window
              string[] parts = (vm.DialogTextInput ?? "").Split(',');
              string targetMap = parts.Length > 0 ? parts[0].Trim() : "";
              string targetCell = parts.Length > 1 ? parts[1].Trim() : "Enter";
@@ -2137,7 +2150,7 @@ index 4eeac58..f67fd2a 100644
              {
                  _lastJumpMap = targetMap;
                  _lastJumpCell = targetCell;
-@@ -1353,6 +1364,10 @@ public partial class TabbedHostWindow : Window
+@@ -1353,6 +1369,10 @@ public partial class TabbedHostWindow : Window
                      if (info.ChildHwnd != IntPtr.Zero)
                          SetWindowPos(info.ChildHwnd, HWND_TOP, -32000, -32000, 0, 0, SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | SWP_NOSIZE);
                  }
@@ -2148,7 +2161,7 @@ index 4eeac58..f67fd2a 100644
                  return;
              }
  
-@@ -1580,6 +1595,81 @@ public partial class TabbedHostWindow : Window
+@@ -1580,6 +1600,82 @@ public partial class TabbedHostWindow : Window
              InstancesTabControl.SelectedItem = remaining;
      }
  
@@ -2176,6 +2189,7 @@ index 4eeac58..f67fd2a 100644
 +        if (times.Count >= 5)
 +        {
 +            HostLog(args, " the client keeps crashing (5 times in 30 minutes); not starting it again.");
++            Skua.Core.Services.VibeAlerts.Send(key, "client keeps crashing", "Crashed 5 times in 30 minutes; it isn't being started again. Start it from the Manager when you can.");
 +            return false;
 +        }
 +        times.Add(DateTime.UtcNow);
@@ -2230,7 +2244,7 @@ index 4eeac58..f67fd2a 100644
      public void AddNewInstance(string rawArgs)
      {
          AddNewInstance(ParseRawCommandLine(rawArgs));
-@@ -1774,6 +1864,17 @@ public partial class TabbedHostWindow : Window
+@@ -1774,6 +1870,17 @@ public partial class TabbedHostWindow : Window
                  {
                      if (!_isClosing)
                      {
@@ -2248,7 +2262,7 @@ index 4eeac58..f67fd2a 100644
                          CloseTab(newTab);
                      }
                  });
-@@ -1781,13 +1882,9 @@ public partial class TabbedHostWindow : Window
+@@ -1781,13 +1888,9 @@ public partial class TabbedHostWindow : Window
  
              p.Start();
              info.Process = p;
@@ -2265,7 +2279,7 @@ index 4eeac58..f67fd2a 100644
              HotKeys.RegisterSkuaPid((uint)p.Id);
  
              int pid = p.Id;
-@@ -1838,6 +1935,26 @@ public partial class TabbedHostWindow : Window
+@@ -1838,6 +1941,26 @@ public partial class TabbedHostWindow : Window
          ContextMenu ctx = new ContextMenu();
          MenuItem closeItem = new MenuItem { Header = "Close Tab" };
          closeItem.Click += (s, ev) => CloseTab(newTab);
@@ -2292,11 +2306,24 @@ index 4eeac58..f67fd2a 100644
          MenuItem closeOthersItem = new MenuItem { Header = "Close Other Tabs" };
          closeOthersItem.Click += (s, ev) =>
          {
-@@ -1851,6 +1968,8 @@ public partial class TabbedHostWindow : Window
+@@ -1851,6 +1974,21 @@ public partial class TabbedHostWindow : Window
              var toRemove = InstancesTabControl.Items.OfType<TabItem>().Where((t, i) => i > idx && t.Header is StackPanel).ToList();
              foreach (var tab in toRemove) CloseTab(tab);
          };
 +        ctx.Items.Add(restartItem);
++        MenuItem summaryItem = new MenuItem { Header = "Watchdog Summary (last 24 hours)" };
++        summaryItem.Click += (s, ev) =>
++        {
++            string text = Skua.Core.Services.VibeAlerts.BuildSummary(DateTime.Now.AddHours(-24), out _);
++            string plain = text.Replace("**", "").Replace("`", "");
++            if (Skua.Core.Services.VibeAlerts.Enabled)
++            {
++                plain += "\n\n(Also sent to Discord now; it goes there once a day by itself.)";
++                _ = Skua.Core.Services.VibeAlerts.PostAsync("Watchdog summary (last 24 hours, asked for)", text);
++            }
++            Ioc.Default.GetService<IDialogService>()?.ShowMessageBox(plain, "Watchdog summary (last 24 hours)");
++        };
++        ctx.Items.Add(summaryItem);
 +        ctx.Items.Add(new Separator());
          ctx.Items.Add(closeItem);
          ctx.Items.Add(closeOthersItem);
@@ -2567,11 +2594,12 @@ index 513dd82..098fad3 100644
              catch (OperationCanceledException) when (token.IsCancellationRequested)
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..c7e84d8
+index 0000000..5138e82
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,677 @@
+@@ -0,0 +1,694 @@
 +using Skua.Core.Interfaces;
++using Skua.Core.Services;
 +
 +namespace Skua.Core.Scripts;
 +
@@ -2676,6 +2704,8 @@ index 0000000..c7e84d8
 +        {
 +            if (_wdStalls > 0)
 +                WdLog($" in game again after {_wdStalls} recover{(_wdStalls == 1 ? "y" : "ies")}.");
++            if (_wdStalls >= WatchdogBackoffAfter)
++                Alert("back in game", $"Back in game after {_wdStalls} recoveries in a row.", VibeAlerts.Level.Info);
 +            _wdStalls = 0;
 +            Servers.CurrentLoginServer = null;
 +            _wdLastInGame = Environment.TickCount | 1;
@@ -2835,8 +2865,13 @@ index 0000000..c7e84d8
 +        _wdBusy = true;
 +        _wdStalls++;
 +        _wdLastAction = Environment.TickCount;
++        if (_wdStalls == WatchdogBackoffAfter)
++            Alert("can't get back in game", $"{WatchdogBackoffAfter} recoveries in a row without getting back in game (last: {why.Trim()}). Still trying, once a minute now.", VibeAlerts.Level.Warning);
 +        if (_wdStalls == WatchdogSlowAfter)
++        {
 +            WdLog($" {WatchdogSlowAfter} recoveries in a row (AQW may be down); trying every {WatchdogSlowMs / 60000} minutes from now on.");
++            Alert("AQW may be down", $"{WatchdogSlowAfter} recoveries in a row without getting back in game. Still trying, every {WatchdogSlowMs / 60000} minutes now.", VibeAlerts.Level.Problem);
++        }
 +        int level = Math.Max(_wdStalls, minLevel);
 +        _ = Task.Run(() => RecoverStuckLogin(why, level));
 +    }
@@ -2860,6 +2895,12 @@ index 0000000..c7e84d8
 +    }
 +
 +    private static readonly object WdFileLock = new();
++
++    /// <summary>Discord alert (alerts.txt), with this account's name.</summary>
++    private void Alert(string title, string text, VibeAlerts.Level level)
++    {
++        try { VibeAlerts.Send(Servers.CachedUsername ?? "?", title, text, level); } catch { }
++    }
 +
 +    private void ResetWatchdogTimer(string text)
 +    {
@@ -2913,6 +2954,7 @@ index 0000000..c7e84d8
 +            if (!canLogin)
 +            {
 +                WdLog(" no saved login for this client, log in again by hand.");
++                Alert("needs a login", "Got logged out and has no saved login to log back in with. Log in by hand.", VibeAlerts.Level.Problem);
 +                _waitForLogin = false;
 +                return;
 +            }
@@ -3140,6 +3182,7 @@ index 0000000..c7e84d8
 +            }
 +            _wdRestartScript = false;
 +            WdLog(" couldn't get the script running again after 3 tries; leaving it stopped.");
++            Alert("script left stopped", "Couldn't get its script running again after 3 tries; it's back in game but idle.", VibeAlerts.Level.Problem);
 +        }
 +        catch (Exception ex)
 +        {
@@ -3192,6 +3235,7 @@ index 0000000..c7e84d8
 +            lock (_wdFixTimes)
 +                _wdFixTimes.Clear();
 +            WdLog($"{why}; logging out and back in hasn't fixed it ({count} times in 45 minutes). Restarting the whole client (same as closing the tab and starting it again).");
++            Alert("whole client restarted", $"{why.Trim()}; relogs didn't fix it ({count} in 45 minutes), so the whole client was restarted (it comes back with its script).", VibeAlerts.Level.Warning);
 +            _wdBusy = true;
 +            _ = Task.Run(async () =>
 +            {
@@ -3250,10 +3294,10 @@ index 0000000..c7e84d8
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.Rescue.cs b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
 new file mode 100644
-index 0000000..5a1ddea
+index 0000000..b897e0f
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
-@@ -0,0 +1,396 @@
+@@ -0,0 +1,398 @@
 +using Skua.Core.Interfaces;
 +
 +namespace Skua.Core.Scripts;
@@ -3554,6 +3598,7 @@ index 0000000..5a1ddea
 +            if (!await JoinForRescue(call.Room, call.Cell, call.Pad))
 +            {
 +                WdLog($" couldn't get into {call.Room} to help {call.User}; going back.");
++                Alert("rescue couldn't get in", $"Couldn't get into {call.Room} to help {call.User} (a quest or level gate AQW checks itself?).", Skua.Core.Services.VibeAlerts.Level.Warning);
 +                return;
 +            }
 +            Auto.StartAutoAttack();
@@ -3592,6 +3637,7 @@ index 0000000..5a1ddea
 +                if (Environment.TickCount - start > RescueGiveUpMs)
 +                {
 +                    WdLog($" helped {call.User} for {RescueGiveUpMs / 60000} minutes and it's still stuck; going back.");
++                    Alert("rescue gave up", $"Helped {call.User} in {now.Room} ({now.Cell}) for {RescueGiveUpMs / 60000} minutes and it's still dying; went back to its own script.", Skua.Core.Services.VibeAlerts.Level.Warning);
 +                    return;
 +                }
 +            }
@@ -4113,6 +4159,309 @@ index e4ad755..1058b35 100644
                  LoadSettings();
              }
              finally
+diff --git a/Skua.Core/Services/VibeAlerts.cs b/Skua.Core/Services/VibeAlerts.cs
+new file mode 100644
+index 0000000..462db9c
+--- /dev/null
++++ b/Skua.Core/Services/VibeAlerts.cs
+@@ -0,0 +1,297 @@
++using System.Collections.Concurrent;
++using System.Globalization;
++using System.Text;
++using System.Text.Json;
++using System.Text.RegularExpressions;
++
++namespace Skua.Core.Services;
++
++/// <summary>
++/// VibeSkuffle alerts: posts to a Discord webhook when recovery needs a person (a script that won't start again,
++/// AQW looking down, a client that keeps crashing, a rescue that gave up), plus a daily summary of what the
++/// watchdog did. Off unless <c>alerts.txt</c> next to VibeSkuffle.exe has a webhook in it.
++/// </summary>
++/// <remarks>
++/// alerts.txt is kept by the build and left out of release zips; it isn't the VibeSkua "Discord Webhook URL"
++/// setting, so script start/stop notifications stay as they are. The same alert for the same account is sent at
++/// most once every 10 minutes.
++/// </remarks>
++public static class VibeAlerts
++{
++    public const string FileName = "alerts.txt";
++    private static string ConfigPath => Path.Combine(AppContext.BaseDirectory, FileName);
++
++    private static readonly object CfgLock = new();
++    private static DateTime _cfgRead = DateTime.MinValue;
++    private static string? _webhook;
++    private static int _summaryHour = 8;
++
++    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
++    private static readonly ConcurrentDictionary<string, DateTime> LastSent = new();
++    private static readonly SemaphoreSlim SendGate = new(1, 1);
++
++    public enum Level { Info, Warning, Problem }
++
++    private static void ReadConfig()
++    {
++        lock (CfgLock)
++        {
++            if (DateTime.UtcNow - _cfgRead < TimeSpan.FromSeconds(60))
++                return;
++            _cfgRead = DateTime.UtcNow;
++            _webhook = null;
++            _summaryHour = 8;
++            try
++            {
++                if (!File.Exists(ConfigPath))
++                    return;
++                foreach (string raw in File.ReadAllLines(ConfigPath))
++                {
++                    string line = raw.Trim();
++                    if (line.Length == 0 || line.StartsWith('#'))
++                        continue;
++                    int eq = line.IndexOf('=');
++                    if (eq <= 0)
++                        continue;
++                    string key = line[..eq].Trim().ToLowerInvariant(), value = line[(eq + 1)..].Trim();
++                    if (key == "webhook" && value.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
++                        _webhook = value;
++                    else if (key == "summary_hour" && int.TryParse(value, out int h))
++                        _summaryHour = h;
++                }
++            }
++            catch { }
++        }
++    }
++
++    public static bool Enabled
++    {
++        get
++        {
++            ReadConfig();
++            return _webhook is not null;
++        }
++    }
++
++    /// <summary>Hour (0-23, local time) to post the daily summary; -1 = no daily summary.</summary>
++    public static int SummaryHour
++    {
++        get
++        {
++            ReadConfig();
++            return _summaryHour;
++        }
++    }
++
++    /// <summary>Queues an alert. Never throws, never blocks the caller.</summary>
++    public static void Send(string account, string title, string text, Level level = Level.Problem)
++    {
++        try
++        {
++            if (!Enabled)
++                return;
++            string key = $"{account}|{title}";
++            DateTime now = DateTime.UtcNow;
++            if (LastSent.TryGetValue(key, out DateTime last) && now - last < TimeSpan.FromMinutes(10))
++                return;
++            LastSent[key] = now;
++            _ = Task.Run(() => PostAsync(string.IsNullOrWhiteSpace(account) ? title : $"{account}: {title}", text, level));
++        }
++        catch { }
++    }
++
++    /// <summary>Posts right away (for the summary); returns whether Discord took it.</summary>
++    public static Task<bool> PostAsync(string title, string text, Level level = Level.Info)
++    {
++        return PostCoreAsync(title, text, level);
++    }
++
++    private static async Task<bool> PostCoreAsync(string title, string text, Level level)
++    {
++        ReadConfig();
++        string? url = _webhook;
++        if (url is null)
++            return false;
++        await SendGate.WaitAsync();
++        try
++        {
++            int color = level switch { Level.Problem => 0xE74C3C, Level.Warning => 0xF39C12, _ => 0x3498DB };
++            var payload = new
++            {
++                username = "VibeSkuffle",
++                embeds = new[]
++                {
++                    new
++                    {
++                        title = Trim(title, 250),
++                        description = Trim(text, 4000),
++                        color,
++                        timestamp = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
++                    },
++                },
++            };
++            for (int attempt = 0; attempt < 3; attempt++)
++            {
++                try
++                {
++                    using StringContent body = new(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
++                    using HttpResponseMessage response = await Http.PostAsync(url, body);
++                    if (response.IsSuccessStatusCode)
++                    {
++                        LogResult($"sent \"{Trim(title, 80)}\" to Discord.");
++                        return true;
++                    }
++                    if ((int)response.StatusCode == 429)
++                    {
++                        await Task.Delay(TimeSpan.FromSeconds(5 * (attempt + 1)));
++                        continue;
++                    }
++                    LogResult($"Discord refused \"{Trim(title, 80)}\" (HTTP {(int)response.StatusCode}); check the webhook in {FileName}.");
++                    return false;
++                }
++                catch (Exception ex)
++                {
++                    if (attempt == 2)
++                        LogResult($"couldn't reach Discord for \"{Trim(title, 80)}\": {ex.Message}");
++                    await Task.Delay(TimeSpan.FromSeconds(10));
++                }
++            }
++            return false;
++        }
++        finally
++        {
++            // Discord allows about 5 messages per 2 seconds per webhook; stay well under it.
++            await Task.Delay(1000);
++            SendGate.Release();
++        }
++    }
++
++    /// <summary>One line in login-watchdog.log (never the webhook itself).</summary>
++    private static void LogResult(string message)
++    {
++        try
++        {
++            string path = Path.Combine(AppContext.BaseDirectory, "login-watchdog.log");
++            File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [alerts] {message}{Environment.NewLine}");
++        }
++        catch { }
++    }
++
++    private static string Trim(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
++
++    // ---- daily summary ---------------------------------------------------------------------------------
++
++    private static readonly Regex LineRx = new(@"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[([^\]]*)\]\s?(.*)$", RegexOptions.Compiled);
++
++    private static readonly (string Label, Func<string, bool> Match, bool Problem)[] Kinds =
++    {
++        // Most specific first: one log line counts once.
++        ("whole-client restarts", m => m.Contains("Restarting the whole client") || m.Contains("restarting the client (asked"), false),
++        ("stuck logins", m => m.StartsWith("stuck on \"") && !m.Contains("has been lost"), false),
++        ("connection lost", m => m.StartsWith("stuck on \"") && m.Contains("has been lost"), false),
++        ("logged-out relogs", m => m.Contains("logged out with nothing happening"), false),
++        ("quest-bug relogs", m => m.Contains("while farming (an AQW bug"), false),
++        ("stuck-script relogs", m => m.Contains("the script has done nothing"), false),
++        ("frozen windows", m => m.Contains("stopped answering"), false),
++        ("memory restarts", m => (m.Contains("MB (limit") && m.EndsWith("restarting it.")) || m.Contains("the PC is low on memory"), false),
++        ("crash restarts", m => m.Contains("closed unexpectedly"), false),
++        ("script restarts", m => m.Contains("starting the script again"), false),
++        ("rescue calls", m => m.Contains("asking the other accounts for help"), false),
++        ("rescues helped", m => m.Contains("keeps dying in"), false),
++        ("scripts left stopped", m => m.Contains("couldn't get the script running again"), true),
++        ("rescues gave up", m => m.Contains("it's still stuck; going back") || m.StartsWith("couldn't get into") || m.StartsWith("couldn't follow"), true),
++        ("AQW looked down", m => m.Contains("recoveries in a row (AQW may be down)"), true),
++        ("kept crashing", m => m.Contains("keeps crashing"), true),
++        ("no saved login", m => m.Contains("no saved login"), true),
++    };
++
++    /// <summary>Counts what the watchdog did since <paramref name="since"/>, per account, from login-watchdog.log.</summary>
++    public static string BuildSummary(DateTime since, out bool anyProblems)
++    {
++        anyProblems = false;
++        string path = Path.Combine(AppContext.BaseDirectory, "login-watchdog.log");
++        Dictionary<string, Dictionary<string, int>> perAccount = new(StringComparer.OrdinalIgnoreCase);
++        List<string> problems = new();
++        try
++        {
++            if (File.Exists(path))
++            {
++                using FileStream fs = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
++                using StreamReader reader = new(fs);
++                string? line;
++                while ((line = reader.ReadLine()) is not null)
++                {
++                    Match m = LineRx.Match(line);
++                    if (!m.Success || !DateTime.TryParseExact(m.Groups[1].Value, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime t) || t < since)
++                        continue;
++                    string account = m.Groups[2].Value.Trim();
++                    if (account.Length == 0 || account == "?")
++                        account = "(unknown)";
++                    string msg = m.Groups[3].Value.Replace("(tab host) ", "").Replace("(client) ", "").Trim();
++                    foreach ((string label, Func<string, bool> match, bool problem) in Kinds)
++                    {
++                        if (!match(msg))
++                            continue;
++                        if (!perAccount.TryGetValue(account, out Dictionary<string, int>? counts))
++                            perAccount[account] = counts = new();
++                        counts[label] = counts.GetValueOrDefault(label) + 1;
++                        if (problem)
++                        {
++                            anyProblems = true;
++                            if (problems.Count < 15)
++                                problems.Add($"`{t:HH:mm}` **{account}**: {Trim(msg, 160)}");
++                        }
++                        break;
++                    }
++                }
++            }
++        }
++        catch (Exception ex)
++        {
++            return $"Couldn't read login-watchdog.log: {ex.Message}";
++        }
++
++        StringBuilder sb = new();
++        if (perAccount.Count == 0)
++        {
++            sb.Append("Nothing needed fixing. 👍");
++            return sb.ToString();
++        }
++        foreach ((string account, Dictionary<string, int> counts) in perAccount.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
++        {
++            IEnumerable<string> parts = Kinds.Where(k => counts.ContainsKey(k.Label)).Select(k => $"{k.Label} {counts[k.Label]}");
++            sb.Append("**").Append(account).Append("**: ").Append(string.Join(" · ", parts)).Append('\n');
++        }
++        if (problems.Count > 0)
++        {
++            sb.Append("\n**Needs a look:**\n");
++            foreach (string p in problems)
++                sb.Append(p).Append('\n');
++        }
++        return sb.ToString();
++    }
++
++    /// <summary>
++    /// Called about once a minute by the tab window: posts the summary of the last 24 hours once a day at
++    /// <see cref="SummaryHour"/> (remembered in %TEMP%, so a restart doesn't post it twice).
++    /// </summary>
++    public static void DailySummaryTick()
++    {
++        try
++        {
++            int hour = SummaryHour;
++            if (!Enabled || hour is < 0 or > 23 || DateTime.Now.Hour != hour)
++                return;
++            string dir = Path.Combine(Path.GetTempPath(), "VibeSkuaTabs");
++            Directory.CreateDirectory(dir);
++            string marker = Path.Combine(dir, "summary-sent.txt");
++            string today = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
++            if (File.Exists(marker) && File.ReadAllText(marker).Trim() == today)
++                return;
++            File.WriteAllText(marker, today);
++            string text = BuildSummary(DateTime.Now.AddHours(-24), out bool problems);
++            _ = PostAsync("Watchdog summary (last 24 hours)", text, problems ? Level.Warning : Level.Info);
++        }
++        catch { }
++    }
++}
 diff --git a/Skua.Manager.Avalonia/App.axaml b/Skua.Manager.Avalonia/App.axaml
 index 70841b9..28f3ec6 100644
 --- a/Skua.Manager.Avalonia/App.axaml

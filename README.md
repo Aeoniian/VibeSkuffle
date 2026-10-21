@@ -83,6 +83,10 @@ Automatic re-logins go back to the **same server and room** the account was on.
 | A script was running when any of the above happened | It is started again once the account has been back in game for a few seconds, and checked that it really runs (up to 3 tries). |
 | Windows wants to sleep | It doesn't while VibeSkuffle is open (the screen can still turn off). |
 
+**Discord alerts:** put a webhook in `alerts.txt` and you get a message when something needs you (a script that
+won't start again, AQW looking down, a client that keeps crashing, a rescue that gave up), plus a daily summary of
+what the watchdog fixed. See [docs/SETTINGS.md](docs/SETTINGS.md#discord-alerts-and-the-daily-summary-alertstxt).
+
 Everything recovery does is written to `login-watchdog.log` next to `VibeSkuffle.exe` (time and account
 name, never passwords). Logs are size-capped so they can't fill your drive.
 

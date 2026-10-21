@@ -6,6 +6,10 @@
   (client-side only, like ButlerV5's quest clone) and put their own back exactly as it was before their scripts
   start again, so their scripts never see quests as done that aren't.
 - A restarted script that finishes by itself while the game is fine isn't started again and again.
+- **Discord alerts** (`alerts.txt`): a message when the watchdog needs a person, and a **daily summary** of what
+  it fixed per account (also: right-click a tab → Watchdog Summary). Off unless you add a webhook.
+- Builds write `build-info.txt` (VibeSkua version and patch hash) and keep `alerts.txt`; release zips leave out
+  `alerts.txt` and account-specific lines in `ruffle-options.txt`.
 - Tested: the full "out of sync" escalation (relog → game window restart → whole-client restart with its script).
 - README: credits for the VibeSkua, ButlerV5 and Skua authors and contributors.
 - New companion: [Watch Dog](https://github.com/Aeoniian/Watch-Dog), the in-game part of this watchdog as a plugin

@@ -47,6 +47,10 @@ if ($LASTEXITCODE -eq 0) {
     if ($LASTEXITCODE -ne 0) { throw "git apply failed" }
 }
 
+# Which patch this build is made from (compare with the patch you meant to build).
+$patchHash = (Get-FileHash -Algorithm SHA256 $patch).Hash.ToLower()
+Write-Host "== Patch SHA256 $patchHash"
+
 # This fork is named VibeSkuffle; clear out the old VibeSkua-named files from earlier builds.
 $oldBuild = Join-Path $skua 'Build'
 foreach ($name in 'VibeSkua.exe', 'VibeSkua.dll', 'VibeSkua.runtimeconfig.json', 'VibeSkua.deps.json',
@@ -78,9 +82,11 @@ try {
     $bat = Get-Content -Raw 'BuildProject.bat'
     $bat = ($bat -split "`r?`n" | Where-Object { $_ -notmatch '^\s*taskkill\b' }) -join "`r`n"
     Set-Content -Path 'BuildProject-nokill.bat' -Value $bat -Encoding ASCII
-    # The build clears Build\; keep the user's game-window options file and the recovery logs.
+    # The build clears Build\; keep the user's game-window options, alerts settings and the recovery logs.
     $opts = Join-Path $skua 'Build\ruffle-options.txt'
     $savedOpts = if (Test-Path $opts) { Get-Content -Raw $opts } else { $null }
+    $alerts = Join-Path $skua 'Build\alerts.txt'
+    $savedAlerts = if (Test-Path $alerts) { Get-Content -Raw $alerts } else { $null }
     $keepDir = Join-Path $root 'logs\kept-from-build'
     New-Item -ItemType Directory -Force $keepDir | Out-Null
     foreach ($log in 'login-watchdog.log', 'host-recovery.log') {
@@ -90,6 +96,7 @@ try {
     cmd /c "echo.| BuildProject-nokill.bat nopause"
     $buildExit = $LASTEXITCODE
     if ($null -ne $savedOpts) { Set-Content -Path $opts -Value $savedOpts -NoNewline }
+    if ($null -ne $savedAlerts) { Set-Content -Path $alerts -Value $savedAlerts -NoNewline }
     foreach ($log in 'login-watchdog.log', 'host-recovery.log') {
         $kept = Join-Path $keepDir $log
         if (Test-Path $kept) { Copy-Item -Force $kept (Join-Path $skua "Build\$log") }
@@ -109,3 +116,4 @@ if (Test-Path (Join-Path $ruffle 'Mugetsu.exe')) {
 }
 Set-Content -Path (Join-Path $build 'use-ruffle.txt') -Value 'Delete this file to play with Flash again.'
 Write-Host "== Done: $build\VibeSkuffle.exe and $build\VibeSkuffle.Manager.exe"
+Set-Content -Path (Join-Path $skua 'Build\build-info.txt') -Value ("built $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" + [Environment]::NewLine + "VibeSkua $commit" + [Environment]::NewLine + "patch sha256 $patchHash")

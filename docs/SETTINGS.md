@@ -54,3 +54,23 @@ started afterwards uses them; a script can also set `Bot.Options.RescueAllies` /
 |---|---|
 | Rescue Allies | While this account runs a script, it goes to help another account on the same server that keeps dying (10 deaths without a kill, or 15 minutes of only deaths), then comes back and starts its script again. |
 | Ignore Script Reject Else | A script's "Reject Else" no longer throws away drops it didn't ask for. |
+
+## Discord alerts and the daily summary (`alerts.txt`)
+
+Create `alerts.txt` next to `VibeSkuffle.exe` to get a Discord message when the watchdog needs a person, and a
+summary of everything it did once a day:
+
+```
+webhook=https://discord.com/api/webhooks/...   # Discord channel → Edit → Integrations → Webhooks → Copy URL
+summary_hour=8                                  # hour of the day (0-23) for the summary; -1 = no daily summary
+```
+
+You get a message when: a script couldn't be started again after 3 tries, an account has needed 6 recoveries in a
+row (and 12: AQW may be down), it's back in game after that, a whole client was restarted because relogs didn't
+help, a client or the tab window keeps crashing, an account has no saved login, or a rescue gave up. The same alert
+for the same account is sent at most once every 10 minutes. Every send is noted in `login-watchdog.log` (never the
+webhook itself). Right-click a tab → **Watchdog Summary (last 24 hours)** shows the summary any time.
+
+`alerts.txt` is kept when you rebuild and is never put in a release zip. It's separate from VibeSkua's own
+"Discord Webhook URL" setting (script started/stopped messages). Keep the webhook private: anyone with it can post
+to your channel.
