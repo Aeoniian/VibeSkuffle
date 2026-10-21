@@ -1,5 +1,5 @@
 diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
-index 1211499..d72addc 100644
+index 8741637..db3d635 100644
 --- a/Skua.App.Avalonia/App.axaml.cs
 +++ b/Skua.App.Avalonia/App.axaml.cs
 @@ -88,7 +88,10 @@ public partial class App : Application
@@ -72,8 +72,8 @@ index 1211499..d72addc 100644
              ShowUnhandledException("AppDomain.CurrentDomain.UnhandledException", ex);
          };
  
-@@ -350,8 +361,20 @@ public partial class App : Application
-         }
+@@ -356,8 +367,20 @@ public partial class App : Application
+         catch { }
      }
  
 +    // The tab host this client is docked in (clients only).
@@ -1299,10 +1299,10 @@ index 0000000..fc2907c
 +}
 +#endif
 diff --git a/Skua.App.Avalonia/Services/DialogService.cs b/Skua.App.Avalonia/Services/DialogService.cs
-index 4ff0f7f..6eab1e5 100644
+index 0430147..8fc6ce6 100644
 --- a/Skua.App.Avalonia/Services/DialogService.cs
 +++ b/Skua.App.Avalonia/Services/DialogService.cs
-@@ -107,7 +107,7 @@ public class DialogService : IDialogService
+@@ -108,7 +108,7 @@ public class DialogService : IDialogService
          {
              OptionContainerViewModel options => ShowOptionContainerDialog(options, string.IsNullOrWhiteSpace(title) || title == nameof(OptionContainerViewModel) ? options.Title : title),
              IOptionContainerViewModel optionsVm => ShowOptionContainerDialog(optionsVm as OptionContainerViewModel ?? new OptionContainerViewModel(optionsVm.Container), title),
@@ -1311,7 +1311,7 @@ index 4ff0f7f..6eab1e5 100644
              AssignHotKeyDialogViewModel hotKey => ShowAssignHotKeyDialog(hotKey, title),
              SkillRuleEditorDialogViewModel skillRules => ShowSkillRuleEditorDialog(skillRules, title),
              MessageBoxDialogViewModel messageBox => ShowMessageBoxInternal(messageBox.Message, messageBox.Title, messageBox.YesAndNo),
-@@ -170,6 +170,12 @@ public class DialogService : IDialogService
+@@ -171,6 +171,12 @@ public class DialogService : IDialogService
          };
  
          dialog.Content = WrapWithShell(title, content);
@@ -1539,10 +1539,10 @@ index 0000000..ca8432c
 +    }
 +}
 diff --git a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
-index 869268e..aa6f25c 100644
+index 7d7211c..6848fbc 100644
 --- a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
 +++ b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
-@@ -68,12 +68,13 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -69,12 +69,13 @@ public sealed class SkuaStartupHandler : IDisposable
  
      private void LoadGame(string function, params object[] args)
      {
@@ -1558,7 +1558,7 @@ index 869268e..aa6f25c 100644
      }
  
      private void Login(string function, params object[] args)
-@@ -88,9 +89,10 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -89,9 +90,10 @@ public sealed class SkuaStartupHandler : IDisposable
          {
              _bot.Servers.EnsureRelogin(string.IsNullOrWhiteSpace(_options.Server) ? "Twilly" : _options.Server!);
  
@@ -1571,6 +1571,41 @@ index 869268e..aa6f25c 100644
              {
                  await Task.Delay(250);
                  wait++;
+@@ -110,7 +112,14 @@ public sealed class SkuaStartupHandler : IDisposable
+                     {
+                         var scriptLoader = Ioc.Default.GetRequiredService<ScriptLoaderViewModel>();
+                         scriptLoader.LoadScript(_options.Script);
+-                        await scriptLoader.StartScriptAsync(_options.Script);
++                        // Brought back by crash recovery: VibeSkua 2.0.6 waits for the script's options window
++                        // before starting, and nobody is there to click it. Use the saved options instead.
++                        IScriptManager manager = Ioc.Default.GetRequiredService<IScriptManager>();
++                        bool silent = manager.SilentConfig;
++                        if (_options.Unattended)
++                            manager.SilentConfig = true;
++                        try { await scriptLoader.StartScriptAsync(_options.Script); }
++                        finally { manager.SilentConfig = silent; }
+                     }
+                     catch { }
+                 });
+@@ -150,6 +159,8 @@ public sealed class SkuaStartupHandler : IDisposable
+         public string? LoadScript { get; private set; }
+         public string? UseTheme { get; private set; }
+         public string? GitHubToken { get; private set; }
++        /// <summary>Started by recovery (not by a person): use the script's saved options, no options window.</summary>
++        public bool Unattended { get; private set; }
+ 
+         public static (bool Parsed, StartupOptions Options) Parse(string[] args)
+         {
+@@ -197,6 +208,9 @@ public sealed class SkuaStartupHandler : IDisposable
+                     case "--gh-token":
+                         options.GitHubToken = NextValue();
+                         break;
++                    case "--unattended":
++                        options.Unattended = true;
++                        break;
+                     case "--embed":
+                     case "--host-pid":
+                         NextValue();
 diff --git a/Skua.App.Avalonia/Skua.App.Avalonia.csproj b/Skua.App.Avalonia/Skua.App.Avalonia.csproj
 index 20f585f..7d05e4d 100644
 --- a/Skua.App.Avalonia/Skua.App.Avalonia.csproj
@@ -1680,15 +1715,15 @@ index 0986fea..96a8212 100644
      {
          recipient.RefreshDrops();
 diff --git a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
-index 4d4bab5..28a63fb 100644
+index a70f804..6a847a8 100644
 --- a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
 @@ -10,7 +10,7 @@ namespace Skua.App.Avalonia.ViewModels.MainMenu;
  public sealed partial class MainViewModel : ObservableObject
  {
      [ObservableProperty]
--    private string _title = "VibeSkua V2.0.5";
-+    private string _title = "VibeSkuffle V2.0.5";
+-    private string _title = "VibeSkua V2.0.6";
++    private string _title = "VibeSkuffle V2.0.6";
  
      public MainMenuViewModel MainMenu { get; }
  
@@ -2083,7 +2118,7 @@ index 274c1e7..26d8054 100644
      <Grid RowDefinitions="Auto,*">
          
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
-index 4eeac58..6aed0ef 100644
+index 4eeac58..06d20ba 100644
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 @@ -44,6 +44,11 @@ public partial class TabbedHostWindow : Window
@@ -2161,7 +2196,7 @@ index 4eeac58..6aed0ef 100644
                  return;
              }
  
-@@ -1580,6 +1600,82 @@ public partial class TabbedHostWindow : Window
+@@ -1580,6 +1600,86 @@ public partial class TabbedHostWindow : Window
              InstancesTabControl.SelectedItem = remaining;
      }
  
@@ -2218,10 +2253,14 @@ index 4eeac58..6aed0ef 100644
 +                    i++; // skip its value
 +                    continue;
 +                }
++                if (args[i] == "--unattended")
++                    continue;
 +                result.Add(args[i]);
 +            }
 +            result.Add(running ? "--run-script" : "--load-script");
 +            result.Add(script);
++            if (running)
++                result.Add("--unattended"); // use the script's saved options (no options window to click)
 +            return result.ToArray();
 +        }
 +        catch
@@ -2244,7 +2283,7 @@ index 4eeac58..6aed0ef 100644
      public void AddNewInstance(string rawArgs)
      {
          AddNewInstance(ParseRawCommandLine(rawArgs));
-@@ -1774,6 +1870,17 @@ public partial class TabbedHostWindow : Window
+@@ -1774,6 +1874,17 @@ public partial class TabbedHostWindow : Window
                  {
                      if (!_isClosing)
                      {
@@ -2262,7 +2301,7 @@ index 4eeac58..6aed0ef 100644
                          CloseTab(newTab);
                      }
                  });
-@@ -1781,13 +1888,9 @@ public partial class TabbedHostWindow : Window
+@@ -1781,13 +1892,9 @@ public partial class TabbedHostWindow : Window
  
              p.Start();
              info.Process = p;
@@ -2279,7 +2318,7 @@ index 4eeac58..6aed0ef 100644
              HotKeys.RegisterSkuaPid((uint)p.Id);
  
              int pid = p.Id;
-@@ -1838,6 +1941,26 @@ public partial class TabbedHostWindow : Window
+@@ -1838,6 +1945,26 @@ public partial class TabbedHostWindow : Window
          ContextMenu ctx = new ContextMenu();
          MenuItem closeItem = new MenuItem { Header = "Close Tab" };
          closeItem.Click += (s, ev) => CloseTab(newTab);
@@ -2306,7 +2345,7 @@ index 4eeac58..6aed0ef 100644
          MenuItem closeOthersItem = new MenuItem { Header = "Close Other Tabs" };
          closeOthersItem.Click += (s, ev) =>
          {
-@@ -1851,6 +1974,21 @@ public partial class TabbedHostWindow : Window
+@@ -1851,6 +1978,21 @@ public partial class TabbedHostWindow : Window
              var toRemove = InstancesTabControl.Items.OfType<TabItem>().Where((t, i) => i > idx && t.Header is StackPanel).ToList();
              foreach (var tab in toRemove) CloseTab(tab);
          };
@@ -2594,10 +2633,10 @@ index 513dd82..098fad3 100644
              catch (OperationCanceledException) when (token.IsCancellationRequested)
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..5138e82
+index 0000000..5a385c8
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,694 @@
+@@ -0,0 +1,701 @@
 +using Skua.Core.Interfaces;
 +using Skua.Core.Services;
 +
@@ -3162,7 +3201,14 @@ index 0000000..5138e82
 +                    return; // someone (or VibeSkua's own re-login) already started it
 +                }
 +                WdLog(attempt == 1 ? " back in game; starting the script again." : $" starting the script again (try {attempt} of 3).");
-+                Exception? error = await CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetRequiredService<IScriptManager>().StartScript();
++                // Started by recovery with nobody there: use the script's saved options. (VibeSkua 2.0.6 waits for
++                // the options window before starting a script; it would sit there until someone clicked it.)
++                IScriptManager scriptManager = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetRequiredService<IScriptManager>();
++                bool silent = scriptManager.SilentConfig;
++                scriptManager.SilentConfig = true;
++                Exception? error;
++                try { error = await scriptManager.StartScript(); }
++                finally { scriptManager.SilentConfig = silent; }
 +                if (error is not null)
 +                {
 +                    WdLog($" couldn't start the script: {error.Message}");
@@ -5082,10 +5128,10 @@ index b2431a4..bfac232 100644
  
  A feature-rich, high-performance derivative of auqw/skua, engineered for advanced automation, stability, and streamlined multi-client management.
 diff --git a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
-index d09cbda..de24757 100644
+index 7d8cd82..39f0903 100644
 --- a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
 +++ b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
-@@ -425,6 +425,6 @@ public partial class ScriptSchedulerViewModel : BotControlViewModelBase
+@@ -478,6 +478,6 @@ public partial class ScriptSchedulerViewModel : BotControlViewModelBase
                  return servers.CachedUsername!;
          }
          catch { }

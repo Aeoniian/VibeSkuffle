@@ -2,7 +2,7 @@
 
 **VibeSkua, running on Mugetsu (a faster Ruffle) instead of Flash, built to run a whole army for days without babysitting.**
 
-VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (currently v2.0.5) with the Flash player swapped out for
+VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (currently v2.0.6) with the Flash player swapped out for
 [Mugetsu](https://github.com/mugetsu-aqw/mugetsu), a performance-tuned build of the
 [Ruffle](https://ruffle.rs) Flash emulator. Everything VibeSkua does still works: scripts, the Manager, the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
@@ -142,9 +142,9 @@ SKUA_STUCK_SCRIPT_MINUTES=15        # relog a script that does nothing this long
 
 Problems? See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
-**Dashboards:** VibeSkuffle sends the same webhook snapshots as VibeSkua v2.0.5, so a dashboard like
-[Skua Nexus](https://github.com/wtffidy/Skua-Nexus) should be able to show your accounts (point the Discord webhook
-setting at its local relay). It's a separate project, not made or tested here.
+**Dashboards:** VibeSkuffle has VibeSkua v2.0.6's webhook settings, including its own Skua Nexus webhook next to
+the Discord one, so a dashboard like [Skua Nexus](https://github.com/wtffidy/Skua-Nexus) should be able to show
+your accounts. It's a separate project, not made or tested here.
 
 ---
 

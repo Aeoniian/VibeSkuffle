@@ -1,7 +1,12 @@
 # Changelog
 
-## v1.0.0-beta4 (2026-10-20)
+## v1.0.0-beta4 (2026-10-21)
 
+- Now based on **VibeSkua v2.0.6** (`14b0fdb`): script pinning, scheduler queue reordering, Skua Nexus webhook,
+  account name in the script options title, Select All in the Manager, faster script search and options window.
+- VibeSkua 2.0.6 asks for a script's options before starting it. Watchdog restarts (after a relog, a game-window
+  restart or a whole-client restart) use the saved options instead, so an unattended account never waits on that
+  window. Tested with a script that has options: relog → restarted, whole-client restart → running again in 8 s.
 - **Rescue Allies sees questline-locked bosses:** helpers borrow the stuck account's quest progress while helping
   (client-side only, like ButlerV5's quest clone) and put their own back exactly as it was before their scripts
   start again, so their scripts never see quests as done that aren't.
