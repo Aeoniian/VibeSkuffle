@@ -10,6 +10,7 @@ VibeSkuffle's changes. From three nights / two days of 6-account runs:
   seconds, starts the script, checks 15 s later that it is really running, and tries up to 3 times. A script that
   stopped a moment *before* the game was seen as gone (the usual case after a game-window restart) is now counted
   as running; a script that was stopped or finished while the game carried on is not.
+  A restarted script that finishes by itself (while the game is fine) isn't started again and again.
 - **"Communication with server has been lost"** left on screen (auto relogin off or given up): logs back in after
   1 minute. The log no longer fills with "Connection lost detected" ten times a second.
 - **Out of sync with the server:** a second stuck-script / quest-error relog within 45 minutes restarts the game
