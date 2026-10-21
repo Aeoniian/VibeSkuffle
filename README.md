@@ -90,7 +90,10 @@ name, never passwords). Logs are size-capped so they can't fill your drive.
 When an account running a script keeps dying (10 deaths without a kill, or 15 minutes of only deaths), every other
 account **on the same server** that is running a script and has *Rescue Allies* on stops its script, goes to that
 room and cell and fights there. As soon as the stuck account gets a kill they go back to where they were and their
-scripts start again. They give up after 20 minutes. Off by default; turn it on and click Save Options (this setting is shared, so it
+scripts start again. They give up after 20 minutes.
+If the boss is hidden behind a questline the helpers haven't done, they borrow the stuck account's quest progress
+while helping (client-side only, like ButlerV5's quest clone) and put their own back exactly as it was before their
+scripts start again, so their scripts never see quests as done that aren't. Off by default; turn it on and click Save Options (this setting is shared, so it
 applies to every account started afterwards).
 
 ### Drops

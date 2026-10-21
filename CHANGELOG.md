@@ -18,6 +18,7 @@ VibeSkuffle's changes. From three nights / two days of 6-account runs:
   once per 2 hours per account. New tab menu item **Restart Client (keeps login and script)**.
 - **Rescue Allies** (Game Option, off by default): accounts help an account on the same server that keeps dying,
   then go back and restart their scripts.
+  Helpers borrow the stuck account's quest progress (to see a questline-locked boss) and put their own back after.
 - **Ignore Script Reject Else** (Game Option): scripts can't throw away drops they didn't ask for.
 - **Current Drops → Pickup AC Only and Send to Bank.**
 - **ButlerV5 Summon all** (and the per-row Summon/Follow buttons) work for accounts on another server: they log in
