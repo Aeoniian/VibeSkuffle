@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.0-beta4 (2026-10-20)
+
+- **Rescue Allies sees questline-locked bosses:** helpers borrow the stuck account's quest progress while helping
+  (client-side only, like ButlerV5's quest clone) and put their own back exactly as it was before their scripts
+  start again, so their scripts never see quests as done that aren't.
+- A restarted script that finishes by itself while the game is fine isn't started again and again.
+- Tested: the full "out of sync" escalation (relog → game window restart → whole-client restart with its script).
+- README: credits for the VibeSkua, ButlerV5 and Skua authors and contributors.
+- New companion: [Watch Dog](https://github.com/Aeoniian/Watch-Dog), the in-game part of this watchdog as a plugin
+  for normal Skua and VibeSkua (not needed here, it's built in).
+
 ## v1.0.0-beta3 (2026-10-20)
 
 Now based on **VibeSkua v2.0.5** (`2fc9bb5`): the Manager's account context menu, tab → Add to Group, live
@@ -10,7 +21,6 @@ VibeSkuffle's changes. From three nights / two days of 6-account runs:
   seconds, starts the script, checks 15 s later that it is really running, and tries up to 3 times. A script that
   stopped a moment *before* the game was seen as gone (the usual case after a game-window restart) is now counted
   as running; a script that was stopped or finished while the game carried on is not.
-  A restarted script that finishes by itself (while the game is fine) isn't started again and again.
 - **"Communication with server has been lost"** left on screen (auto relogin off or given up): logs back in after
   1 minute. The log no longer fills with "Connection lost detected" ten times a second.
 - **Out of sync with the server:** a second stuck-script / quest-error relog within 45 minutes restarts the game
@@ -18,7 +28,6 @@ VibeSkuffle's changes. From three nights / two days of 6-account runs:
   once per 2 hours per account. New tab menu item **Restart Client (keeps login and script)**.
 - **Rescue Allies** (Game Option, off by default): accounts help an account on the same server that keeps dying,
   then go back and restart their scripts.
-  Helpers borrow the stuck account's quest progress (to see a questline-locked boss) and put their own back after.
 - **Ignore Script Reject Else** (Game Option): scripts can't throw away drops they didn't ask for.
 - **Current Drops → Pickup AC Only and Send to Bank.**
 - **ButlerV5 Summon all** (and the per-row Summon/Follow buttons) work for accounts on another server: they log in
