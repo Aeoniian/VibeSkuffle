@@ -3743,7 +3743,7 @@ index 0000000..b897e0f
 +    }
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.cs b/Skua.Core/Scripts/ScriptInterface.cs
-index c9256dd..21806b1 100644
+index c9256dd..33060c3 100644
 --- a/Skua.Core/Scripts/ScriptInterface.cs
 +++ b/Skua.Core/Scripts/ScriptInterface.cs
 @@ -12,7 +12,7 @@ using System.Diagnostics;
@@ -3802,15 +3802,22 @@ index c9256dd..21806b1 100644
              }
          }
          if (connDetail == lastConnDetail)
-@@ -461,6 +466,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -461,6 +466,14 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "loaded":
++                // VibeSkuffle: the loader SWF runs at 30 fps; play the game at the Set FPS option (24 by default).
++                try
++                {
++                    if (Options.SetFPS > 2 && !Options.HeadlessMode)
++                        Flash.SetGameObject("stage.frameRate", Options.SetFPS);
++                }
++                catch { }
 +                OnGameLoaded();
                  Initialize();
                  break;
  
-@@ -487,6 +493,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -487,6 +500,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "pext":
@@ -3819,7 +3826,7 @@ index c9256dd..21806b1 100644
                  dynamic packet = JsonConvert.DeserializeObject<dynamic>((string)args[0])!;
                  string type = packet["params"].type;
                  dynamic data = packet["params"].dataObj;
-@@ -614,6 +622,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -614,6 +629,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                                  Stats.QuestsCompleted++;
                                  Messenger.Send<QuestTurninMessage, int>(new(Convert.ToInt32(data.QuestID)), (int)MessageChannels.GameEvents);
                              }
@@ -3830,7 +3837,7 @@ index c9256dd..21806b1 100644
                              break;
  
                          case "loadBank":
-@@ -697,6 +709,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -697,6 +716,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                              {
                                  Log("Normal in-game logout detected. Auto re-login skipped.");
                                  Servers.IsIntentionalLogout = true;
@@ -3839,7 +3846,7 @@ index c9256dd..21806b1 100644
                                  CancelRelogin();
                                  if (Manager.ScriptRunning)
                                      _ = Manager.StopScript();
-@@ -741,13 +755,19 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -741,13 +762,19 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
  
          Log("Auto re-login triggered.");
          bool wasRunning = Manager.ScriptRunning;
@@ -3861,7 +3868,7 @@ index c9256dd..21806b1 100644
      }
  
      private async void BeginLogout()
-@@ -765,7 +785,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -765,7 +792,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
  
      private void Relogin(int delay, bool startScript)
      {
@@ -3872,7 +3879,7 @@ index c9256dd..21806b1 100644
          CancellationTokenSource reloginCts = new();
          _reloginCTS = reloginCts;
 diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.cs
-index 4b52722..dbf995f 100644
+index 4b52722..1e278b5 100644
 --- a/Skua.Core/Scripts/ScriptOption.cs
 +++ b/Skua.Core/Scripts/ScriptOption.cs
 @@ -111,6 +111,16 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
@@ -3892,6 +3899,26 @@ index 4b52722..dbf995f 100644
      [ObservableProperty]
      private bool _restPackets;
  
+@@ -129,8 +139,9 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+     [CallBinding("killLag", Get = false, HasSetter = true)]
+     private bool _lagKiller;
+ 
++    // VibeSkuffle: 24, AQW's own frame rate (its animations are drawn for 24; 30 plays them faster).
+     [ObjectBinding("stage.frameRate", Get = false, HasSetter = true)]
+-    private int _setFPS = 30;
++    private int _setFPS = 24;
+ 
+     [ObjectBinding("ui.mcFPS.visible", HasSetter = true)]
+     private bool _showFPS = false;
+@@ -181,7 +192,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+             }
+             else
+             {
+-                _lazyFlash.Value.Call("setGameObject", "stage.frameRate", 30);
++                _lazyFlash.Value.Call("setGameObject", "stage.frameRate", SetFPS > 2 ? SetFPS : 24);
+                 _lazyFlash.Value.Call("setGameObject", "stage.quality", "HIGH");
+                 _lazyFlash.Value.Call("setGameObject", "world.rootClass.mixer.soundTransform.volume", 1);
+             }
 diff --git a/Skua.Core/Scripts/ScriptServers.cs b/Skua.Core/Scripts/ScriptServers.cs
 index d93c230..4275c2e 100644
 --- a/Skua.Core/Scripts/ScriptServers.cs

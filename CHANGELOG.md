@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.0-beta6 (2026-10-21)
+
+- Hotfix: the game plays at **24 FPS** by default (Options → Game → Set FPS), AQW's own frame rate. It was 30,
+  which plays the animations faster than intended. The Set FPS option is applied when the game loads, and turning
+  headless mode off goes back to it instead of 30. If you saved your options before, your saved value stays.
+
 ## v1.0.0-beta5 (2026-10-21)
 
 - Now based on **VibeSkua v2.0.6** (`14b0fdb`): script pinning, scheduler queue reordering, Skua Nexus webhook,
