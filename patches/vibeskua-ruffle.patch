@@ -1940,7 +1940,7 @@ index 20f585f..7d05e4d 100644
      </PropertyGroup>
  
 diff --git a/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs b/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
-index 0986fea..96a8212 100644
+index 0986fea..aea6811 100644
 --- a/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
 @@ -9,16 +9,19 @@ using System;
@@ -1979,7 +1979,7 @@ index 0986fea..96a8212 100644
      private readonly IScriptDrop _drops;
      private string _searchText = string.Empty;
  
-@@ -103,6 +114,52 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
+@@ -103,6 +114,62 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
          RefreshDrops();
      }
  
@@ -2003,7 +2003,17 @@ index 0986fea..96a8212 100644
 +            (List<string> banked, List<string> notBanked) = await Task.Run(() =>
 +            {
 +                _drops.Pickup(names.ToArray());
-+                List<string> picked = names.Where(n => _inventory.Contains(n)).ToList();
++                // A picked-up drop leaves the drop list before it shows in the inventory: wait for it
++                // (up to 10 seconds) instead of deciding right away that nothing was picked up.
++                List<string> picked;
++                DateTime until = DateTime.UtcNow.AddSeconds(10);
++                while (true)
++                {
++                    picked = names.Where(n => _inventory.Contains(n)).ToList();
++                    if (picked.Count == names.Count || DateTime.UtcNow > until || !_player.Playing)
++                        break;
++                    System.Threading.Thread.Sleep(250);
++                }
 +                List<string> ok = new(), failed = new();
 +                if (picked.Count == 0)
 +                    return (ok, names);
@@ -2016,7 +2026,7 @@ index 0986fea..96a8212 100644
 +            });
 +            Status = banked.Count > 0
 +                ? $"Banked: {string.Join(", ", banked)}" + (notBanked.Count > 0 ? $". Not banked (no space or not picked up): {string.Join(", ", notBanked)}" : "")
-+                : $"Couldn't bank: {string.Join(", ", notBanked)} (no inventory or bank space?)";
++                : $"Couldn't bank: {string.Join(", ", notBanked)} (not picked up, or no inventory or bank space?)";
 +        }
 +        catch (Exception ex)
 +        {
