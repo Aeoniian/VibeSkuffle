@@ -1,5 +1,5 @@
 diff --git a/core/src/avm2/globals/json.rs b/core/src/avm2/globals/json.rs
-index 43e196285..dbfa051c4 100644
+index 43e19628..dbfa051c 100644
 --- a/core/src/avm2/globals/json.rs
 +++ b/core/src/avm2/globals/json.rs
 @@ -181,7 +181,20 @@ impl<'gc> AvmSerializer<'gc> {
@@ -36,7 +36,7 @@ index 43e196285..dbfa051c4 100644
              Value::Bool(b) => JsonValue::from(b),
              Value::String(s) => JsonValue::from(s.to_utf8_lossy().deref()),
 diff --git a/desktop/Cargo.toml b/desktop/Cargo.toml
-index cd1514aa5..2c7c11d46 100644
+index a011c947..8ecd1baf 100644
 --- a/desktop/Cargo.toml
 +++ b/desktop/Cargo.toml
 @@ -72,7 +72,7 @@ ashpd = { version = "0.13.0", features = ["settings", "game_mode"] }
@@ -49,10 +49,10 @@ index cd1514aa5..2c7c11d46 100644
  [build-dependencies]
  vergen = { version = "10.0.3", features = ["build", "cargo"] }
 diff --git a/desktop/src/app.rs b/desktop/src/app.rs
-index 6b65b0006..92c176267 100644
+index f2687688..816dda0d 100644
 --- a/desktop/src/app.rs
 +++ b/desktop/src/app.rs
-@@ -362,13 +362,74 @@ fn timer_parts(before: &[u64; ruffle_render_wgpu::perf_counters::timers::LEN]) -
+@@ -397,13 +397,74 @@ fn timer_parts(before: &[u64; ruffle_render_wgpu::perf_counters::timers::LEN]) -
      if parts.is_empty() { "none of the timed work".to_string() } else { parts }
  }
  
@@ -128,7 +128,7 @@ index 6b65b0006..92c176267 100644
                  let started = Instant::now();
                  let timers_before = ruffle_render_wgpu::perf_counters::timers::snapshot();
                  let walk_before = ruffle_core::render_walk_micros();
-@@ -471,7 +532,8 @@ impl MainWindow {
+@@ -509,7 +570,8 @@ impl MainWindow {
                  }
              }
              WindowEvent::Occluded(occluded) => {
@@ -138,7 +138,7 @@ index 6b65b0006..92c176267 100644
                  if !occluded {
                      // Nothing repaints us on its own if the movie is paused.
                      self.gui.window().request_redraw();
-@@ -512,6 +574,13 @@ impl MainWindow {
+@@ -558,6 +620,13 @@ impl MainWindow {
                  self.player.handle_event(PlayerEvent::FocusLost);
              }
              WindowEvent::MouseInput { button, state, .. } => {
@@ -152,7 +152,7 @@ index 6b65b0006..92c176267 100644
                  if self.gui.is_context_menu_visible() {
                      return;
                  }
-@@ -656,7 +725,9 @@ impl MainWindow {
+@@ -754,7 +823,9 @@ impl MainWindow {
  
          // To prevent issues like waiting on resize indefinitely (#11364) or desyncing the window state on Windows,
          // do not resize while window is maximized.
@@ -163,7 +163,7 @@ index 6b65b0006..92c176267 100644
  
          let (viewport_size, state) = if should_resize {
              let movie_width = swf_header.stage_size().width().to_pixels();
-@@ -1030,11 +1101,27 @@ impl ApplicationHandler<RuffleEvent> for App {
+@@ -1128,11 +1199,27 @@ impl ApplicationHandler<RuffleEvent> for App {
                  }
              }
  
@@ -191,7 +191,7 @@ index 6b65b0006..92c176267 100644
              let max_window_size = get_screen_size(&window);
              window.set_max_inner_size(Some(max_window_size));
              let window = Arc::new(window);
-@@ -1222,6 +1309,19 @@ impl ApplicationHandler<RuffleEvent> for App {
+@@ -1326,6 +1413,19 @@ impl ApplicationHandler<RuffleEvent> for App {
                  event_loop.exit();
              }
  
@@ -212,10 +212,10 @@ index 6b65b0006..92c176267 100644
          }
      }
 diff --git a/desktop/src/custom_event.rs b/desktop/src/custom_event.rs
-index 9e739a209..4187c81bb 100644
+index 13be623d..08e1ac3f 100644
 --- a/desktop/src/custom_event.rs
 +++ b/desktop/src/custom_event.rs
-@@ -48,4 +48,7 @@ pub enum RuffleEvent {
+@@ -51,4 +51,7 @@ pub enum RuffleEvent {
  
      /// Export Ruffle Bundle from currently playing content and open save dialog.
      ExportBundle,
@@ -223,8 +223,24 @@ index 9e739a209..4187c81bb 100644
 +    /// Skua build: a request from Skua over its pipe (see `skua.rs`).
 +    Skua(crate::skua::Request),
  }
+diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
+index 6979814c..c96fd8b0 100644
+--- a/desktop/src/gui/context_menu.rs
++++ b/desktop/src/gui/context_menu.rs
+@@ -224,7 +224,10 @@ impl ContextMenu {
+                             send(RuffleEvent::MugetsuSetting(Setting::ShowFps(!settings.show_fps)));
+                             item_clicked = true;
+                         }
+-                        if toggle_row(ui, z, "Full screen", "Esc leaves full screen", fullscreen) {
++                        // Skua build: the game is a window inside Skua's; no full screen there.
++                        if !crate::skua::enabled()
++                            && toggle_row(ui, z, "Full screen", "Esc leaves full screen", fullscreen)
++                        {
+                             send(if fullscreen {
+                                 RuffleEvent::ExitFullScreen
+                             } else {
 diff --git a/desktop/src/main.rs b/desktop/src/main.rs
-index 8fa595a42..7c339144c 100644
+index 91a3223d..1ed095fc 100644
 --- a/desktop/src/main.rs
 +++ b/desktop/src/main.rs
 @@ -15,6 +15,7 @@ mod gui;
@@ -235,7 +251,7 @@ index 8fa595a42..7c339144c 100644
  mod preferences;
  #[cfg(feature = "tracy")]
  mod tracy;
-@@ -149,10 +150,18 @@ fn panic_hook(info: &PanicHookInfo) {
+@@ -151,10 +152,18 @@ fn panic_hook(info: &PanicHookInfo) {
      let message = info.payload_as_str().unwrap_or("panic occurred");
  
      // AQW build: keep the crash and where it happened in ruffle.log.
@@ -255,10 +271,10 @@ index 8fa595a42..7c339144c 100644
  
      // AQW build (Mugetsu): no "report to the Ruffle developers" link (this is a modified build;
      // its crashes aren't theirs to triage). Say plainly what happened instead.
-@@ -200,7 +209,11 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
-         // SAFETY: this runs first thing in `main`, before any other thread exists.
-         unsafe { env::set_var("DISABLE_VULKAN_OBS_CAPTURE", "1") };
+@@ -204,7 +213,11 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
      }
+     let gui = args.iter().any(|a| is(a, "--gui"));
+     args.retain(|a| !is(a, "--gui"));
 -    let has_movie = Opt::try_parse_from(&args).map_or(true, |opt| opt.movie_url.is_some());
 +    // Skua build: started by Skua (`--skua-pipe ...`) it plays Skua's loader with the AQW
 +    // settings below, and talks to Skua over the pipes (see `skua.rs`).
@@ -268,7 +284,7 @@ index 8fa595a42..7c339144c 100644
      if has_movie {
          // A movie was given (or the arguments don't parse; let clap report that): plain Ruffle.
          return args;
-@@ -247,7 +260,8 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
+@@ -257,7 +270,8 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
          ("--no-gui", None, None),
          ("--graphics", Some("-g"), Some(graphics)),
      ];
@@ -276,19 +292,19 @@ index 8fa595a42..7c339144c 100644
 +    let movie = skua_movie.unwrap_or_else(|| AQW_LOADER_URL.into());
 +    let mut full = vec![args[0].clone(), movie];
      for (flag, short, value) in defaults {
-         if given(flag) || short.is_some_and(given) {
+         if (*flag == "--no-gui" && gui) || given(flag) || short.is_some_and(given) {
              continue;
-@@ -291,7 +305,8 @@ fn main() -> Result<(), Error> {
-     let preferences = GlobalPreferences::load(opt)?;
+@@ -302,7 +316,8 @@ fn main() -> Result<(), Error> {
  
      let logs_path = &preferences.cli.cache_directory.join("log");
+     mugetsu::set_log_folder(logs_path.clone());
 -    let log_path = preferences.log_filename_pattern().create_path(logs_path);
 +    let log_path = skua::log_path(logs_path)
 +        .unwrap_or_else(|| preferences.log_filename_pattern().create_path(logs_path));
      if let Some(parent) = log_path.parent() {
          std::fs::create_dir_all(parent)?;
      }
-@@ -301,7 +316,12 @@ fn main() -> Result<(), Error> {
+@@ -312,7 +327,12 @@ fn main() -> Result<(), Error> {
  
      // [NA] `_guard` cannot be `_` or it'll immediately drop
      // https://docs.rs/tracing-appender/latest/tracing_appender/non_blocking/index.html
@@ -303,10 +319,23 @@ index 8fa595a42..7c339144c 100644
  
      // AQW build (Mugetsu): by default the log keeps warnings, crash details and Mugetsu's
 diff --git a/desktop/src/mugetsu.rs b/desktop/src/mugetsu.rs
-index 6a0ebe3a2..a40330a86 100644
+index 53eb549e..7d21ad91 100644
 --- a/desktop/src/mugetsu.rs
 +++ b/desktop/src/mugetsu.rs
-@@ -548,7 +548,7 @@ pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power:
+@@ -255,7 +255,11 @@ impl MenuSettings {
+             interpolation: ruffle_core::frame_interpolation::enabled(),
+             flash_edges: ruffle_render::tessellator::flash_aa_switch(),
+             graphics: saved_graphics(),
+-            graphics_choice: (cfg!(windows) || cfg!(target_os = "linux")) && plays_aqw(),
++            // Skua build: not inside Skua, which starts Mugetsu with its own graphics setting
++            // (ruffle-options.txt) and would lose the game if Mugetsu restarted itself.
++            graphics_choice: (cfg!(windows) || cfg!(target_os = "linux"))
++                && plays_aqw()
++                && !crate::skua::enabled(),
+             show_fps: show_fps(),
+         }
+     }
+@@ -665,7 +669,7 @@ pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power:
  /// so and a message (once per version) offers to open the download page. Nothing is
  /// downloaded or installed; a `no-update-check` file next to Mugetsu.exe turns this off.
  pub fn spawn_update_check(window: Arc<Window>) {
@@ -316,7 +345,7 @@ index 6a0ebe3a2..a40330a86 100644
      }
      let _ = std::thread::Builder::new()
 diff --git a/desktop/src/player.rs b/desktop/src/player.rs
-index b37bdd8ad..67bd4275a 100644
+index b37bdd8a..67bd4275 100644
 --- a/desktop/src/player.rs
 +++ b/desktop/src/player.rs
 @@ -276,7 +276,14 @@ impl ActivePlayer {
@@ -337,7 +366,7 @@ index b37bdd8ad..67bd4275a 100644
              }));
 diff --git a/desktop/src/skua.rs b/desktop/src/skua.rs
 new file mode 100644
-index 000000000..9c43f7610
+index 00000000..9c43f761
 --- /dev/null
 +++ b/desktop/src/skua.rs
 @@ -0,0 +1,515 @@
@@ -857,7 +886,7 @@ index 000000000..9c43f7610
 +    }
 +}
 diff --git a/desktop/src/windows.rs b/desktop/src/windows.rs
-index 2db65b443..35b573ea8 100644
+index a7d1275d..db53e4ec 100644
 --- a/desktop/src/windows.rs
 +++ b/desktop/src/windows.rs
 @@ -132,7 +132,7 @@ unsafe extern "system" fn crash_filter(
@@ -885,7 +914,7 @@ index 2db65b443..35b573ea8 100644
              "Mugetsu can't run on this PC: it needs a processor with AVX2 (Intel Core 4th \
              generation from 2013 or newer, AMD Ryzen or newer). Some budget Celeron and Pentium \
 diff --git a/frontend-utils/src/backends/navigator.rs b/frontend-utils/src/backends/navigator.rs
-index 798dfe58e..5fae11e31 100644
+index 798dfe58..5fae11e3 100644
 --- a/frontend-utils/src/backends/navigator.rs
 +++ b/frontend-utils/src/backends/navigator.rs
 @@ -81,7 +81,13 @@ impl<F: FutureSpawner<Error>, I: NavigatorInterface> ExternalNavigatorBackend<F,
@@ -903,10 +932,10 @@ index 798dfe58e..5fae11e31 100644
              .user_agent(concat!(
                  "Ruffle/",
 diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
-index 31f97db4c..266de1fea 100644
+index 1c7d14b4..871e6ea3 100644
 --- a/render/wgpu/src/backend.rs
 +++ b/render/wgpu/src/backend.rs
-@@ -1886,7 +1886,19 @@ async fn request_device(
+@@ -1902,7 +1902,19 @@ async fn request_device(
              // come and go all the time in AQW (layers, cached bitmaps, filters) and left the big
              // blocks mostly empty: 6-10 GB reserved for ~2 GB used after a session.
              // `RUFFLE_GPU_MEMORY_HINTS=performance` restores the old block sizes.

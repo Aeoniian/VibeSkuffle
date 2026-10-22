@@ -2,6 +2,22 @@
 
 ## v1.0.0-beta6 (2026-10-21)
 
+- **Mugetsu 1.5.1** (was 1.4.0), the Windows build. What's new in Mugetsu:
+  [1.5.0](https://github.com/mugetsu-aqw/mugetsu/releases/tag/v1.5.0) ·
+  [1.5.1](https://github.com/mugetsu-aqw/mugetsu/releases/tag/v1.5.1)
+  - **Flash-style edge smoothing** (new default): smooth edges the way Flash Player drew them instead of
+    MSAA; about the same look on Medium/High and much faster on laptops and built-in graphics (right-click the
+    game → Edge smoothing → MSAA for the old way). 1.5.1 fixes small holes in some shapes and too-thick outlines
+    on squashed shapes.
+  - **Right-click menu on the game** with Mugetsu's settings: Frame interpolation, Edge smoothing, Show FPS,
+    Open log folder. In VibeSkuffle it leaves out Graphics (VibeSkuffle sets that in `ruffle-options.txt`, and
+    Mugetsu restarting itself would lose the game) and Full screen (the game is inside the tab window).
+  - Frame interpolation costs much less; animated effects at many sizes (torches, spells) stop rebuilding
+    their shapes every frame.
+  - (1.5.1's Linux version isn't used: VibeSkuffle is Windows-only.)
+
+## v1.0.0-beta5.0.1 (2026-10-21)
+
 - Hotfix: the game plays at **24 FPS** by default (Options → Game → Set FPS), AQW's own frame rate. It was 30,
   which plays the animations faster than intended. The Set FPS option is applied when the game loads, and turning
   headless mode off goes back to it instead of 30. If you saved your options before, your saved value stays.

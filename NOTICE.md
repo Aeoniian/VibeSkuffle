@@ -10,8 +10,8 @@ VibeSkuffle combines and modifies these projects:
 | [JPEXS FFDec](https://github.com/jindrapetrik/jpexs-decompiler) | GPL-3.0 | Bundled with VibeSkua (`FFDec/`), unchanged |
 
 **Modified Mugetsu.** The `ruffle/Mugetsu.exe` in VibeSkuffle releases is a modified version of Mugetsu
-v1.4.0 (changes made 2026-10). Its complete source is Mugetsu v1.4.0
-(`https://github.com/mugetsu-aqw/mugetsu`, tag `v1.4.0`) plus `patches/skua.patch` in this repository;
+v1.5.1 (changes made 2026-10). Its complete source is Mugetsu v1.5.1
+(`https://github.com/mugetsu-aqw/mugetsu`, tag `v1.5.1`) plus `patches/skua.patch` in this repository;
 `2-build-ruffle.bat` rebuilds it. Released under GPL-3.0 (see `LICENSE`). It is not an official Mugetsu
 release, so please don't report its problems to the Mugetsu author.
 

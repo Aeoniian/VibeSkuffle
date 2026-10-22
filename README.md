@@ -193,7 +193,7 @@ Lucas Correa.
 If you contributed to any of these and are missing or want your entry changed, open an [issue](../../issues).
 
 The game player shipped here is a **modified** Mugetsu (it adds the bridge VibeSkuffle talks to). Its source is
-Mugetsu v1.4.0 plus [`patches/skua.patch`](patches/skua.patch). This repository is licensed under
+Mugetsu v1.5.1 plus [`patches/skua.patch`](patches/skua.patch). This repository is licensed under
 **GPL-3.0** (see [LICENSE](LICENSE)); see [NOTICE.md](NOTICE.md) for details.
 
 Not affiliated with, endorsed by, or supported by Artix Entertainment, the Ruffle project, Mugetsu, Skua or

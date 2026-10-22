@@ -1,4 +1,4 @@
-# Builds Mugetsu 1.4.0 (performance-tuned Ruffle) plus the Skua bridge (patches\skua.patch).
+# Builds Mugetsu (Windows; version in $version below) (performance-tuned Ruffle) plus the Skua bridge (patches\skua.patch).
 param([switch]$NoPgo)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -7,12 +7,23 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 $env:GIT_CONFIG_PARAMETERS = "'core.autocrlf=false'"
 $env:RUSTUP_TOOLCHAIN = '1.99.0'
 
+$version = '1.5.1'   # Mugetsu release the build uses (the Windows build script, build.ps1)
 $mugetsu = Join-Path $root 'mugetsu'
 if (-not (Test-Path (Join-Path $mugetsu '.git'))) {
-    Write-Host "== Downloading Mugetsu 1.4.0 source"
-    git clone -q --depth 1 --branch v1.4.0 https://github.com/mugetsu-aqw/mugetsu.git $mugetsu
+    Write-Host "== Downloading Mugetsu $version source"
+    git clone -q --depth 1 --branch "v$version" https://github.com/mugetsu-aqw/mugetsu.git $mugetsu
     if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
+} else {
+    $have = try { git -C $mugetsu describe --tags --exact-match 2>$null } catch { "" }
+    if ($have -ne "v$version") {
+        Write-Host "== Updating Mugetsu source from $have to v$version"
+        git -C $mugetsu fetch -q --depth 1 origin tag "v$version"
+        if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
+        git -C $mugetsu -c advice.detachedHead=false checkout -q -f "v$version"
+        if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
+    }
 }
+Write-Host "== Mugetsu v$version ($(git -C $mugetsu rev-parse --short HEAD))"
 $source = Join-Path $mugetsu 'source'
 Copy-Item -Force (Join-Path $root 'patches\skua.patch') (Join-Path $source 'patches\skua.patch')
 
