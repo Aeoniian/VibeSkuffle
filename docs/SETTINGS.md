@@ -45,6 +45,23 @@ None of these contain passwords.
 Delete `use-ruffle.txt` next to `VibeSkuffle.exe` to use the Flash player instead (needs Flash installed,
 like normal VibeSkua).
 
+## Graphics menu and the game's right-click menu
+
+The **Graphics** tab in each client's menu bar has Mugetsu's own settings. A change applies to **every
+account** at once (the other clients follow within 2 seconds) and is kept for game windows started later:
+
+- **Edge smoothing:** Flash-style (default, lighter on laptops and built-in graphics) or MSAA.
+- **Frame interpolation:** smoother motion between game frames, for strong PCs.
+- **Show FPS:** a small frame counter in the corner of the game.
+- **Open Mugetsu's log folder.**
+
+It also shows the graphics API this account uses. To change that, **right-click the game** and choose
+**Vulkan**, **DirectX 12** or **OpenGL**. That's for that account only: VibeSkuffle saves it in
+`ruffle-options.txt` as `account: --graphics vulkan` (an account's own line wins over the line for
+everyone) and restarts that game window, which logs back in and starts its script again. If the game
+doesn't come up with the new API within 90 seconds, it goes back to the previous one by itself (and sends a
+Discord alert if alerts are on). To go back to the setting for everyone, delete the account's line.
+
 ## Game Options added by VibeSkuffle
 
 Set them in **Options → Game Options** and click **Save Options** (saved per settings file, so every account

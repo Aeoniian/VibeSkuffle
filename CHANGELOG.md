@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.0.0-beta7 (2026-10-21)
+
+- **Graphics tab** in the menu bar (between Diagnostics and Plugins) with Mugetsu's settings: Edge smoothing
+  (Flash-style / MSAA), Frame interpolation, Show FPS, Open Mugetsu's log folder. A change applies to every
+  account at once and is kept for game windows started later. It also shows the account's graphics API.
+- **Right-click the game** to switch that account between **Vulkan**, **DirectX 12** and **OpenGL**. It's
+  saved for that account in `ruffle-options.txt` and the game window restarts, logging back in and starting its
+  script again. If the new API doesn't start within 90 seconds it goes back by itself (with a Discord alert).
+  Mugetsu itself only offers OpenGL on Linux; VibeSkuffle offers it on Windows too (tested on an NVIDIA card).
+- An account's own option line in `ruffle-options.txt` now replaces the same option from the line for
+  everyone (before, both were passed and the game window could refuse to start).
+- The daily summary counts graphics switches and switches that were undone.
+
 ## v1.0.0-beta6 (2026-10-21)
 
 - **Mugetsu 1.5.1** (was 1.4.0), the Windows build. What's new in Mugetsu:

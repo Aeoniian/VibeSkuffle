@@ -49,10 +49,10 @@ index a011c947..8ecd1baf 100644
  [build-dependencies]
  vergen = { version = "10.0.3", features = ["build", "cargo"] }
 diff --git a/desktop/src/app.rs b/desktop/src/app.rs
-index f2687688..816dda0d 100644
+index f2687688..33546b53 100644
 --- a/desktop/src/app.rs
 +++ b/desktop/src/app.rs
-@@ -397,13 +397,74 @@ fn timer_parts(before: &[u64; ruffle_render_wgpu::perf_counters::timers::LEN]) -
+@@ -397,13 +397,92 @@ fn timer_parts(before: &[u64; ruffle_render_wgpu::perf_counters::timers::LEN]) -
      if parts.is_empty() { "none of the timed work".to_string() } else { parts }
  }
  
@@ -114,6 +114,24 @@ index f2687688..816dda0d 100644
 +                }
 +            }
 +            Request::Quit => event_loop.exit(),
++            Request::Set { key, on } => {
++                use crate::mugetsu::Setting;
++                let setting = match key.as_str() {
++                    "interpolation" => Some(Setting::Interpolation(on)),
++                    "edges" => Some(Setting::FlashEdges(on)),
++                    "fps" => Some(Setting::ShowFps(on)),
++                    "logs" => Some(Setting::OpenLogFolder),
++                    other => {
++                        tracing::warn!("Unknown setting from Skua: {other}");
++                        None
++                    }
++                };
++                if let Some(setting) = setting {
++                    self.apply_setting(setting);
++                }
++                crate::skua::send_settings();
++            }
++            Request::GetSettings => crate::skua::send_settings(),
 +        }
 +    }
 +
@@ -128,7 +146,7 @@ index f2687688..816dda0d 100644
                  let started = Instant::now();
                  let timers_before = ruffle_render_wgpu::perf_counters::timers::snapshot();
                  let walk_before = ruffle_core::render_walk_micros();
-@@ -509,7 +570,8 @@ impl MainWindow {
+@@ -509,7 +588,8 @@ impl MainWindow {
                  }
              }
              WindowEvent::Occluded(occluded) => {
@@ -138,7 +156,7 @@ index f2687688..816dda0d 100644
                  if !occluded {
                      // Nothing repaints us on its own if the movie is paused.
                      self.gui.window().request_redraw();
-@@ -558,6 +620,13 @@ impl MainWindow {
+@@ -558,6 +638,13 @@ impl MainWindow {
                  self.player.handle_event(PlayerEvent::FocusLost);
              }
              WindowEvent::MouseInput { button, state, .. } => {
@@ -152,7 +170,7 @@ index f2687688..816dda0d 100644
                  if self.gui.is_context_menu_visible() {
                      return;
                  }
-@@ -754,7 +823,9 @@ impl MainWindow {
+@@ -754,7 +841,9 @@ impl MainWindow {
  
          // To prevent issues like waiting on resize indefinitely (#11364) or desyncing the window state on Windows,
          // do not resize while window is maximized.
@@ -163,7 +181,7 @@ index f2687688..816dda0d 100644
  
          let (viewport_size, state) = if should_resize {
              let movie_width = swf_header.stage_size().width().to_pixels();
-@@ -1128,11 +1199,27 @@ impl ApplicationHandler<RuffleEvent> for App {
+@@ -1128,11 +1217,27 @@ impl ApplicationHandler<RuffleEvent> for App {
                  }
              }
  
@@ -191,7 +209,7 @@ index f2687688..816dda0d 100644
              let max_window_size = get_screen_size(&window);
              window.set_max_inner_size(Some(max_window_size));
              let window = Arc::new(window);
-@@ -1326,6 +1413,19 @@ impl ApplicationHandler<RuffleEvent> for App {
+@@ -1326,6 +1431,22 @@ impl ApplicationHandler<RuffleEvent> for App {
                  event_loop.exit();
              }
  
@@ -205,7 +223,10 @@ index f2687688..816dda0d 100644
 +                }
 +                crate::skua::Request::Quit => event_loop.exit(),
 +                crate::skua::Request::Headless(on) => crate::skua::set_headless(on),
-+                crate::skua::Request::Refresh | crate::skua::Request::Trim => {}
++                crate::skua::Request::GetSettings => crate::skua::send_settings(),
++                crate::skua::Request::Refresh
++                | crate::skua::Request::Trim
++                | crate::skua::Request::Set { .. } => {}
 +            },
 +
              _ => {}
@@ -224,21 +245,148 @@ index 13be623d..08e1ac3f 100644
 +    Skua(crate::skua::Request),
  }
 diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
-index 6979814c..c96fd8b0 100644
+index 6979814c..a7534873 100644
 --- a/desktop/src/gui/context_menu.rs
 +++ b/desktop/src/gui/context_menu.rs
-@@ -224,7 +224,10 @@ impl ContextMenu {
-                             send(RuffleEvent::MugetsuSetting(Setting::ShowFps(!settings.show_fps)));
-                             item_clicked = true;
+@@ -179,64 +179,85 @@ impl ContextMenu {
+                             }
                          }
+ 
+-                        section(ui, z, "GRAPHICS");
+-                        row_title(ui, z, "Edge smoothing", "Flash-style is lighter on laptops");
+-                        if let Some(choice) = segmented(
+-                            ui,
+-                            z,
+-                            "edges",
+-                            &["Flash-style", "MSAA"],
+-                            if settings.flash_edges { 0 } else { 1 },
+-                        ) {
+-                            send(RuffleEvent::MugetsuSetting(Setting::FlashEdges(choice == 0)));
+-                            item_clicked = true;
+-                        }
+-                        ui.add_space(6.0 * z);
+-                        if toggle_row(
+-                            ui,
+-                            z,
+-                            "Frame interpolation",
+-                            "Smoother motion, best on strong PCs",
+-                            settings.interpolation,
+-                        ) {
+-                            send(RuffleEvent::MugetsuSetting(Setting::Interpolation(
+-                                !settings.interpolation,
+-                            )));
+-                            item_clicked = true;
+-                        }
+-                        if settings.graphics_choice {
+-                            ui.add_space(4.0 * z);
+-                            row_title(ui, z, "Graphics API", "Changing it restarts Mugetsu");
+-                            let (options, values) = graphics_options();
+-                            let current = values
++                        // Skua build: inside VibeSkuffle only the graphics API is chosen here (its
++                        // Graphics menu has the other settings, for every account at once).
++                        if crate::skua::enabled() {
++                            section(ui, z, "GRAPHICS API");
++                            row_title(ui, z, "Graphics API", "Restarts this account's game (login and script kept)");
++                            const APIS: [&str; 3] = ["vulkan", "dx12", "gl"];
++                            let current = APIS
+                                 .iter()
+-                                .position(|&g| g == settings.graphics)
+-                                .unwrap_or(0);
+-                            if let Some(choice) = segmented(ui, z, "graphics", options, current) {
+-                                send(RuffleEvent::MugetsuSetting(Setting::Graphics(values[choice])));
++                                .position(|&api| api == crate::skua::graphics())
++                                .unwrap_or(APIS.len());
++                            if let Some(choice) =
++                                segmented(ui, z, "skua_graphics", &["Vulkan", "DirectX 12", "OpenGL"], current)
++                            {
++                                crate::skua::choose_graphics(APIS[choice]);
+                                 item_clicked = true;
+                             }
+-                        }
++                        } else {
++                            section(ui, z, "GRAPHICS");
++                            row_title(ui, z, "Edge smoothing", "Flash-style is lighter on laptops");
++                            if let Some(choice) = segmented(
++                                ui,
++                                z,
++                                "edges",
++                                &["Flash-style", "MSAA"],
++                                if settings.flash_edges { 0 } else { 1 },
++                            ) {
++                                send(RuffleEvent::MugetsuSetting(Setting::FlashEdges(choice == 0)));
++                                item_clicked = true;
++                            }
++                            ui.add_space(6.0 * z);
++                            if toggle_row(
++                                ui,
++                                z,
++                                "Frame interpolation",
++                                "Smoother motion, best on strong PCs",
++                                settings.interpolation,
++                            ) {
++                                send(RuffleEvent::MugetsuSetting(Setting::Interpolation(
++                                    !settings.interpolation,
++                                )));
++                                item_clicked = true;
++                            }
++                            if settings.graphics_choice {
++                                ui.add_space(4.0 * z);
++                                row_title(ui, z, "Graphics API", "Changing it restarts Mugetsu");
++                                let (options, values) = graphics_options();
++                                let current = values
++                                    .iter()
++                                    .position(|&g| g == settings.graphics)
++                                    .unwrap_or(0);
++                                if let Some(choice) = segmented(ui, z, "graphics", options, current) {
++                                    send(RuffleEvent::MugetsuSetting(Setting::Graphics(values[choice])));
++                                    item_clicked = true;
++                                }
++                            }
+ 
+-                        section(ui, z, "DISPLAY");
+-                        if toggle_row(ui, z, "Show FPS", "A small counter in the corner", settings.show_fps)
+-                        {
+-                            send(RuffleEvent::MugetsuSetting(Setting::ShowFps(!settings.show_fps)));
+-                            item_clicked = true;
+-                        }
 -                        if toggle_row(ui, z, "Full screen", "Esc leaves full screen", fullscreen) {
-+                        // Skua build: the game is a window inside Skua's; no full screen there.
-+                        if !crate::skua::enabled()
-+                            && toggle_row(ui, z, "Full screen", "Esc leaves full screen", fullscreen)
-+                        {
-                             send(if fullscreen {
-                                 RuffleEvent::ExitFullScreen
-                             } else {
+-                            send(if fullscreen {
+-                                RuffleEvent::ExitFullScreen
+-                            } else {
+-                                RuffleEvent::EnterFullScreen
+-                            });
+-                            item_clicked = true;
+-                        }
++                            section(ui, z, "DISPLAY");
++                            if toggle_row(ui, z, "Show FPS", "A small counter in the corner", settings.show_fps)
++                            {
++                                send(RuffleEvent::MugetsuSetting(Setting::ShowFps(!settings.show_fps)));
++                                item_clicked = true;
++                            }
++                            // Skua build: the game is a window inside Skua's; no full screen there.
++                            if !crate::skua::enabled()
++                                && toggle_row(ui, z, "Full screen", "Esc leaves full screen", fullscreen)
++                            {
++                                send(if fullscreen {
++                                    RuffleEvent::ExitFullScreen
++                                } else {
++                                    RuffleEvent::EnterFullScreen
++                                });
++                                item_clicked = true;
++                            }
+ 
+-                        section(ui, z, "HELP");
+-                        if action_row(ui, z, "Open log folder", Some("↗")).clicked() {
+-                            send(RuffleEvent::MugetsuSetting(Setting::OpenLogFolder));
+-                            item_clicked = true;
++                            section(ui, z, "HELP");
++                            if action_row(ui, z, "Open log folder", Some("↗")).clicked() {
++                                send(RuffleEvent::MugetsuSetting(Setting::OpenLogFolder));
++                                item_clicked = true;
++                            }
+                         }
+                     })
+             });
 diff --git a/desktop/src/main.rs b/desktop/src/main.rs
 index 91a3223d..1ed095fc 100644
 --- a/desktop/src/main.rs
@@ -366,10 +514,10 @@ index b37bdd8a..67bd4275 100644
              }));
 diff --git a/desktop/src/skua.rs b/desktop/src/skua.rs
 new file mode 100644
-index 00000000..9c43f761
+index 00000000..4b0cf4ef
 --- /dev/null
 +++ b/desktop/src/skua.rs
-@@ -0,0 +1,515 @@
+@@ -0,0 +1,564 @@
 +//! Skua bridge: lets Skua (a C# bot client) drive the game through `ExternalInterface`, the
 +//! same way it drives the Flash ActiveX control, over two pipes:
 +//!
@@ -426,6 +574,35 @@ index 00000000..9c43f761
 +    /// shapes not drawn for a while, spare textures, and memory the allocator is holding on to.
 +    Trim,
 +    Quit,
++    /// VibeSkuffle's Graphics menu: change a Mugetsu setting ("interpolation", "edges", "fps",
++    /// "logs" = open the log folder). Answered with the current settings.
++    Set { key: String, on: bool },
++    /// Send the current settings (see `send_settings`).
++    GetSettings,
++}
++
++/// The graphics API Skua started this process with (`--graphics`/`-g`), or "auto".
++static GRAPHICS: OnceLock<String> = OnceLock::new();
++
++pub fn graphics() -> &'static str {
++    GRAPHICS.get().map_or("auto", String::as_str)
++}
++
++/// Asks Skua to restart this account's game window with another graphics API (the right-click
++/// menu inside Skua). Mugetsu doesn't restart itself there: Skua started it and keeps the game.
++pub fn choose_graphics(api: &str) {
++    send(json!({ "t": "graphics", "v": api }));
++}
++
++/// Tells Skua the current Mugetsu settings (for its Graphics menu).
++pub fn send_settings() {
++    send(json!({
++        "t": "settings",
++        "interpolation": ruffle_core::frame_interpolation::enabled(),
++        "edges": ruffle_render::tessellator::flash_aa_switch(),
++        "fps": crate::mugetsu::show_fps(),
++        "graphics": graphics(),
++    }));
 +}
 +
 +/// Removes `--skua-pipe`, `--skua-parent` and `--skua-movie` from `args`. Returns the movie
@@ -457,6 +634,21 @@ index 00000000..9c43f761
 +        };
 +    }
 +    *args = rest;
++
++    if pipe.is_some() {
++        let mut graphics = "auto".to_string();
++        let mut words = args.iter().map(|a| a.to_string_lossy().to_string());
++        while let Some(word) = words.next() {
++            if let Some(value) = word.strip_prefix("--graphics=") {
++                graphics = value.to_ascii_lowercase();
++            } else if word == "--graphics" || word == "-g" {
++                if let Some(value) = words.next() {
++                    graphics = value.to_ascii_lowercase();
++                }
++            }
++        }
++        let _ = GRAPHICS.set(graphics);
++    }
 +
 +    let pipe = pipe?.to_string_lossy().to_string();
 +    let parent = parent.and_then(|p| {
@@ -724,6 +916,11 @@ index 00000000..9c43f761
 +        "refresh" => Some(Request::Refresh),
 +        "trim" => Some(Request::Trim),
 +        "quit" => Some(Request::Quit),
++        "set" => Some(Request::Set {
++            key: message.get("k")?.as_str()?.to_string(),
++            on: message.get("v").and_then(Json::as_bool).unwrap_or(false),
++        }),
++        "settings" => Some(Request::GetSettings),
 +        other => {
 +            tracing::warn!("Unknown message from Skua: {other}");
 +            None

@@ -280,12 +280,303 @@ index 0000000..4d95294
 +    private static extern IntPtr SetFocus(IntPtr hWnd);
 +}
 +#endif
+diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.PlayerSettings.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.PlayerSettings.cs
+new file mode 100644
+index 0000000..f4515bf
+--- /dev/null
++++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.PlayerSettings.cs
+@@ -0,0 +1,285 @@
++namespace Skua.App.Avalonia.Flash;
++
++#if IS_WINDOWS
++using Dispatcher = global::Avalonia.Threading.Dispatcher;
++using Newtonsoft.Json.Linq;
++using System;
++using System.Collections.Generic;
++using System.Diagnostics;
++using System.Globalization;
++using System.IO;
++using System.Linq;
++using System.Threading;
++using WinForms = System.Windows.Forms;
++
++/// <summary>Mugetsu's settings as the game player last reported them.</summary>
++public sealed record PlayerSettings(bool Interpolation, bool FlashEdges, bool ShowFps, string Graphics);
++
++/// <summary>
++/// VibeSkuffle's Graphics menu: Mugetsu's own settings (edge smoothing, frame interpolation, FPS counter),
++/// the same for every account, and the graphics API chosen per account from the game's right-click menu.
++/// </summary>
++/// <remarks>
++/// A change is written to <c>%TEMP%\VibeSkuaTabs\mugetsu-settings.txt</c>; every client checks that file every
++/// 2 seconds and sends its player whatever differs, so all accounts follow. Mugetsu also saves the settings
++/// itself, so a game window started later already has them.
++/// </remarks>
++public sealed partial class RuffleFlashUtil
++{
++    public const string ApiVulkan = "vulkan", ApiDx12 = "dx12", ApiGl = "gl";
++
++    private static string SharedSettingsPath => Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", "mugetsu-settings.txt");
++
++    private Timer? _settingsSync;
++    private Timer? _graphicsRevert;
++    private int _playerHellos;
++    private DateTime _sharedSettingsStamp = DateTime.MinValue;
++    private Dictionary<string, bool> _sharedSettings = new();
++
++    /// <summary>The player's settings, once it has reported them (null before that).</summary>
++    public PlayerSettings? CurrentPlayerSettings { get; private set; }
++
++    /// <summary>Raised (on any thread) when the player reports its settings.</summary>
++    public event Action? PlayerSettingsChanged;
++
++    public static string ApiName(string api) => api switch
++    {
++        ApiVulkan => "Vulkan",
++        ApiDx12 => "DirectX 12",
++        ApiGl => "OpenGL",
++        _ => "Automatic",
++    };
++
++    private void OnPlayerSettings(JObject message)
++    {
++        CurrentPlayerSettings = new PlayerSettings(
++            (bool?)message["interpolation"] ?? false,
++            (bool?)message["edges"] ?? true,
++            (bool?)message["fps"] ?? false,
++            (string?)message["graphics"] ?? "auto");
++        try { PlayerSettingsChanged?.Invoke(); } catch { }
++    }
++
++    /// <summary>
++    /// Changes a Mugetsu setting for every account: <c>"interpolation"</c>, <c>"edges"</c> (true = Flash-style,
++    /// false = MSAA) or <c>"fps"</c>.
++    /// </summary>
++    public void SetPlayerSettingForAll(string key, bool on)
++    {
++        try
++        {
++            Dictionary<string, bool> all = ReadSharedSettings() ?? new();
++            all[key] = on;
++            Directory.CreateDirectory(Path.GetDirectoryName(SharedSettingsPath)!);
++            string temp = SharedSettingsPath + $".{Environment.ProcessId}.tmp";
++            File.WriteAllLines(temp, all.Select(kv => $"{kv.Key}={(kv.Value ? 1 : 0)}"));
++            File.Move(temp, SharedSettingsPath, true);
++        }
++        catch (Exception ex)
++        {
++            Trace.WriteLine($"Graphics menu: couldn't save the setting for the other accounts: {ex.Message}");
++        }
++        // This account right away; the others within 2 seconds.
++        SendPlayerSetting(key, on);
++    }
++
++    /// <summary>Opens Mugetsu's log folder.</summary>
++    public void OpenPlayerLogFolder() => SendPlayerSetting("logs", true);
++
++    private void SendPlayerSetting(string key, bool on)
++    {
++        if (_session is { } session && session.Connected.IsSet)
++            Send(session, new JObject { ["t"] = "set", ["k"] = key, ["v"] = on });
++    }
++
++    private void StartPlayerSettingsSync()
++    {
++        _settingsSync ??= new Timer(_ => SyncPlayerSettings(), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
++        _sharedSettingsStamp = DateTime.MinValue; // a new game window: check it against the file again
++    }
++
++    private void SyncPlayerSettings()
++    {
++        try
++        {
++            if (_disposed || CurrentPlayerSettings is not { } current)
++                return;
++            DateTime stamp = File.Exists(SharedSettingsPath) ? File.GetLastWriteTimeUtc(SharedSettingsPath) : DateTime.MinValue;
++            if (stamp != _sharedSettingsStamp)
++            {
++                _sharedSettings = ReadSharedSettings() ?? new();
++                _sharedSettingsStamp = stamp;
++            }
++            foreach ((string key, bool wanted) in _sharedSettings)
++            {
++                bool now = key switch
++                {
++                    "interpolation" => current.Interpolation,
++                    "edges" => current.FlashEdges,
++                    "fps" => current.ShowFps,
++                    _ => wanted,
++                };
++                if (now != wanted)
++                {
++                    SendPlayerSetting(key, wanted);
++                    // Wait for the player's answer before sending more (it reports the new settings).
++                    CurrentPlayerSettings = current with
++                    {
++                        Interpolation = key == "interpolation" ? wanted : current.Interpolation,
++                        FlashEdges = key == "edges" ? wanted : current.FlashEdges,
++                        ShowFps = key == "fps" ? wanted : current.ShowFps,
++                    };
++                    current = CurrentPlayerSettings;
++                }
++            }
++        }
++        catch { /* try again in 2 seconds */ }
++    }
++
++    private static Dictionary<string, bool>? ReadSharedSettings()
++    {
++        try
++        {
++            if (!File.Exists(SharedSettingsPath))
++                return null;
++            var all = new Dictionary<string, bool>();
++            foreach (string line in File.ReadAllLines(SharedSettingsPath))
++            {
++                int eq = line.IndexOf('=');
++                if (eq > 0)
++                    all[line[..eq].Trim()] = line[(eq + 1)..].Trim() == "1";
++            }
++            return all;
++        }
++        catch
++        {
++            return null;
++        }
++    }
++
++    /// <summary>
++    /// The game's right-click menu asked for another graphics API: saved for this account in
++    /// ruffle-options.txt (<c>account: --graphics ...</c>) and the game window restarted with it. The
++    /// watchdog logs back in and starts the script again, as after any game window restart.
++    /// </summary>
++    private void ChooseGraphicsApi(string api)
++    {
++        if (api is not (ApiVulkan or ApiDx12 or ApiGl) || _disposed)
++            return;
++        string account = ThisAccount();
++        if (account.Length == 0)
++        {
++            WinForms.MessageBox.Show("This window has no account to save the choice for.", "Graphics API",
++                WinForms.MessageBoxButtons.OK, WinForms.MessageBoxIcon.Information);
++            return;
++        }
++        if (CurrentPlayerSettings?.Graphics == api)
++            return;
++        var answer = WinForms.MessageBox.Show(
++            $"Switch this account to {ApiName(api)}?\r\n\r\nIts game window restarts; it logs back in and starts its script again by itself.",
++            "Graphics API", WinForms.MessageBoxButtons.OKCancel, WinForms.MessageBoxIcon.Question);
++        if (answer != WinForms.DialogResult.OK)
++            return;
++        string? before = AccountGraphics(account); // this account's own line, if it had one
++        string previous = CurrentPlayerSettings?.Graphics ?? "auto";
++        try
++        {
++            SaveAccountGraphics(account, api);
++        }
++        catch (Exception ex)
++        {
++            WinForms.MessageBox.Show($"Couldn't save it in ruffle-options.txt:\r\n{ex.Message}", "Graphics API",
++                WinForms.MessageBoxButtons.OK, WinForms.MessageBoxIcon.Error);
++            return;
++        }
++        HealthLog($" switched to {ApiName(api)} graphics (right-click menu); restarting the game window.");
++        // If the game doesn't come up with it (the API doesn't work on this PC), go back by itself.
++        int hellos = Volatile.Read(ref _playerHellos);
++        _graphicsRevert?.Dispose();
++        _graphicsRevert = new Timer(_ => Dispatcher.UIThread.Post(() =>
++        {
++            if (_disposed || Volatile.Read(ref _playerHellos) != hellos)
++                return;
++            try
++            {
++                if (before is not null)
++                    SaveAccountGraphics(account, before);
++                else
++                    RemoveAccountGraphics(account);
++            }
++            catch { }
++            HealthLog($" {ApiName(api)} graphics didn't start within 90 seconds; going back to {ApiName(before ?? previous)}.");
++            Skua.Core.Services.VibeAlerts.Send(account, $"{ApiName(api)} graphics didn't work",
++                $"The game didn't start with {ApiName(api)}, so this account went back to {ApiName(before ?? previous)}.",
++                Skua.Core.Services.VibeAlerts.Level.Warning);
++            RestartGamePlayer();
++        }), null, TimeSpan.FromSeconds(90), Timeout.InfiniteTimeSpan);
++        RestartGamePlayer();
++    }
++
++    private static string OptionsPath => Path.Combine(AppContext.BaseDirectory, "ruffle-options.txt");
++
++    private static int AccountGraphicsLine(List<string> lines, string account) => lines.FindIndex(raw =>
++    {
++        string line = raw.Trim();
++        int colon = line.IndexOf(':');
++        return colon > 0 && !line.StartsWith('#') && !line.StartsWith('-')
++            && line[..colon].Trim().Equals(account, StringComparison.OrdinalIgnoreCase)
++            && line[(colon + 1)..].TrimStart().StartsWith("--graphics", StringComparison.OrdinalIgnoreCase);
++    });
++
++    /// <summary>The API on this account's own <c>--graphics</c> line, or null.</summary>
++    private static string? AccountGraphics(string account)
++    {
++        try
++        {
++            List<string> lines = File.Exists(OptionsPath) ? File.ReadAllLines(OptionsPath).ToList() : new();
++            int index = AccountGraphicsLine(lines, account);
++            if (index < 0)
++                return null;
++            string[] parts = lines[index][(lines[index].IndexOf(':') + 1)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
++            return parts.Length > 1 ? parts[1].ToLowerInvariant() : null;
++        }
++        catch
++        {
++            return null;
++        }
++    }
++
++    private static void RemoveAccountGraphics(string account)
++    {
++        List<string> lines = File.Exists(OptionsPath) ? File.ReadAllLines(OptionsPath).ToList() : new();
++        int index = AccountGraphicsLine(lines, account);
++        if (index < 0)
++            return;
++        lines.RemoveAt(index);
++        WriteOptions(lines);
++    }
++
++    private static void WriteOptions(List<string> lines)
++    {
++        string temp = OptionsPath + ".tmp";
++        File.WriteAllLines(temp, lines);
++        File.Move(temp, OptionsPath, true);
++    }
++
++    /// <summary>Replaces this account's <c>--graphics</c> line in ruffle-options.txt, or adds one.</summary>
++    private static void SaveAccountGraphics(string account, string api)
++    {
++        List<string> lines = File.Exists(OptionsPath) ? File.ReadAllLines(OptionsPath).ToList() : new();
++        string entry = $"{account}: --graphics {api}";
++        int index = AccountGraphicsLine(lines, account);
++        if (index >= 0)
++        {
++            lines[index] = entry;
++        }
++        else
++        {
++            if (!lines.Any(l => l.Contains("right-click the game", StringComparison.OrdinalIgnoreCase)))
++                lines.Add("# Graphics API per account (set by right-click the game -> Graphics API):");
++            lines.Add(entry);
++        }
++        WriteOptions(lines);
++    }
++}
++#endif
 diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 new file mode 100644
-index 0000000..fc2907c
+index 0000000..a3badc8
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
-@@ -0,0 +1,1012 @@
+@@ -0,0 +1,1039 @@
 +using Skua.Core.Interfaces;
 +using System;
 +using System.Xml.Linq;
@@ -323,7 +614,7 @@ index 0000000..fc2907c
 +/// Behaves like <see cref="FlashUtil"/> towards the rest of Skua: <see cref="Call(string, Type, object[])"/>
 +/// blocks until the movie answers, and <see cref="FlashCall"/> is raised on the UI thread, in order.
 +/// </remarks>
-+public sealed class RuffleFlashUtil : IFlashUtil, IRestartableGamePlayer
++public sealed partial class RuffleFlashUtil : IFlashUtil, IRestartableGamePlayer
 +{
 +    /// <summary>Longest a call waits for the game before giving up and returning the default value.</summary>
 +    private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(20);
@@ -524,6 +815,19 @@ index 0000000..fc2907c
 +                    _control?.SetGameWindow(new IntPtr(hwnd));
 +                if (_headless)
 +                    SendHeadless(session, true);
++                Interlocked.Increment(ref _playerHellos);
++                // VibeSkuffle's Graphics menu: ask for Mugetsu's settings, then keep them in step.
++                Send(session, new JObject { ["t"] = "settings" });
++                StartPlayerSettingsSync();
++                break;
++
++            case "settings":
++                OnPlayerSettings(message);
++                break;
++
++            case "graphics":
++                string api = (string?)message["v"] ?? "";
++                Dispatcher.UIThread.Post(() => ChooseGraphicsApi(api));
 +                break;
 +
 +            case "cb":
@@ -918,6 +1222,10 @@ index 0000000..fc2907c
 +        string path = Path.Combine(AppContext.BaseDirectory, "ruffle-options.txt");
 +        if (!File.Exists(path))
 +            return;
++        // Command-line options by their flag (e.g. "--graphics"): an account's own line wins over a
++        // line for everyone, wherever it is in the file, and a later line wins over an earlier one of
++        // the same kind, so the player never gets the same option twice.
++        var options = new List<(string Flag, string[] Parts, bool Account)>();
 +        try
 +        {
 +            foreach (string raw in File.ReadAllLines(path))
@@ -926,6 +1234,7 @@ index 0000000..fc2907c
 +                if (line.Length == 0 || line.StartsWith('#'))
 +                    continue;
 +                // "name: ..." applies to that account only, e.g. "myalt: SKUA_MEMORY_LIMIT_MB=8000".
++                bool account = false;
 +                int colon = line.IndexOf(':');
 +                int equals = line.IndexOf('=');
 +                if (!line.StartsWith('-') && colon > 0 && (equals < 0 || colon < equals))
@@ -935,11 +1244,17 @@ index 0000000..fc2907c
 +                    line = line[(colon + 1)..].Trim();
 +                    if (line.Length == 0)
 +                        continue;
++                    account = true;
 +                }
 +                if (line.StartsWith('-'))
 +                {
-+                    foreach (string part in line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-+                        startInfo.ArgumentList.Add(part);
++                    string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
++                    string flag = parts[0].Split('=')[0];
++                    int existing = options.FindIndex(o => o.Flag == flag);
++                    if (existing < 0)
++                        options.Add((flag, parts, account));
++                    else if (account || !options[existing].Account)
++                        options[existing] = (flag, parts, account);
 +                }
 +                else if (line.IndexOf('=') is > 0 and int eq)
 +                {
@@ -955,6 +1270,9 @@ index 0000000..fc2907c
 +        {
 +            Trace.WriteLine($"ruffle-options.txt: {ex.Message}");
 +        }
++        foreach ((_, string[] parts, _) in options)
++            foreach (string part in parts)
++                startInfo.ArgumentList.Add(part);
 +    }
 +
 +    private bool Send(Session session, JObject message)
@@ -1816,7 +2134,7 @@ index e6608e5..1594254 100644
      </Border>
    </Grid>
 diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
-index 3892328..707d620 100644
+index 3892328..904e4ab 100644
 --- a/Skua.App.Avalonia/Views/MainWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
 @@ -78,6 +78,72 @@ public partial class MainWindow : Window
@@ -1892,7 +2210,102 @@ index 3892328..707d620 100644
      public void HideTitleBar()
      {
          _isTitleBarPermanentlyHidden = true;
-@@ -245,6 +311,8 @@ public partial class MainWindow : Window
+@@ -129,8 +195,94 @@ public partial class MainWindow : Window
+         MainMenuControl.Items.Clear();
+         foreach (MainMenuItemViewModel item in _mainMenuVm.MainMenuItems)
+             MainMenuControl.Items.Add(CreateMainMenuItem(item, isTopLevel: true));
++#if IS_WINDOWS
++        // VibeSkuffle: Mugetsu's settings, before Plugins (the last item).
++        if (_flash is Skua.App.Avalonia.Flash.RuffleFlashUtil ruffle)
++            MainMenuControl.Items.Insert(Math.Max(0, MainMenuControl.Items.Count - 1), CreateGraphicsMenu(ruffle));
++#endif
++    }
++
++#if IS_WINDOWS
++    /// <summary>
++    /// VibeSkuffle's Graphics menu: Mugetsu's settings for every account at once (see
++    /// RuffleFlashUtil.PlayerSettings.cs). The graphics API is chosen per account by right-clicking the game.
++    /// </summary>
++    private global::Avalonia.Controls.MenuItem CreateGraphicsMenu(Skua.App.Avalonia.Flash.RuffleFlashUtil ruffle)
++    {
++        var icon = new MaterialIcon { Kind = MaterialIconKind.MonitorEye, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center };
++        icon[!MaterialIcon.ForegroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("SkuaTextBrush");
++        var top = new global::Avalonia.Controls.MenuItem
++        {
++            Header = new StackPanel
++            {
++                Orientation = Orientation.Horizontal,
++                Spacing = 6,
++                VerticalAlignment = VerticalAlignment.Center,
++                Children = { icon, new TextBlock { Text = "Graphics", VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeight.SemiBold, FontSize = 12 } }
++            }
++        };
++        top.Classes.Add("top-nav-item");
++
++        // On/off is shown with icons: this theme doesn't draw MenuItem check marks in the top menus.
++        MaterialIcon Mark(MaterialIconKind kind)
++        {
++            var mark = new MaterialIcon { Kind = kind, Width = 14, Height = 14, VerticalAlignment = VerticalAlignment.Center };
++            mark[!MaterialIcon.ForegroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("SkuaTextBrush");
++            return mark;
++        }
++        global::Avalonia.Controls.MenuItem Item(string header, Action click)
++        {
++            var item = new global::Avalonia.Controls.MenuItem { Header = header };
++            item.Click += (_, _) => click(); // the game answers with its settings, which refreshes the marks
++            return item;
++        }
++        var flashEdges = Item("Edge smoothing: Flash-style (lighter on laptops)", () => ruffle.SetPlayerSettingForAll("edges", true));
++        var msaa = Item("Edge smoothing: MSAA", () => ruffle.SetPlayerSettingForAll("edges", false));
++        var interpolation = Item("Frame interpolation (smoother motion, for strong PCs)",
++            () => ruffle.SetPlayerSettingForAll("interpolation", !(ruffle.CurrentPlayerSettings?.Interpolation ?? false)));
++        var showFps = Item("Show FPS", () => ruffle.SetPlayerSettingForAll("fps", !(ruffle.CurrentPlayerSettings?.ShowFps ?? false)));
++        var api = new global::Avalonia.Controls.MenuItem { IsEnabled = false, Icon = Mark(MaterialIconKind.Chip) };
++        var logs = Item("Open Mugetsu's log folder", ruffle.OpenPlayerLogFolder);
++        logs.Icon = Mark(MaterialIconKind.FolderOpenOutline);
++        var note = new global::Avalonia.Controls.MenuItem { Header = "These apply to every account.", IsEnabled = false };
++
++        top.Items.Add(flashEdges);
++        top.Items.Add(msaa);
++        top.Items.Add(new Separator());
++        top.Items.Add(interpolation);
++        top.Items.Add(showFps);
++        top.Items.Add(new Separator());
++        top.Items.Add(api);
++        top.Items.Add(logs);
++        top.Items.Add(new Separator());
++        top.Items.Add(note);
++
++        void Refresh()
++        {
++            Skua.App.Avalonia.Flash.PlayerSettings? now = ruffle.CurrentPlayerSettings;
++            foreach (var item in new[] { flashEdges, msaa, interpolation, showFps, logs })
++                item.IsEnabled = now is not null;
++            flashEdges.Icon = Mark(now?.FlashEdges == true ? MaterialIconKind.RadioboxMarked : MaterialIconKind.RadioboxBlank);
++            msaa.Icon = Mark(now is { FlashEdges: false } ? MaterialIconKind.RadioboxMarked : MaterialIconKind.RadioboxBlank);
++            interpolation.Icon = Mark(now?.Interpolation == true ? MaterialIconKind.CheckboxMarked : MaterialIconKind.CheckboxBlankOutline);
++            showFps.Icon = Mark(now?.ShowFps == true ? MaterialIconKind.CheckboxMarked : MaterialIconKind.CheckboxBlankOutline);
++            api.Header = now is null
++                ? "Waiting for the game..."
++                : $"Graphics API: {Skua.App.Avalonia.Flash.RuffleFlashUtil.ApiName(now.Graphics)} (right-click the game to change it for this account)";
++        }
++        Refresh();
++        top.SubmenuOpened += (_, _) => Refresh();
++        // The menu is built again when the main menu changes; only the newest one follows the game.
++        if (_graphicsMenuRefresh is not null)
++            ruffle.PlayerSettingsChanged -= _graphicsMenuRefresh;
++        _graphicsMenuRefresh = () => Dispatcher.UIThread.Post(Refresh);
++        ruffle.PlayerSettingsChanged += _graphicsMenuRefresh;
++        return top;
+     }
+ 
++    private Action? _graphicsMenuRefresh;
++#endif
++
+     private global::Avalonia.Controls.MenuItem CreateMainMenuItem(IMainMenuItemViewModel viewModel, bool isTopLevel = false)
+     {
+         global::Avalonia.Controls.MenuItem menuItem = new()
+@@ -245,6 +397,8 @@ public partial class MainWindow : Window
      private void RegisterMessages()
      {
          WeakReferenceMessenger.Default.Register<MainWindow, FlashChangedMessage<AxShockwaveFlash>>(this, static (r, m) => r.OnFlashControlChanged(m.Flash));
@@ -1901,7 +2314,7 @@ index 3892328..707d620 100644
      }
      #endif
  
-@@ -263,6 +331,9 @@ public partial class MainWindow : Window
+@@ -263,6 +417,9 @@ public partial class MainWindow : Window
                      Dispatcher.UIThread.Post(() =>
                      {
                          bool isHeadless = _options.HeadlessMode;
@@ -1911,7 +2324,7 @@ index 3892328..707d620 100644
                          if (HeadlessOverlay != null) HeadlessOverlay.IsVisible = isHeadless;
                          if (FlashHost != null) FlashHost.IsVisible = !isHeadless && _isFlashLoaded;
                      });
-@@ -298,6 +369,28 @@ public partial class MainWindow : Window
+@@ -298,6 +455,28 @@ public partial class MainWindow : Window
  #endif
          }
  
@@ -1940,7 +2353,7 @@ index 3892328..707d620 100644
          _tabTitleSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
          string lastWrittenUsername = "";
          _tabTitleSyncTimer.Tick += (s, ev) =>
-@@ -356,6 +449,9 @@ public partial class MainWindow : Window
+@@ -356,6 +535,9 @@ public partial class MainWindow : Window
              Dispatcher.UIThread.Post(() =>
              {
                  LoadingBar.IsVisible = false;
@@ -1950,7 +2363,7 @@ index 3892328..707d620 100644
                  FlashHost.IsVisible = !_options.HeadlessMode;
                  HeadlessOverlay.IsVisible = _options.HeadlessMode;
                  try
-@@ -368,6 +464,56 @@ public partial class MainWindow : Window
+@@ -368,6 +550,56 @@ public partial class MainWindow : Window
          }
      }
  
@@ -2007,7 +2420,7 @@ index 3892328..707d620 100644
  #if IS_WINDOWS
      private IntPtr WindowSubclassProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam, nuint uIdSubclass, IntPtr dwRefData)
      {
-@@ -417,15 +563,43 @@ public partial class MainWindow : Window
+@@ -417,15 +649,43 @@ public partial class MainWindow : Window
          }
          else if (uMsg == WM_SKUA_LOGIN)
          {
@@ -2055,7 +2468,7 @@ index 3892328..707d620 100644
          else if (uMsg == 0x0400 + 448) // WM_SKUA_LOGOUT
          {
              Ioc.Default.GetRequiredService<IScriptServers>().Logout();
-@@ -631,46 +805,8 @@ public partial class MainWindow : Window
+@@ -631,46 +891,8 @@ public partial class MainWindow : Window
          }
          else if (uMsg == 0x0400 + 452) // WM_SKUA_THROTTLE
          {
@@ -2633,7 +3046,7 @@ index 513dd82..098fad3 100644
              catch (OperationCanceledException) when (token.IsCancellationRequested)
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..5a385c8
+index 0000000..3f170a8
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 @@ -0,0 +1,701 @@
@@ -3040,10 +3453,10 @@ index 0000000..5a385c8
 +                await Task.Delay(500);
 +            if (_waitForLogin || _wdBusy || (Player.Playing && Flash.IsWorldLoaded))
 +            {
-+                WdLog(" the game window restarted while in game (crash, freeze or memory limit); auto relogin is logging back in.");
++                WdLog(" the game window restarted while in game (crash, freeze, memory limit or graphics switch); auto relogin is logging back in.");
 +                return;
 +            }
-+            WdLog(" the game window restarted while in game (crash, freeze or memory limit); logging back in.");
++            WdLog(" the game window restarted while in game (crash, freeze, memory limit or graphics switch); logging back in.");
 +            if (!Servers.RememberLoginInfo())
 +            {
 +                WdLog(" no saved login for this client, log in again by hand.");
@@ -4234,10 +4647,10 @@ index e4ad755..1058b35 100644
              finally
 diff --git a/Skua.Core/Services/VibeAlerts.cs b/Skua.Core/Services/VibeAlerts.cs
 new file mode 100644
-index 0000000..462db9c
+index 0000000..294101a
 --- /dev/null
 +++ b/Skua.Core/Services/VibeAlerts.cs
-@@ -0,0 +1,297 @@
+@@ -0,0 +1,299 @@
 +using System.Collections.Concurrent;
 +using System.Globalization;
 +using System.Text;
@@ -4436,6 +4849,7 @@ index 0000000..462db9c
 +        ("memory restarts", m => (m.Contains("MB (limit") && m.EndsWith("restarting it.")) || m.Contains("the PC is low on memory"), false),
 +        ("crash restarts", m => m.Contains("closed unexpectedly"), false),
 +        ("script restarts", m => m.Contains("starting the script again"), false),
++        ("graphics switches", m => m.Contains("graphics (right-click menu)"), false),
 +        ("rescue calls", m => m.Contains("asking the other accounts for help"), false),
 +        ("rescues helped", m => m.Contains("keeps dying in"), false),
 +        ("scripts left stopped", m => m.Contains("couldn't get the script running again"), true),
@@ -4443,6 +4857,7 @@ index 0000000..462db9c
 +        ("AQW looked down", m => m.Contains("recoveries in a row (AQW may be down)"), true),
 +        ("kept crashing", m => m.Contains("keeps crashing"), true),
 +        ("no saved login", m => m.Contains("no saved login"), true),
++        ("graphics switches undone", m => m.Contains("graphics didn't start within"), true),
 +    };
 +
 +    /// <summary>Counts what the watchdog did since <paramref name="since"/>, per account, from login-watchdog.log.</summary>
