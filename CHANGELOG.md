@@ -11,7 +11,9 @@
   stopping the script so the two never log in at once. After you click Log Out or Change Server in game,
   neither logs the account back in.
 - Army Queue clients (which close when their script stops) no longer close when a recovery stops the script
-  for a relog, game window restart or Rescue Allies.
+  for a relog, game window restart or Rescue Allies; they wait for the recovery to settle and close once the
+  script has really finished. Tested: a drop mid-run, VibeSkua relogged, the script ran again and finished, the
+  client closed and the queue completed.
 - Tested on 2.0.7: drop with Auto Relogin off (watchdog relogs at 3 minutes, script restarted without the
   options window), drop with Auto Relogin on (VibeSkua relogs in 10 s, one script restart, no second login),
   logging out on purpose (stays logged out), whole-client restart.

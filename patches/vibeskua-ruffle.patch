@@ -1857,21 +1857,36 @@ index 0000000..ca8432c
 +    }
 +}
 diff --git a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
-index 0920843..28bf587 100644
+index 0920843..23fb9ae 100644
 --- a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
 +++ b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
-@@ -71,6 +71,10 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -71,6 +71,25 @@ public sealed class SkuaStartupHandler : IDisposable
              StrongReferenceMessenger.Default.Register<SkuaStartupHandler, ScriptStoppedMessage, int>(this, (int)MessageChannels.ScriptStatus, async (r, m) =>
              {
                  await Task.Delay(2000);
 +                // VibeSkuffle: a stop that's part of a recovery (re-login, game window restart, Rescue Allies)
 +                // isn't the script finishing; the script starts again afterwards, so don't close the client.
-+                if (_bot.RecoveryPending || _bot.Manager.ScriptRunning)
++                // Wait until any recovery has settled (up to 10 minutes): running again = keep going; still
++                // stopped with nothing pending for 5 seconds = it really finished.
++                int settledSince = 0;
++                for (int waited = 0; waited < 600; waited++)
++                {
++                    if (_bot.Manager.ScriptRunning)
++                        return;
++                    if (_bot.RecoveryPending)
++                        settledSince = 0;
++                    else if (++settledSince >= 5)
++                        break;
++                    await Task.Delay(1000);
++                }
++                // Still recovering after 10 minutes (AQW down?): keep the client; the restarted script's own stop
++                // later decides.
++                if (_bot.Manager.ScriptRunning || _bot.RecoveryPending)
 +                    return;
                  try { _bot.Servers.Logout(); } catch { }
                  await Task.Delay(1000);
                  Environment.Exit(0);
-@@ -80,12 +84,13 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -80,12 +99,13 @@ public sealed class SkuaStartupHandler : IDisposable
  
      private void LoadGame(string function, params object[] args)
      {
@@ -1887,7 +1902,7 @@ index 0920843..28bf587 100644
      }
  
      private void Login(string function, params object[] args)
-@@ -100,9 +105,10 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -100,9 +120,10 @@ public sealed class SkuaStartupHandler : IDisposable
          {
              _bot.Servers.EnsureRelogin(string.IsNullOrWhiteSpace(_options.Server) ? "Twilly" : _options.Server!);
  
@@ -1900,7 +1915,7 @@ index 0920843..28bf587 100644
              {
                  await Task.Delay(250);
                  wait++;
-@@ -126,7 +132,14 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -126,7 +147,14 @@ public sealed class SkuaStartupHandler : IDisposable
                              scriptLoader.ScriptManager.SilentConfig = true;
                          }
                          scriptLoader.LoadScript(_options.Script);
@@ -1916,7 +1931,7 @@ index 0920843..28bf587 100644
                      }
                      catch { }
                  });
-@@ -169,6 +182,8 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -169,6 +197,8 @@ public sealed class SkuaStartupHandler : IDisposable
          public string? UseTheme { get; private set; }
          public string? GitHubToken { get; private set; }
          public bool ExitOnScriptStop { get; private set; }
@@ -1925,7 +1940,7 @@ index 0920843..28bf587 100644
  
          public static (bool Parsed, StartupOptions Options) Parse(string[] args)
          {
-@@ -223,6 +238,9 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -223,6 +253,9 @@ public sealed class SkuaStartupHandler : IDisposable
                      case "--exit-on-finish":
                          options.ExitOnScriptStop = true;
                          break;
