@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.0.0-beta8 (2026-10-23)
 
 - Now based on **VibeSkua v2.0.7** (`8774d1c`): Army Queue (squads run one after another, each account with its
   own script and options), VibeSkua's own auto-relogin watchdog (reacts the moment the connection drops, tells
