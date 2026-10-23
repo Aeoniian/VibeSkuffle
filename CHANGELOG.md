@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.0-beta7.0.1 (2026-10-22)
+## Unreleased
 
 - Fix: **Current Drops → Pickup AC Only and Send to Bank** picked the AC drops up but banked none of them.
   A picked-up item leaves the drop list a moment before it shows in the inventory, and the button checked too
