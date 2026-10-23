@@ -1857,10 +1857,21 @@ index 0000000..ca8432c
 +    }
 +}
 diff --git a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
-index 7d7211c..6848fbc 100644
+index 0920843..28bf587 100644
 --- a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
 +++ b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
-@@ -69,12 +69,13 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -71,6 +71,10 @@ public sealed class SkuaStartupHandler : IDisposable
+             StrongReferenceMessenger.Default.Register<SkuaStartupHandler, ScriptStoppedMessage, int>(this, (int)MessageChannels.ScriptStatus, async (r, m) =>
+             {
+                 await Task.Delay(2000);
++                // VibeSkuffle: a stop that's part of a recovery (re-login, game window restart, Rescue Allies)
++                // isn't the script finishing; the script starts again afterwards, so don't close the client.
++                if (_bot.RecoveryPending || _bot.Manager.ScriptRunning)
++                    return;
+                 try { _bot.Servers.Logout(); } catch { }
+                 await Task.Delay(1000);
+                 Environment.Exit(0);
+@@ -80,12 +84,13 @@ public sealed class SkuaStartupHandler : IDisposable
  
      private void LoadGame(string function, params object[] args)
      {
@@ -1876,7 +1887,7 @@ index 7d7211c..6848fbc 100644
      }
  
      private void Login(string function, params object[] args)
-@@ -89,9 +90,10 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -100,9 +105,10 @@ public sealed class SkuaStartupHandler : IDisposable
          {
              _bot.Servers.EnsureRelogin(string.IsNullOrWhiteSpace(_options.Server) ? "Twilly" : _options.Server!);
  
@@ -1889,9 +1900,9 @@ index 7d7211c..6848fbc 100644
              {
                  await Task.Delay(250);
                  wait++;
-@@ -110,7 +112,14 @@ public sealed class SkuaStartupHandler : IDisposable
-                     {
-                         var scriptLoader = Ioc.Default.GetRequiredService<ScriptLoaderViewModel>();
+@@ -126,7 +132,14 @@ public sealed class SkuaStartupHandler : IDisposable
+                             scriptLoader.ScriptManager.SilentConfig = true;
+                         }
                          scriptLoader.LoadScript(_options.Script);
 -                        await scriptLoader.StartScriptAsync(_options.Script);
 +                        // Brought back by crash recovery: VibeSkua 2.0.6 waits for the script's options window
@@ -1905,18 +1916,18 @@ index 7d7211c..6848fbc 100644
                      }
                      catch { }
                  });
-@@ -150,6 +159,8 @@ public sealed class SkuaStartupHandler : IDisposable
-         public string? LoadScript { get; private set; }
+@@ -169,6 +182,8 @@ public sealed class SkuaStartupHandler : IDisposable
          public string? UseTheme { get; private set; }
          public string? GitHubToken { get; private set; }
+         public bool ExitOnScriptStop { get; private set; }
 +        /// <summary>Started by recovery (not by a person): use the script's saved options, no options window.</summary>
 +        public bool Unattended { get; private set; }
  
          public static (bool Parsed, StartupOptions Options) Parse(string[] args)
          {
-@@ -197,6 +208,9 @@ public sealed class SkuaStartupHandler : IDisposable
-                     case "--gh-token":
-                         options.GitHubToken = NextValue();
+@@ -223,6 +238,9 @@ public sealed class SkuaStartupHandler : IDisposable
+                     case "--exit-on-finish":
+                         options.ExitOnScriptStop = true;
                          break;
 +                    case "--unattended":
 +                        options.Unattended = true;
@@ -1925,7 +1936,7 @@ index 7d7211c..6848fbc 100644
                      case "--host-pid":
                          NextValue();
 diff --git a/Skua.App.Avalonia/Skua.App.Avalonia.csproj b/Skua.App.Avalonia/Skua.App.Avalonia.csproj
-index 20f585f..7d05e4d 100644
+index ebfa084..d441a39 100644
 --- a/Skua.App.Avalonia/Skua.App.Avalonia.csproj
 +++ b/Skua.App.Avalonia/Skua.App.Avalonia.csproj
 @@ -9,8 +9,8 @@
@@ -2043,15 +2054,15 @@ index 0986fea..aea6811 100644
      {
          recipient.RefreshDrops();
 diff --git a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
-index a70f804..6a847a8 100644
+index 72293b2..7682b99 100644
 --- a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
 @@ -10,7 +10,7 @@ namespace Skua.App.Avalonia.ViewModels.MainMenu;
  public sealed partial class MainViewModel : ObservableObject
  {
      [ObservableProperty]
--    private string _title = "VibeSkua V2.0.6";
-+    private string _title = "VibeSkuffle V2.0.6";
+-    private string _title = "VibeSkua V2.0.7";
++    private string _title = "VibeSkuffle V2.0.7";
  
      public MainMenuViewModel MainMenu { get; }
  
@@ -2816,6 +2827,23 @@ index 0000000..38ff1c0
 +    /// </summary>
 +    void RestartClient(bool runScript);
 +}
+diff --git a/Skua.Core.Interfaces/Scripts/IScriptInterface.cs b/Skua.Core.Interfaces/Scripts/IScriptInterface.cs
+index cbd0f96..d5aa955 100644
+--- a/Skua.Core.Interfaces/Scripts/IScriptInterface.cs
++++ b/Skua.Core.Interfaces/Scripts/IScriptInterface.cs
+@@ -34,6 +34,12 @@ public interface IScriptInterfaceManager
+ /// </remarks>
+ public interface IScriptInterface
+ {
++    /// <summary>
++    /// VibeSkuffle: true while a recovery is under way (re-login, game window restart, script restart, Rescue
++    /// Allies), when a stopped script is about to start again rather than finished.
++    /// </summary>
++    bool RecoveryPending => false;
++
+     /// <summary>
+     /// Static instance of the current <see cref="IScriptInterface"/>.
+     /// </summary>
 diff --git a/Skua.Core.Interfaces/Scripts/IScriptOption.cs b/Skua.Core.Interfaces/Scripts/IScriptOption.cs
 index f736e5c..e67518b 100644
 --- a/Skua.Core.Interfaces/Scripts/IScriptOption.cs
@@ -2840,7 +2868,7 @@ index f736e5c..e67518b 100644
      /// Determines whether all monsters in the MAP should be provoked. They will all attack you at the same time.
      /// </summary>
 diff --git a/Skua.Core.Interfaces/Scripts/IScriptServers.cs b/Skua.Core.Interfaces/Scripts/IScriptServers.cs
-index 41b9ab1..f1df59f 100644
+index 2bd297c..e880eff 100644
 --- a/Skua.Core.Interfaces/Scripts/IScriptServers.cs
 +++ b/Skua.Core.Interfaces/Scripts/IScriptServers.cs
 @@ -22,6 +22,37 @@ public interface IScriptServers : INotifyPropertyChanged
@@ -3056,10 +3084,10 @@ index 513dd82..098fad3 100644
              catch (OperationCanceledException) when (token.IsCancellationRequested)
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..3f170a8
+index 0000000..2349f78
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,701 @@
+@@ -0,0 +1,722 @@
 +using Skua.Core.Interfaces;
 +using Skua.Core.Services;
 +
@@ -3112,6 +3140,9 @@ index 0000000..3f170a8
 +    // Set when the account got knocked out of the game while a script was running (crash, stuck login,
 +    // disconnect). Whichever way it gets back in, the script is started again once it is in game.
 +    private volatile bool _wdRestartScript;
++
++    /// <inheritdoc cref="IScriptInterface.RecoveryPending"/>
++    public bool RecoveryPending => _waitForLogin || _wdBusy || _wdRestartScript || _wdRestarting != 0 || RescueActive;
 +
 +    // When a script was last seen running. A script often stops a moment before the game is seen as gone
 +    // (the player was killed, calls start failing), so "was a script running when it left the game" looks
@@ -3364,6 +3395,22 @@ index 0000000..3f170a8
 +        try { VibeAlerts.Send(Servers.CachedUsername ?? "?", title, text, level); } catch { }
 +    }
 +
++    /// <summary>The watchdog's own re-login, through VibeSkua's (cancellable by CancelRelogin like it).</summary>
++    private void WatchdogRelogin(int delay)
++    {
++        CancellationTokenSource cts = new();
++        _reloginCTS = cts;
++        _waitForLogin = true;
++        try
++        {
++            Relogin(delay, false, cts);
++        }
++        catch (OperationCanceledException)
++        {
++            _waitForLogin = false;
++        }
++    }
++
 +    private void ResetWatchdogTimer(string text)
 +    {
 +        _wdText = text;
@@ -3385,9 +3432,11 @@ index 0000000..3f170a8
 +            if (_waitForLogin ? _reloginStartsScript || ScriptRanRecently : ScriptRanRecently)
 +                _wdRestartScript = true;
 +            CancelRelogin();
++            // Claim the login before awaiting the script stop, so VibeSkua's own re-login (2.0.7: it reacts to
++            // any time out of game) doesn't start a second one meanwhile.
++            _waitForLogin = true;
 +            if (Manager.ScriptRunning)
 +                await Manager.StopScript();
-+            _waitForLogin = true;
 +
 +            try
 +            {
@@ -3425,7 +3474,7 @@ index 0000000..3f170a8
 +            // and restarts the script if one was running.
 +            // Spread out: when AQW hiccups, every client in the army recovers at once.
 +            int delay = (level == 1 ? 1000 : 3000) + Random.Shared.Next(0, 5000);
-+            Relogin(delay, false); // the script restart is handled by _wdRestartScript
++            WatchdogRelogin(delay); // the script restart is handled by _wdRestartScript
 +        }
 +        catch (Exception ex)
 +        {
@@ -3480,7 +3529,7 @@ index 0000000..3f170a8
 +                WdLog(" stopping the script; it starts again once back in game.");
 +                await Manager.StopScript();
 +            }
-+            Relogin(3000 + Random.Shared.Next(0, 5000), false);
++            WatchdogRelogin(3000 + Random.Shared.Next(0, 5000));
 +        });
 +    }
 +
@@ -4166,7 +4215,7 @@ index 0000000..b897e0f
 +    }
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.cs b/Skua.Core/Scripts/ScriptInterface.cs
-index c9256dd..33060c3 100644
+index 8775d94..acb7273 100644
 --- a/Skua.Core/Scripts/ScriptInterface.cs
 +++ b/Skua.Core/Scripts/ScriptInterface.cs
 @@ -12,7 +12,7 @@ using System.Diagnostics;
@@ -4178,7 +4227,7 @@ index c9256dd..33060c3 100644
  {
      private CancellationTokenSource? ScriptInterfaceCTS;
      private readonly Thread ScriptInterfaceThread;
-@@ -336,6 +336,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -343,6 +343,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  });
  
                  _limit.LimitedRun("connDetail", 100, () => (lastConnChange, lastConnDetail) = CheckStuckonLoading(lastConnChange, lastConnDetail));
@@ -4186,7 +4235,7 @@ index c9256dd..33060c3 100644
  
                  if (Manager.ScriptRunning)
                      RunScriptHandlers();
-@@ -382,6 +383,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -389,6 +390,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
      /// <param name="lastConnChange">Last time the loading message changed.</param>
      /// <param name="lastConnDetail">Last loading message.</param>
      /// <returns>The last loading message and its time</returns>
@@ -4195,7 +4244,7 @@ index c9256dd..33060c3 100644
      private (int newTime, string newText) CheckStuckonLoading(int lastConnChange, string lastConnDetail)
      {
          string connDetail = Flash.IsNull("mcConnDetail.stage") ? "null" : Flash.GetGameObject("mcConnDetail.txtDetail.text", "null")!;
-@@ -389,8 +392,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -396,8 +399,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
              return (Environment.TickCount, connDetail);
          if (connDetail.Contains("has been lost") && !_waitForLogin)
          {
@@ -4207,25 +4256,25 @@ index c9256dd..33060c3 100644
                  Log("Connection lost detected. Triggering auto re-login.");
                  BeginLogout();
              }
-@@ -405,7 +410,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
-                 {
-                     if (Flash.GetGameObject("mcConnDetail.txtDetail.text") == "loading map")
-                     {
--                        Servers.Logout();
-+                        Servers.LogoutForRelogin();
+@@ -415,7 +420,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                         if (Options.AutoRelogin)
+                             BeginLogout();
+                         else
+-                            Servers.Logout();
++                            Servers.DisconnectForRelogin();
                          return;
                      }
                      Map.Join(Map.LastMap);
-@@ -413,7 +418,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
-             }
-             else
-             {
--                Servers.Logout();
-+                Servers.LogoutForRelogin();
+@@ -426,7 +431,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                 if (Options.AutoRelogin)
+                     BeginLogout();
+                 else
+-                    Servers.Logout();
++                    Servers.DisconnectForRelogin();
              }
          }
          if (connDetail == lastConnDetail)
-@@ -461,6 +466,14 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -474,6 +479,14 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "loaded":
@@ -4240,7 +4289,25 @@ index c9256dd..33060c3 100644
                  Initialize();
                  break;
  
-@@ -487,6 +500,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -493,6 +506,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                         case "logout":
+                             Log("Intentional logout button clicked by user in game. Auto re-login disarmed.");
+                             Servers.IsIntentionalLogout = true;
++                            Servers.UserLoggedOut = true;
++                            _wdRestartScript = false;
+                             CancelRelogin();
+                             if (Manager.ScriptRunning)
+                                 _ = Manager.StopScript();
+@@ -501,6 +516,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                         case "changeServer":
+                             Log("Intentional 'Change Server' button clicked by user in game. Auto re-login disarmed.");
+                             Servers.IsIntentionalLogout = true;
++                            Servers.UserLoggedOut = true;
++                            _wdRestartScript = false;
+                             CancelRelogin();
+                             if (Manager.ScriptRunning)
+                                 _ = Manager.StopScript();
+@@ -537,6 +554,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "pext":
@@ -4249,7 +4316,7 @@ index c9256dd..33060c3 100644
                  dynamic packet = JsonConvert.DeserializeObject<dynamic>((string)args[0])!;
                  string type = packet["params"].type;
                  dynamic data = packet["params"].dataObj;
-@@ -614,6 +629,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -664,6 +683,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                                  Stats.QuestsCompleted++;
                                  Messenger.Send<QuestTurninMessage, int>(new(Convert.ToInt32(data.QuestID)), (int)MessageChannels.GameEvents);
                              }
@@ -4260,47 +4327,54 @@ index c9256dd..33060c3 100644
                              break;
  
                          case "loadBank":
-@@ -697,6 +716,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
-                             {
-                                 Log("Normal in-game logout detected. Auto re-login skipped.");
-                                 Servers.IsIntentionalLogout = true;
-+                                Servers.UserLoggedOut = true;
-+                                _wdRestartScript = false;
-                                 CancelRelogin();
-                                 if (Manager.ScriptRunning)
-                                     _ = Manager.StopScript();
-@@ -741,13 +762,19 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
- 
-         Log("Auto re-login triggered.");
+@@ -714,6 +737,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                     case "eLO2":
+                         Log("In-game exit logout packet (eLO) detected. Disarming auto re-login.");
+                         Servers.IsIntentionalLogout = true;
++                        Servers.UserLoggedOut = true;
++                        _wdRestartScript = false;
+                         CancelRelogin();
+                         if (Manager.ScriptRunning)
+                             _ = Manager.StopScript();
+@@ -723,6 +748,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+                     case "eSL2":
+                         Log("In-game exit to server list packet (eSL) detected. Disarming auto re-login.");
+                         Servers.IsIntentionalLogout = true;
++                        Servers.UserLoggedOut = true;
++                        _wdRestartScript = false;
+                         CancelRelogin();
+                         if (Manager.ScriptRunning)
+                             _ = Manager.StopScript();
+@@ -803,6 +830,12 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
          bool wasRunning = Manager.ScriptRunning;
-+        if (wasRunning)
-+            _wdRestartScript = true; // the login watchdog restarts it once back in game, however that happens
-+        // Claim the re-login before awaiting the script stop, so the crash recovery doesn't start a
-+        // second login meanwhile.
-+        _waitForLogin = true;
-         await Manager.StopScript();
-         bool kicked = Player.Kicked;
--        _waitForLogin = true;
-         Messenger.Send<ReloginTriggeredMessage, int>(new(kicked), (int)MessageChannels.GameEvents);
- 
-         int delay = (Options.SafeRelogin && kicked) ? 70000 : Options.ReloginTryDelay;
--        Relogin(delay, wasRunning);
-+        // The login watchdog starts the script again once the account is properly back in game (it waits for
-+        // the login to finish and checks that the script really started), so the re-login doesn't start it.
-+        Relogin(delay, false);
-     }
- 
-     private async void BeginLogout()
-@@ -765,7 +792,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
- 
-     private void Relogin(int delay, bool startScript)
-     {
--        Servers.Logout();
-+        _reloginStartsScript = startScript;
-+        Servers.LogoutForRelogin();
-         Log($"Waiting {delay}ms for re-login.");
          CancellationTokenSource reloginCts = new();
          _reloginCTS = reloginCts;
++        // VibeSkuffle: the login watchdog starts the script again once the account is properly back in game
++        // (it waits for the login to finish and checks that the script really started).
++        if (wasRunning)
++            _wdRestartScript = true;
++        // Claim the re-login before awaiting the script stop, so the crash recovery doesn't start a
++        // second login meanwhile.
+         _waitForLogin = true;
+         try
+         {
+@@ -822,7 +855,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+             {
+                 delay = Math.Max(800, Options.ReloginTryDelay);
+             }
+-            Relogin(delay, wasRunning, reloginCts);
++            Relogin(delay, false, reloginCts);
+         }
+         catch
+         {
+@@ -856,6 +889,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+     private void Relogin(int delay, bool startScript, CancellationTokenSource reloginCts)
+     {
+         reloginCts.Token.ThrowIfCancellationRequested();
++        _reloginStartsScript = startScript;
+         Servers.DisconnectForRelogin();
+         Log($"Waiting {delay}ms for re-login.");
+         _reloginTask = Schedule(delay, async _ =>
 diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.cs
 index 4b52722..1e278b5 100644
 --- a/Skua.Core/Scripts/ScriptOption.cs
@@ -4343,7 +4417,7 @@ index 4b52722..1e278b5 100644
                  _lazyFlash.Value.Call("setGameObject", "world.rootClass.mixer.soundTransform.volume", 1);
              }
 diff --git a/Skua.Core/Scripts/ScriptServers.cs b/Skua.Core/Scripts/ScriptServers.cs
-index d93c230..4275c2e 100644
+index 6d38204..8a9a6f5 100644
 --- a/Skua.Core/Scripts/ScriptServers.cs
 +++ b/Skua.Core/Scripts/ScriptServers.cs
 @@ -50,6 +50,44 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
@@ -4415,9 +4489,9 @@ index d93c230..4275c2e 100644
 +        if (!_internalLogout)
 +            UserLoggedOut = true;
          CommunityToolkit.Mvvm.Messaging.StrongReferenceMessenger.Default.Send<Skua.Core.Messaging.LogoutRequestedMessage, int>(new(), (int)Skua.Core.Messaging.MessageChannels.GameEvents);
-         if (IsConnected)
-             Flash.CallGameFunction("sfc.disconnect");
-@@ -276,22 +327,29 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+         DisconnectToLogin();
+     }
+@@ -308,22 +359,29 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
  
          HashSet<string> triedServers = attemptedServers ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
  
@@ -4451,43 +4525,33 @@ index d93c230..4275c2e 100644
          if (selectedServer is not null)
              return selectedServer;
  
-@@ -363,7 +421,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
-         ReloginLog($"Relogging using IP {ip}.");
- 
-         Thread.Sleep(2000);
--        Logout();
-+        LogoutForRelogin();
- 
-         Stats.Relogins++;
-         if (_loginInfoSetted)
-@@ -411,8 +469,9 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -446,6 +504,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
          bool autoRelogSwitch = Options.AutoRelogin;
          Options.AutoRelogin = false;
          ReloginLog($"Relogging on server {server.Name} [{server.PlayerCount}/{server.MaxPlayers}].");
 +        CurrentLoginServer = server.Name;
  
--        Logout();
-+        LogoutForRelogin();
-         Stats.Relogins++;
- 
-         if (_loginInfoSetted)
-@@ -452,11 +511,14 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
-         return Player.Playing;
+         StrongReferenceMessenger.Default.Send<LogoutRequestedMessage, int>(new(), (int)MessageChannels.GameEvents);
+         StrongReferenceMessenger.Default.Send<LogoutMessage, int>((int)MessageChannels.GameEvents);
+@@ -483,13 +542,16 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+         return Task.Run(() => EnsureRelogin(serverName, CancellationToken.None)).GetAwaiter().GetResult();
      }
  
 +    public string? PreferredReloginServer { get; set; }
 +
      public async Task<bool> EnsureRelogin(CancellationToken token)
      {
+         token.ThrowIfCancellationRequested();
          IsIntentionalLogout = false;
          await GetServers(true);
+         token.ThrowIfCancellationRequested();
 -        Server? server = SelectReloginServer();
 +        // Back to the server the account was on (the stuck-server list still applies).
 +        Server? server = SelectReloginServer(Options.AutoReloginAny ? null : PreferredReloginServer);
          if (server is null)
          {
              ReloginLog("No eligible servers available for auto relogin.");
-@@ -559,12 +621,13 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -617,6 +679,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                      continue;
                  }
                  attemptedServers.Add(targetServer.Name ?? string.Empty);
@@ -4495,14 +4559,7 @@ index d93c230..4275c2e 100644
  
                  ReloginLog($"Attempt {tries}/{Options.ReloginTries}: trying {targetServer.Name} [{targetServer.PlayerCount}/{targetServer.MaxPlayers}].");
  
-                 if (IsConnected || tries > 1)
-                 {
--                    Logout();
-+                    LogoutForRelogin();
-                     await Task.Delay(2000, token);
-                 }
- 
-@@ -614,7 +677,11 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -707,7 +770,11 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                      await WaitReloginDelay(token);
              }
          }
@@ -4961,7 +5018,7 @@ index 0000000..294101a
 +    }
 +}
 diff --git a/Skua.Manager.Avalonia/App.axaml b/Skua.Manager.Avalonia/App.axaml
-index 70841b9..28f3ec6 100644
+index a7a368a..7222fe0 100644
 --- a/Skua.Manager.Avalonia/App.axaml
 +++ b/Skua.Manager.Avalonia/App.axaml
 @@ -33,12 +33,12 @@
@@ -4980,10 +5037,10 @@ index 70841b9..28f3ec6 100644
                          <NativeMenuItem Header="Reset Scripts" Click="TrayResetScripts_Click" />
                          <NativeMenuItem Header="Check Client Update" Click="TrayCheckUpdate_Click" />
 diff --git a/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs b/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs
-index 16f3732..d8c688a 100644
+index 95c31b8..64e7cd1 100644
 --- a/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs
 +++ b/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs
-@@ -36,7 +36,7 @@ internal class SkuaManager
+@@ -37,7 +37,7 @@ internal class SkuaManager
      {
          List<DisplayOptionItemViewModelBase> options = new()
          {

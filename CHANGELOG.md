@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Now based on **VibeSkua v2.0.7** (`8774d1c`): Army Queue (squads run one after another, each account with its
+  own script and options), VibeSkua's own auto-relogin watchdog (reacts the moment the connection drops, tells
+  your own Log Out / Change Server apart from a drop, treats a server-forced logout as a drop), webhook health
+  pings, confirmations before removing accounts.
+- Our watchdog and VibeSkua's relogin work together: with Auto Relogin on, VibeSkua logs back in and the
+  watchdog starts the script again once; ours only steps in when that gets stuck, and claims a relog before
+  stopping the script so the two never log in at once. After you click Log Out or Change Server in game,
+  neither logs the account back in.
+- Army Queue clients (which close when their script stops) no longer close when a recovery stops the script
+  for a relog, game window restart or Rescue Allies.
+- Tested on 2.0.7: drop with Auto Relogin off (watchdog relogs at 3 minutes, script restarted without the
+  options window), drop with Auto Relogin on (VibeSkua relogs in 10 s, one script restart, no second login),
+  logging out on purpose (stays logged out), whole-client restart.
 - ButlerV5: an account whose client Windows won't let ButlerV5 inspect (for example one running as
   administrator) is no longer counted as offline and hidden from the roster.
 - ButlerV5: when the roster is empty it now lists the other accounts it found and why each isn't shown (logged
