@@ -5157,10 +5157,18 @@ index aaa4048..e091c76 100644
                         FontWeight="Light"
                         HorizontalAlignment="Center"
 diff --git a/Skua.Plugin.ButlerV5/Broadcaster.cs b/Skua.Plugin.ButlerV5/Broadcaster.cs
-index ad80d97..579ef23 100644
+index ad80d97..3d1e28d 100644
 --- a/Skua.Plugin.ButlerV5/Broadcaster.cs
 +++ b/Skua.Plugin.ButlerV5/Broadcaster.cs
-@@ -64,11 +64,59 @@ public class Broadcaster
+@@ -24,6 +24,7 @@ public class Broadcaster
+ 
+     private string _lastUsername = "";
+     private string _lastWritten = "";
++    private DateTime _lastWriteUtc = DateTime.MinValue;
+     private string _lastKnownRoom = "1";
+     private volatile string _lastServer = "";
+     private bool _lastOffGoto;
+@@ -64,11 +65,59 @@ public class Broadcaster
  
      public void SetFollowers(IEnumerable<string> followers)
      {
@@ -5221,7 +5229,7 @@ index ad80d97..579ef23 100644
      public void Start()
      {
          DebugLog.Log("Broadcaster", "Start: polling watcher + Logout event");
-@@ -106,6 +154,8 @@ public class Broadcaster
+@@ -106,6 +155,8 @@ public class Broadcaster
                          DebugLog.Log("Broadcaster", $"login state flipped -> {(loggedIn ? "logged in as " + _bot.Player?.Username : "logged out")}");
                          if (!loggedIn)
                              WriteOffline();
@@ -5230,6 +5238,26 @@ index ad80d97..579ef23 100644
                      }
  
                      if (loggedIn)
+@@ -285,13 +336,17 @@ public class Broadcaster
+     private void WriteIfChanged(SyncData data)
+     {
+         string serialized = data.Serialize();
+-        if (serialized == _lastWritten)
++        // Unchanged: still rewritten once a minute, so the file never looks older than this client's process
++        // (other accounts would then take it for one left from an earlier session and hide this account).
++        if (serialized == _lastWritten && DateTime.UtcNow - _lastWriteUtc < TimeSpan.FromSeconds(60))
+             return;
+ 
+         if (SyncFile.Write(data))
+         {
++            _lastWriteUtc = DateTime.UtcNow;
++            if (serialized != _lastWritten) // the once-a-minute rewrite isn't worth a log line
++                DebugLog.Log("Broadcaster", $"wrote: {DebugLog.Describe(data)}");
+             _lastWritten = serialized;
+-            DebugLog.Log("Broadcaster", $"wrote: {DebugLog.Describe(data)}");
+         }
+         else
+         {
 diff --git a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs b/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
 index d5f32fb..4d9f5a5 100644
 --- a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
