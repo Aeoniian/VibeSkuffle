@@ -5455,7 +5455,7 @@ index 8b9caab..d12f286 100644
                  // Circuit breaker: a map we repeatedly failed to enter (entry gate kept
                  // bouncing us to battleon) is blocked until the master moves elsewhere.
 diff --git a/Skua.Plugin.ButlerV5/RosterWindow.cs b/Skua.Plugin.ButlerV5/RosterWindow.cs
-index 5f727fd..049dec4 100644
+index 5f727fd..39c433f 100644
 --- a/Skua.Plugin.ButlerV5/RosterWindow.cs
 +++ b/Skua.Plugin.ButlerV5/RosterWindow.cs
 @@ -19,6 +19,7 @@ public sealed class RosterWindow : Window
@@ -5512,7 +5512,38 @@ index 5f727fd..049dec4 100644
          };
      }
  
-@@ -170,7 +184,10 @@ public sealed class RosterWindow : Window
+@@ -141,6 +155,30 @@ public sealed class RosterWindow : Window
+ 
+     public void RefreshRoster() => Refresh(force: true);
+ 
++    /// <summary>
++    /// For the empty roster: the other accounts that have a sync file and why each doesn't count as online,
++    /// so a screenshot shows the cause (e.g. "its client (process 1234) isn't running").
++    /// </summary>
++    private string HiddenAccounts()
++    {
++        try
++        {
++            List<string> lines = SyncFile.ReadAll()
++                .Where(d => _plugin.OwnUsername == null || !d.Username.Equals(_plugin.OwnUsername, StringComparison.OrdinalIgnoreCase))
++                .OrderByDescending(d => d.LastModified)
++                .Take(8)
++                .Select(d => $"{d.Username}: {SyncFile.OfflineReason(d) ?? "online"} (file updated {(d.LastModified > DateTime.MinValue ? d.LastModified.ToLocalTime().ToString("MMM d HH:mm") : "?")})")
++                .ToList();
++            return lines.Count == 0
++                ? $"\n\nNo other accounts' files in {SyncFile.Directory}."
++                : "\n\nOther accounts found, not counted as online:\n" + string.Join("\n", lines);
++        }
++        catch
++        {
++            return "";
++        }
++    }
++
+     private void Refresh(bool force = false)
+     {
+         List<SyncData> online = Roster.GetOnline(_plugin.OwnUsername);
+@@ -170,7 +208,10 @@ public sealed class RosterWindow : Window
              _timer.Interval = interval;
          _footerText.Text = pluginOff
              ? "ButlerV5 is DISABLED - turn it on in Settings"
@@ -5524,7 +5555,16 @@ index 5f727fd..049dec4 100644
  
          string myServer = _plugin.MyServerName;
          string snapshot = string.Join(";", online.Select(d =>
-@@ -278,7 +295,6 @@ public sealed class RosterWindow : Window
+@@ -185,7 +226,7 @@ public sealed class RosterWindow : Window
+         if (online.Count == 0)
+         {
+             TextBlock empty = AvaloniaUi.TextBlock(12, AvaloniaUi.SubText);
+-            empty.Text = "No other ButlerV5 accounts online.\nAccounts appear after they log in with the plugin installed.";
++            empty.Text = "No other ButlerV5 accounts online.\nAccounts appear after they log in with the plugin installed." + HiddenAccounts();
+             empty.TextAlignment = TextAlignment.Center;
+             empty.TextWrapping = TextWrapping.Wrap;
+             empty.Margin = new Thickness(0, 40, 0, 0);
+@@ -278,7 +319,6 @@ public sealed class RosterWindow : Window
                  : summonedByMe ? $"Release {account.Username} before following them."
                  : followingMe ? $"{account.Username} is following you."
                  : followingOther ? $"{account.Username} is following {account.Following}."
@@ -5532,7 +5572,7 @@ index 5f727fd..049dec4 100644
                  : null;
          if (followBlock != null)
          {
-@@ -304,7 +320,6 @@ public sealed class RosterWindow : Window
+@@ -304,7 +344,6 @@ public sealed class RosterWindow : Window
                  : amFollowing ? $"You're following {account.Username}; stop first."
                  : followingMe ? $"{account.Username} is already following you manually."
                  : followingOther ? $"{account.Username} is already following {account.Following}."
@@ -5541,18 +5581,95 @@ index 5f727fd..049dec4 100644
                  : account.Followers.Count > 0 ? $"{account.Username} has summoned butlers of their own."
                  : account.Parking ? $"{account.Username} is parking; wait until it settles."
 diff --git a/Skua.Plugin.ButlerV5/SyncFile.cs b/Skua.Plugin.ButlerV5/SyncFile.cs
-index e2715dc..640533a 100644
+index e2715dc..7d82e8c 100644
 --- a/Skua.Plugin.ButlerV5/SyncFile.cs
 +++ b/Skua.Plugin.ButlerV5/SyncFile.cs
-@@ -245,7 +245,7 @@ public static class SyncFile
+@@ -228,10 +228,23 @@ public static class SyncFile
+     /// wrote it is still running. Guards against Windows PID recycling (e.g. if the client
+     /// crashed and an unrelated Windows process inherited the PID).
+     /// </summary>
+-    public static bool IsOnline(SyncData data) =>
+-        data.LoggedIn && data.Pid > 0 && IsProcessAlive(data.Pid, data.LastModified > DateTime.MinValue ? data.LastModified : null);
++    public static bool IsOnline(SyncData data) => OfflineReason(data) == null;
+ 
+-    public static bool IsProcessAlive(int pid, DateTime? fileWriteTimeUtc = null)
++    /// <summary>Why <paramref name="data"/> doesn't count as online, or null if it does (shown in the roster).</summary>
++    public static string? OfflineReason(SyncData data)
++    {
++        if (!data.LoggedIn)
++            return "logged out";
++        if (data.Pid <= 0)
++            return "no process ID in its file";
++        return ProcessProblem(data.Pid, data.LastModified > DateTime.MinValue ? data.LastModified : null);
++    }
++
++    public static bool IsProcessAlive(int pid, DateTime? fileWriteTimeUtc = null) =>
++        ProcessProblem(pid, fileWriteTimeUtc) == null;
++
++    /// <summary>Null when <paramref name="pid"/> is a running Skua/VibeSkuffle that wrote the file; otherwise why not.</summary>
++    private static string? ProcessProblem(int pid, DateTime? fileWriteTimeUtc)
+     {
+         try
+         {
+@@ -239,14 +252,25 @@ public static class SyncFile
+             // OS handle on .HasExited. This runs ~10-20x/sec across the fleet; leaving
+             // them for the finalizer piles up handles (a slow handle/memory leak).
+             using Process process = Process.GetProcessById(pid);
+-            if (process.HasExited)
+-                return false;
+ 
              // Verify process name: Windows recycles PIDs after a crash. If another program
              // (e.g. RuntimeBroker, svchost, Discord) inherits the PID, it is NOT Skua.
++            // (The name needs no access to the process, unlike HasExited/StartTime below.)
              string name = process.ProcessName.ToLowerInvariant();
 -            if (!name.Contains("skua") && !name.Contains("vibeskua") && name != "dotnet")
+-                return false;
 +            if (!name.Contains("skua") && !name.Contains("skuffle") && name != "dotnet") // "skuffle": VibeSkuffle (Ruffle build)
-                 return false;
++                return $"process {pid} is now {process.ProcessName}, not Skua (client closed?)";
++
++            try
++            {
++                if (process.HasExited)
++                    return $"its client (process {pid}) has closed";
++            }
++            catch
++            {
++                // Access denied: e.g. that client runs as administrator and this one doesn't. It's
++                // running (GetProcessById found it, with a Skua name), so count it as online.
++                return null;
++            }
  
              // If the process started after the sync file was written, the PID was recycled to a new process.
+             if (fileWriteTimeUtc.HasValue && fileWriteTimeUtc.Value > DateTime.MinValue)
+@@ -254,7 +278,7 @@ public static class SyncFile
+                 try
+                 {
+                     if (process.StartTime.ToUniversalTime() > fileWriteTimeUtc.Value.AddMinutes(1))
+-                        return false;
++                        return $"its file is older than process {pid} (left from an earlier session?)";
+                 }
+                 catch
+                 {
+@@ -262,15 +286,15 @@ public static class SyncFile
+                 }
+             }
+ 
+-            return true;
++            return null;
+         }
+         catch (ArgumentException)
+         {
+-            return false; // no such process
++            return $"its client (process {pid}) isn't running";
+         }
+-        catch
++        catch (Exception ex)
+         {
+-            return false;
++            return $"couldn't check process {pid}: {ex.Message}";
+         }
+     }
+ }
 diff --git a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs b/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
 index 3c5ffed..e528020 100644
 --- a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs

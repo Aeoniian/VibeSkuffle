@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- ButlerV5: an account whose client Windows won't let ButlerV5 inspect (for example one running as
+  administrator) is no longer counted as offline and hidden from the roster.
+- ButlerV5: when the roster is empty it now lists the other accounts it found and why each isn't shown (logged
+  out, client closed, process ID now belongs to another program, file left from an earlier session).
 - Fix: **Current Drops → Pickup AC Only and Send to Bank** picked the AC drops up but banked none of them.
   A picked-up item leaves the drop list a moment before it shows in the inventory, and the button checked too
   early; it now waits for the items (up to 10 seconds) before sending them to the bank.
