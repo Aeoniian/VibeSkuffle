@@ -106,16 +106,32 @@ applies to every account started afterwards).
 - **Current Drops → Pickup AC Only and Send to Bank**: picks up only the AC drops and banks each one right away.
 
 ### Army and ButlerV5
-- **ButlerV5 "Summon all" reaches accounts on other servers**: they log in on your server and follow.
-- **Right-click a tab → Restart Client** (keeps login and script): the fix for an account that's out of sync.
-- **ButlerV5 "Log in all"** (next to Summon all): logs in every other open account that's logged out,
-  **on your server**, so you can Summon them straight away. It shows its progress in the footer.
-- **Followers stay with their master:** if the master restarts or re-logs, its followers follow it again; if it
-  comes back on another server, they log in there by themselves; a master whose whole client restarted gets its
-  followers list back.
+
+VibeSkuffle's ButlerV5 is the **VibeSkua/Skua ButlerV5** (VibeSkua 2.0.7's version) with these changes:
+
+- **Log in all** (next to Summon all): logs in every other open account that's logged out, **on your server**, so
+  you can Summon them straight away. It shows its progress in the footer.
+- **Summon all reaches accounts on other servers**: they log in on your server and follow.
+- **Followers stay with their master:**
+  - If the master restarts or re-logs, its followers follow it again.
+  - If it comes back on another server, they log in there by themselves, at most once every 5 minutes.
+  - A master whose whole client restarted gets its followers list back (within 30 minutes of it being saved).
+- **A more reliable roster:**
+  - Clients Windows won't let ButlerV5 inspect (for example ones running as administrator) are no longer hidden.
+  - Each account refreshes its status file at least once a minute.
+  - An empty roster says which accounts it found and why each isn't shown.
+- **Debug log housekeeping:** the log keeps one previous file once it passes 10 MB.
+- Right-click a tab → **Restart Client** (keeps login and script) fixes an account that's out of sync.
 - Army **Login All** reaches every tab (not just the visible one) and leaves accounts already in game alone.
 - Army messages only reach this install's clients, so a normal VibeSkua running alongside isn't affected.
 - "Jump all to map" box: the cursor is already in it; an empty box no longer sends everyone nowhere.
+
+> **Running VibeSkua/Skua and VibeSkuffle together?** ButlerV5 doesn't fully work between them yet. The ButlerV5
+> that comes with VibeSkua and Skua only accepts a client as running if its name contains "skua", and
+> VibeSkuffle's doesn't. So a VibeSkua/Skua account that's summoned by a VibeSkuffle master thinks the master is
+> offline and stays parked ("stuck at summoned").
+> **An update is coming that fixes this**: one ButlerV5 that works in VibeSkua, Skua and VibeSkuffle. Until then,
+> run the accounts that need ButlerV5 together in the same client.
 
 ### Fixes that also apply to VibeSkua
 - The Manager's saved accounts could be wiped: every program sharing the settings file wrote its whole (possibly
