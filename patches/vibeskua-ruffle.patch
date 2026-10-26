@@ -92,6 +92,26 @@ diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
          DisposeTrayIcon();
          try
          {
+diff --git a/Skua.App.Avalonia/AppStartup/Options.cs b/Skua.App.Avalonia/AppStartup/Options.cs
+--- a/Skua.App.Avalonia/AppStartup/Options.cs
++++ b/Skua.App.Avalonia/AppStartup/Options.cs
+@@ -32,6 +32,16 @@
+         {
+             if (pi.Name is nameof(IScriptOption.OptionDictionary) or nameof(ObservableRecipient.IsActive) or nameof(IScriptOption.GuildColor) or nameof(IScriptOption.NameColor) or "IsIpcMessageProcessing" or nameof(IScriptOption.ReloginTryDelay) or nameof(IScriptOption.UseFunctionBasedSkills))
+                 continue;
++            if (pi.Name == nameof(IScriptOption.RescueAllies))
++            {
++                options.Add(new BindingOptionItemViewModel<bool, ScriptOption>("Rescue Allies - all accounts", "Shared immediately across updated VibeSkuffle and Watch Dog clients on this PC.", "1", pi.Name, (ScriptOption)scriptOpt, new RelayCommand<bool>(b => scriptOpt.RescueAllies = b)));
++                continue;
++            }
++            if (pi.Name == nameof(IScriptOption.AllowThisAccountToRescue))
++            {
++                options.Add(new BindingOptionItemViewModel<bool, ScriptOption>("Allow this account to rescue", "Exclude this logged-in account from helping. It can still receive help. Saved per account.", "1", pi.Name, (ScriptOption)scriptOpt, new RelayCommand<bool>(b => scriptOpt.AllowThisAccountToRescue = b)));
++                continue;
++            }
+             if (pi.PropertyType == typeof(bool))
+                 options.Add(CreateOptionItem<bool>(s, pi.Name, "1", new RelayCommand<bool>(b => pi.SetValue(scriptOpt, b))));
+             else if (pi.PropertyType == typeof(string))
 diff --git a/Skua.App.Avalonia/Flash/ClientQuickControls.cs b/Skua.App.Avalonia/Flash/ClientQuickControls.cs
 new file mode 100644
 --- /dev/null
@@ -3269,7 +3289,7 @@ diff --git a/Skua.Core.Interfaces/Scripts/IScriptOption.cs b/Skua.Core.Interface
  
      /// <summary>
      /// When enabled will pick up any item that drops.
-@@ -49,6 +51,18 @@
+@@ -49,6 +51,19 @@
      /// When enabled will reject all items that drops (if <see cref="AcceptACDrops" /> is <see langword="true"/> will first accept AC items and then reject).
      /// </summary>
      bool RejectAllDrops { get; set; }
@@ -3285,6 +3305,7 @@ diff --git a/Skua.Core.Interfaces/Scripts/IScriptOption.cs b/Skua.Core.Interface
 +    /// keeps dying (10 deaths without a kill, or 15 minutes of only deaths), then comes back and starts its script again.
 +    /// </summary>
 +    bool RescueAllies { get; set; }
++    bool AllowThisAccountToRescue { get; set; }
  
      /// <summary>
      /// Determines whether all monsters in the MAP should be provoked. They will all attack you at the same time.
@@ -3888,7 +3909,7 @@ diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scri
 new file mode 100644
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,722 @@
+@@ -0,0 +1,723 @@
 +using Skua.Core.Interfaces;
 +using Skua.Core.Services;
 +
@@ -4349,6 +4370,7 @@ new file mode 100644
 +
 +    private void CheckStuckScript()
 +    {
++        if (RescueActive) return;
 +        int now = Environment.TickCount;
 +        if (now - _stuckCheckAt < 30000)
 +            return;
@@ -4615,15 +4637,16 @@ diff --git a/Skua.Core/Scripts/ScriptInterface.Rescue.cs b/Skua.Core/Scripts/Scr
 new file mode 100644
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
-@@ -0,0 +1,398 @@
+@@ -0,0 +1,377 @@
 +using Skua.Core.Interfaces;
++using WatchDog.Shared;
 +
 +namespace Skua.Core.Scripts;
 +
 +/// <summary>
 +/// Rescue: when an account running a script keeps dying without killing anything (10 deaths in a row, or 15
-+/// minutes of only deaths), it asks for help. Every other account on the same server that is running a script
-+/// and has "Rescue Allies" turned on stops its script, goes to that room and cell, fights there, and once the
++/// minutes of only deaths), it asks for help. Every eligible account on the same server (including idle accounts)
++/// and has the shared Rescue Allies switch turned on pauses its script, goes to that room and cell, fights there, and once the
 +/// stuck account gets a kill (it got past) goes back to where it was and starts its own script again.
 +/// </summary>
 +/// <remarks>
@@ -4639,11 +4662,12 @@ new file mode 100644
 +    private const int RescueGiveUpMs = 20 * 60000;
 +    private const int RescueCooldownMs = 10 * 60000;
 +
-+    private static string RescueDir => Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", "rescue");
++    private static string RescueDir => Environment.GetEnvironmentVariable("WATCHDOG_RESCUE_CALL_ROOT") ?? Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", "rescue");
 +
 +    // The account that needs help.
 +    private int _rsLastDeaths = -1, _rsLastKills = -1, _rsDeathStreak, _rsStreakSince;
 +    private bool _rsCalling;
++    private string _rsOwner = "";
 +    private int _rsCallWritten;
 +
 +    // An account helping.
@@ -4652,6 +4676,10 @@ new file mode 100644
 +    private readonly Dictionary<string, int> _rsLastHelped = new(StringComparer.OrdinalIgnoreCase);
 +
 +    private bool RescueActive => _rsHelping is not null;
++    private RescueSession? _rsSession;
++    private bool RescueEnabled => Options.RescueAllies;
++    private bool RescueAllowed => RescueEnabled && Options.AllowThisAccountToRescue;
++
 +
 +    private sealed record RescueCall(string User, string Server, string Room, string Cell, string Pad, Dictionary<string, string> Quests);
 +
@@ -4733,6 +4761,21 @@ new file mode 100644
 +        try
 +        {
 +            int now = Environment.TickCount;
++            if (Options is ScriptOption concrete) concrete.BindRescueAccount(OwnName);
++            string owner = OwnName;
++            if (!string.Equals(owner, _rsOwner, StringComparison.OrdinalIgnoreCase))
++            {
++                if (_rsCalling && _rsOwner.Length > 0)
++                    try { File.Delete(RescueFile(_rsOwner)); } catch { }
++                _rsOwner = owner; _rsCalling = false; _rsDeathStreak = 0; _rsStreakSince = 0; _rsLastDeaths = -1;
++                lock (_rsLastHelped) _rsLastHelped.Clear();
++            }
++            if (!RescueEnabled)
++            {
++                if (_rsCalling) { _rsCalling = false; ClearRescueCall(); }
++                _rsDeathStreak = 0; _rsStreakSince = 0; _rsLastDeaths = -1;
++                return;
++            }
 +            int deaths = Stats.Deaths, kills = Stats.Kills;
 +            if (_rsLastDeaths < 0)
 +            {
@@ -4759,7 +4802,7 @@ new file mode 100644
 +            _rsLastDeaths = deaths;
 +            _rsLastKills = kills;
 +
-+            if (!Manager.ScriptRunning || RescueActive)
++            if (!Manager.ScriptRunning || (Manager is IScriptManager m && m.ScriptPaused) || RescueActive)
 +            {
 +                if (_rsCalling)
 +                {
@@ -4779,14 +4822,14 @@ new file mode 100644
 +                    _rsCallWritten = 0;
 +                    WdLog($" died {_rsDeathStreak} times without a kill in {Math.Max(1, (now - _rsStreakSince) / 60000)} minute(s) in {Map.FullName} ({Player.Cell}); asking the other accounts for help (Rescue Allies).");
 +                }
-+                if (_rsCalling && now - _rsCallWritten > 15000)
++                if (_rsCalling && (_rsCallWritten == 0 || now - _rsCallWritten > 15000))
 +                {
 +                    _rsCallWritten = now;
 +                    WriteRescueCall();
 +                }
 +            }
 +
-+            if (now - _rsScanAt > 5000)
++            if (_rsScanAt == 0 || now - _rsScanAt > 5000)
 +            {
 +                _rsScanAt = now;
 +                ScanForRescueCalls();
@@ -4805,7 +4848,7 @@ new file mode 100644
 +        try
 +        {
 +            string user = OwnName;
-+            string server = Servers.PreferredReloginServer ?? "";
++            string server = RescueSession.ServerName(Flash);
 +            if (user.Length == 0 || server.Length == 0)
 +                return;
 +            Directory.CreateDirectory(RescueDir);
@@ -4857,12 +4900,13 @@ new file mode 100644
 +
 +    private void ScanForRescueCalls()
 +    {
-+        if (!Options.RescueAllies || RescueActive || _rsCalling || !Manager.ScriptRunning || _wdBusy || _waitForLogin || _wdRestarting != 0)
++        if (!RescueAllowed || RescueActive || _rsCalling || Auto.IsRunning || _wdBusy || _waitForLogin || _wdRestarting != 0)
 +            return;
 +        if (!Directory.Exists(RescueDir))
 +            return;
 +        string me = OwnName;
-+        string server = Servers.PreferredReloginServer ?? "";
++        string server = RescueSession.ServerName(Flash);
++        if (server.Length == 0) return;
 +        int now = Environment.TickCount;
 +        foreach (string file in Directory.GetFiles(RescueDir, "*.txt").OrderBy(File.GetCreationTimeUtc))
 +        {
@@ -4893,122 +4937,79 @@ new file mode 100644
 +
 +    private async Task RescueAsync(RescueCall call, string file)
 +    {
-+        string? myRoom = null, myCell = null, myPad = null;
++        RescueSession? session = null;
 +        Dictionary<string, string>? ownQuests = null;
-+        bool knockedOut = false;
 +        try
 +        {
-+            myRoom = Map.FullName;
-+            myCell = Player.Cell;
-+            myPad = Player.Pad;
-+            WdLog($" {call.User} keeps dying in {call.Room} ({call.Cell}); stopping the script to go help (Rescue Allies).");
-+            await Manager.StopScript();
-+            await Task.Delay(1500);
-+
-+            // See the same boss as the stuck account: borrow its quest progress (put back afterwards).
++            if (Manager is not IScriptManager manager) return;
++            session = new RescueSession(Player, Map, Combat, Skills, Options, Flash, manager,
++                () => RescueAllowed && !_disposed, () => Servers.UserLoggedOut);
++            _rsSession = session;
++            if (!await session.BeginAsync()) return;
++            WdLog($" helping {call.User} in {call.Room}; the original script/idle state will be restored afterward.");
 +            if (call.Quests.Count > 0 && (ownQuests = ReadQuestStrings()) is not null)
-+            {
-+                int changed = BorrowQuests(ownQuests, call.Quests);
-+                if (changed > 0)
-+                    WdLog($" borrowing {call.User}'s quest progress while helping (client-side; this account's own is put back after).");
-+            }
-+
-+            if (!await JoinForRescue(call.Room, call.Cell, call.Pad))
-+            {
-+                WdLog($" couldn't get into {call.Room} to help {call.User}; going back.");
-+                Alert("rescue couldn't get in", $"Couldn't get into {call.Room} to help {call.User} (a quest or level gate AQW checks itself?).", Skua.Core.Services.VibeAlerts.Level.Warning);
-+                return;
-+            }
-+            Auto.StartAutoAttack();
++                BorrowQuests(ownQuests, call.Quests);
++            if (!await JoinForRescue(call.Room, call.Cell, call.Pad, session)) return;
 +            int start = Environment.TickCount;
-+            while (!_disposed)
++            while (session.CanContinue)
 +            {
-+                await Task.Delay(2000);
-+                if (!(Player.Playing && Flash.IsWorldLoaded))
++                RescueCall? current = ReadRescueCall(file);
++                if (current is null) break;
++                if (!current.User.Equals(call.User, StringComparison.OrdinalIgnoreCase) ||
++                    !current.Server.Equals(call.Server, StringComparison.OrdinalIgnoreCase)) break;
++                if (!string.Equals(Map.FullName, current.Room, StringComparison.OrdinalIgnoreCase))
 +                {
-+                    knockedOut = true; // logging back in brings this account's real quest progress back
-+                    WdLog(" knocked out of the game while helping; stopping the rescue.");
-+                    return;
++                    Combat.CancelAutoAttack();
++                    if (ownQuests is not null && current.Quests.Count > 0)
++                        BorrowQuests(ReadQuestStrings() ?? ownQuests, current.Quests);
++                    if (!await JoinForRescue(current.Room, current.Cell, current.Pad, session)) break;
 +                }
-+                RescueCall? now = ReadRescueCall(file);
-+                if (now is null)
-+                {
-+                    WdLog($" {call.User} got past it; going back.");
-+                    return;
-+                }
-+                if (!string.Equals(Map.FullName, now.Room, StringComparison.OrdinalIgnoreCase))
-+                {
-+                    await Auto.StopAsync();
-+                    if (ownQuests is not null && now.Quests.Count > 0)
-+                        BorrowQuests(ReadQuestStrings() ?? ownQuests, now.Quests);
-+                    if (!await JoinForRescue(now.Room, now.Cell, now.Pad))
-+                    {
-+                        WdLog($" couldn't follow {call.User} into {now.Room}; going back.");
-+                        return;
-+                    }
-+                    Auto.StartAutoAttack();
-+                }
-+                else if (!string.Equals(Player.Cell, now.Cell, StringComparison.OrdinalIgnoreCase))
-+                {
-+                    Map.Jump(now.Cell, string.IsNullOrWhiteSpace(now.Pad) ? "Left" : now.Pad);
-+                }
-+                if (Environment.TickCount - start > RescueGiveUpMs)
-+                {
-+                    WdLog($" helped {call.User} for {RescueGiveUpMs / 60000} minutes and it's still stuck; going back.");
-+                    Alert("rescue gave up", $"Helped {call.User} in {now.Room} ({now.Cell}) for {RescueGiveUpMs / 60000} minutes and it's still dying; went back to its own script.", Skua.Core.Services.VibeAlerts.Level.Warning);
-+                    return;
-+                }
++                else if (!string.Equals(Player.Cell, current.Cell, StringComparison.OrdinalIgnoreCase))
++                    Map.Jump(current.Cell, string.IsNullOrWhiteSpace(current.Pad) ? "Left" : current.Pad);
++                session.Fight();
++                if (Environment.TickCount - start > RescueGiveUpMs) break;
++                await Task.Delay(200);
 +            }
 +        }
-+        catch (Exception ex)
-+        {
-+            WdLog($" rescue failed: {ex.Message}");
-+        }
++        catch (Exception ex) { WdLog($" rescue failed: {ex.Message}"); }
 +        finally
 +        {
-+            try { await Auto.StopAsync(); } catch { }
-+            // Put this account's own quest progress back exactly as it was, before it goes back and its script
-+            // starts again (its script would otherwise see quests as done that aren't).
-+            if (ownQuests is not null && !knockedOut && (Player.Playing && Flash.IsWorldLoaded))
-+            {
-+                SetQuestStrings(ownQuests);
-+                WdLog(" put this account's own quest progress back.");
-+            }
-+            lock (_rsLastHelped)
-+                _rsLastHelped[call.User] = Environment.TickCount;
 +            try
 +            {
-+                if (myRoom is not null && Player.Playing && Flash.IsWorldLoaded
-+                    && !string.Equals(Map.FullName, myRoom, StringComparison.OrdinalIgnoreCase))
++                if (session is not null)
 +                {
-+                    Map.Join(myRoom, string.IsNullOrWhiteSpace(myCell) ? "Enter" : myCell, string.IsNullOrWhiteSpace(myPad) ? "Spawn" : myPad);
++                    if (ownQuests is not null && session.InOriginalSession && Player.Playing && Flash.IsWorldLoaded)
++                        SetQuestStrings(ownQuests);
++                    WdLog($" rescue ending; interrupted={session.Interrupted}, in game={Player.Playing && Flash.IsWorldLoaded}; returning to {session.Room}.");
++                    await session.CompleteAsync();
 +                }
 +            }
-+            catch { }
-+            // The login watchdog starts this account's own script again once it has settled.
-+            _wdRestartScript = true;
-+            _rsHelping = null;
++            catch (Exception ex) { WdLog($" rescue cleanup failed: {ex.Message}"); }
++            finally
++            {
++                session?.Dispose(); _rsSession = null;
++                if (RescueAllowed)
++                    lock (_rsLastHelped) _rsLastHelped[call.User] = Environment.TickCount;
++                _rsHelping = null;
++            }
 +        }
 +    }
 +
-+    private async Task<bool> JoinForRescue(string room, string cell, string pad)
++    private async Task<bool> JoinForRescue(string room, string cell, string pad, RescueSession session)
 +    {
-+        for (int i = 0; i < 3; i++)
++        for (int i = 0; i < 3 && session.CanContinue; i++)
 +        {
-+            try
-+            {
-+                Map.Join(room, string.IsNullOrWhiteSpace(cell) ? "Enter" : cell, string.IsNullOrWhiteSpace(pad) ? "Spawn" : pad);
-+            }
++            try { Map.JoinPacket(room, string.IsNullOrWhiteSpace(cell) ? "Enter" : cell, string.IsNullOrWhiteSpace(pad) ? "Spawn" : pad); }
 +            catch { }
-+            for (int w = 0; w < 20; w++)
++            for (int w = 0; w < 20 && session.CanContinue; w++)
 +            {
-+                await Task.Delay(500);
 +                if (string.Equals(Map.FullName, room, StringComparison.OrdinalIgnoreCase) && Player.Playing && Flash.IsWorldLoaded)
 +                {
 +                    if (!string.IsNullOrWhiteSpace(cell) && !string.Equals(Player.Cell, cell, StringComparison.OrdinalIgnoreCase))
 +                        Map.Jump(cell, string.IsNullOrWhiteSpace(pad) ? "Left" : pad);
 +                    return true;
 +                }
++                await Task.Delay(200);
 +            }
 +        }
 +        return false;
@@ -5207,7 +5208,7 @@ diff --git a/Skua.Core/Scripts/ScriptManager.cs b/Skua.Core/Scripts/ScriptManage
 diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.cs
 --- a/Skua.Core/Scripts/ScriptOption.cs
 +++ b/Skua.Core/Scripts/ScriptOption.cs
-@@ -26,6 +26,8 @@
+@@ -26,10 +26,14 @@
          _settingsService = settingsService;
          _isInitializing = true;
          GetOptions();
@@ -5216,7 +5217,13 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
          OptionDictionary = GenerateDictionary().ToImmutableDictionary();
          StrongReferenceMessenger.Default.Register<ScriptOption, ScriptStoppedMessage, int>(this, (int)MessageChannels.ScriptStatus, ScriptStopped);
          StrongReferenceMessenger.Default.Register<ScriptOption, MapChangedMessage, int>(this, (int)MessageChannels.GameEvents, MapChanged);
-@@ -87,6 +89,20 @@
+         _isInitializing = false;
++        _rescueSettings = WatchDog.Shared.SharedRescueSettings.Instance;
++        _rescueSettings.Changed += NotifyRescueSettingsChanged;
+     }
+ 
+     private void MapChanged(ScriptOption recipient, MapChangedMessage message)
+@@ -87,6 +91,20 @@
          set => SetProperty(ref _acceptACDrops, value, true);
      }
  
@@ -5237,7 +5244,7 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
      private bool _acceptAllDrops;
  
      public bool AcceptAllDrops
-@@ -111,6 +127,16 @@
+@@ -111,6 +129,38 @@
          }
      }
  
@@ -5248,13 +5255,35 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
 +
 +    // VibeSkuffle: when another account on the same server keeps dying (10 deaths without a kill, or 15
 +    // minutes of only deaths), stop this account's script, go help, then come back and start it again.
-+    [ObservableProperty]
-+    private bool _rescueAllies;
++    private WatchDog.Shared.SharedRescueSettings? _rescueSettings;
++    private string _rescueAccount = "";
++    public bool RescueAllies
++    {
++        get => _rescueSettings?.Enabled ?? false;
++        set { if (!_isInitializing) _rescueSettings?.SetEnabled(value); }
++    }
++    public bool AllowThisAccountToRescue
++    {
++        get => _rescueSettings?.IsAllowed(_rescueAccount) ?? true;
++        set { if (!_isInitializing && _rescueAccount.Length > 0) _rescueSettings?.SetAllowed(_rescueAccount, value); }
++    }
++    internal void BindRescueAccount(string? account)
++    {
++        account = account?.Trim() ?? "";
++        if (string.Equals(account, _rescueAccount, StringComparison.OrdinalIgnoreCase)) return;
++        _rescueAccount = account;
++        OnPropertyChanged(nameof(AllowThisAccountToRescue));
++    }
++    private void NotifyRescueSettingsChanged()
++    {
++        OnPropertyChanged(nameof(RescueAllies));
++        OnPropertyChanged(nameof(AllowThisAccountToRescue));
++    }
 +
      [ObservableProperty]
      private bool _restPackets;
  
-@@ -129,8 +155,9 @@
+@@ -129,8 +179,9 @@
      [CallBinding("killLag", Get = false, HasSetter = true)]
      private bool _lagKiller;
  
@@ -5265,7 +5294,7 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
  
      [ObjectBinding("ui.mcFPS.visible", HasSetter = true)]
      private bool _showFPS = false;
-@@ -181,7 +208,7 @@
+@@ -181,7 +232,7 @@
              }
              else
              {
@@ -5274,7 +5303,34 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
                  _lazyFlash.Value.Call("setGameObject", "stage.quality", "HIGH");
                  _lazyFlash.Value.Call("setGameObject", "world.rootClass.mixer.soundTransform.volume", 1);
              }
-@@ -454,4 +481,4 @@
+@@ -379,7 +430,7 @@
+         StringCollection saveOptions = new();
+         foreach (PropertyInfo pi in GetType().GetProperties())
+         {
+-            if (pi.Name == nameof(OptionDictionary))
++            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue))
+                 continue;
+             string key = pi.Name;
+             object? value = pi.GetValue(this);
+@@ -398,7 +449,7 @@
+ 
+         foreach (PropertyInfo pi in GetType().GetProperties())
+         {
+-            if (pi.Name == nameof(OptionDictionary))
++            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue))
+                 continue;
+             if (_userOptions.ContainsKey(pi.Name))
+             {
+@@ -417,7 +468,7 @@
+         ScriptOption defaults = new(_lazyFlash);
+         foreach (PropertyInfo pi in GetType().GetProperties())
+         {
+-            if (pi.Name == nameof(OptionDictionary))
++            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue))
+                 continue;
+ 
+             pi.SetValue(this, pi.GetValue(defaults), null);
+@@ -454,4 +505,4 @@
          }
          return dict;
      }
@@ -5688,6 +5744,278 @@ new file mode 100644
 +            if (!seen.Contains(required)) throw new InvalidDataException($"Incomplete client package: {required}");
 +        File.WriteAllText(Path.Combine(destination, ManifestName), JsonSerializer.Serialize(manifest));
 +        return manifest;
++    }
++}
+diff --git a/Skua.Core/Services/RescueShared/RescueSession.cs b/Skua.Core/Services/RescueShared/RescueSession.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.Core/Services/RescueShared/RescueSession.cs
+@@ -0,0 +1,156 @@
++using System.ComponentModel;
++using Skua.Core.Interfaces;
++
++namespace WatchDog.Shared;
++
++// One helper's ownership of its script/combat state. Shared by both rescue engines.
++internal sealed class RescueSession : IDisposable
++{
++    private readonly IScriptPlayer _player;
++    private readonly IScriptMap _map;
++    private readonly IScriptCombat _combat;
++    private readonly IScriptSkill _skills;
++    private readonly IScriptOption _options;
++    private readonly IFlashUtil _flash;
++    private readonly IScriptManager _manager;
++    private readonly Func<bool> _enabled;
++    private readonly Func<bool> _userCancelled;
++    private readonly string _account, _script, _server;
++    private CancellationTokenSource? _scriptToken;
++    private readonly System.Reflection.PropertyInfo? _pauseProperty;
++    private bool _stoppedOriginal;
++    private readonly bool _wasRunning, _wasPaused, _infiniteRange, _stopAttacking;
++    private bool _ownChange, _begun, _finished, _finishing, _ownsCombat;
++    private volatile bool _interrupted;
++    internal string Room { get; }
++    internal string Cell { get; }
++    internal string Pad { get; }
++    internal bool WasRunning => _wasRunning;
++    internal bool WasPaused => _wasPaused;
++    internal RescueSession(IScriptPlayer player, IScriptMap map, IScriptCombat combat, IScriptSkill skills,
++        IScriptOption options, IFlashUtil flash, IScriptManager manager, Func<bool> enabled, Func<bool>? userCancelled = null)
++    {
++        _player = player; _map = map; _combat = combat; _skills = skills; _options = options;
++        _flash = flash; _manager = manager; _enabled = enabled; _userCancelled = userCancelled ?? (() => false);
++        _account = player.Username ?? ""; _server = ServerName(_flash); _script = manager.LoadedScript ?? "";
++        _scriptToken = manager.ScriptCts; _wasRunning = manager.ScriptRunning; _wasPaused = IsPaused(manager);
++        _pauseProperty = manager.GetType().GetProperty("ScriptPaused");
++        _infiniteRange = options.InfiniteRange; _stopAttacking = combat.StopAttacking;
++        Room = map.FullName; Cell = player.Cell; Pad = player.Pad;
++        _manager.PropertyChanged += OnManagerChanged;
++    }
++    internal static bool IsPaused(IScriptManager manager) => manager.GetType().GetProperty("ScriptPaused")?.GetValue(manager) is true;
++    private void SetPaused(bool value) => _pauseProperty?.SetValue(_manager, value);
++    internal static string ServerName(IFlashUtil flash)
++    {
++        try { return (flash.GetGameObject<string>("objServerInfo.sName", "") ?? "").Trim().Trim('"'); }
++        catch { return ""; }
++    }
++    internal bool SameAccount => _account.Length > 0 && string.Equals(_account, _player.Username, StringComparison.OrdinalIgnoreCase);
++    internal bool InOriginalSession => SameAccount && (_server.Length == 0 || string.Equals(_server, ServerName(_flash), StringComparison.OrdinalIgnoreCase));
++    internal bool Interrupted => _interrupted || _userCancelled() || !InOriginalSession ||
++        !string.Equals(_script, _manager.LoadedScript, StringComparison.OrdinalIgnoreCase) ||
++        !ReferenceEquals(_scriptToken, _manager.ScriptCts) || (_scriptToken?.IsCancellationRequested ?? false);
++    internal bool CanContinue => _begun && !_finished && !_interrupted && !Interrupted && _enabled() && _player.Playing && _flash.IsWorldLoaded && (!_ownsCombat || !_combat.StopAttacking);
++    private void OnManagerChanged(object? sender, PropertyChangedEventArgs e)
++    {
++        if (_ownChange || !_begun || _finished) return;
++        if (e.PropertyName is nameof(IScriptManager.ScriptRunning) or nameof(IScriptManager.LoadedScript)
++            or "ScriptPaused") _interrupted = true;
++    }
++    internal async Task<bool> BeginAsync()
++    {
++        if (!_enabled() || Interrupted || !_player.Playing || !_flash.IsWorldLoaded) return false;
++        _begun = true;
++        if (_wasRunning && !_wasPaused)
++        {
++            _ownChange = true;
++            try
++            {
++                if (_pauseProperty?.CanWrite == true) SetPaused(true);
++                else
++                {
++                    _stoppedOriginal = true;
++                    await _manager.StopScript();
++                    _scriptToken = _manager.ScriptCts;
++                }
++            }
++            finally { _ownChange = false; }
++        }
++        _combat.CancelAutoAttack();
++        await Task.Delay(250);
++        if (!CanContinue) return false;
++        _options.InfiniteRange = true;
++        _combat.StopAttacking = false;
++        _ownsCombat = true;
++        return true;
++    }
++    internal void Fight()
++    {
++        if (!CanContinue) return;
++        _combat.Attack("*");
++        for (int skill = 1; skill <= 4 && CanContinue; skill++)
++            if (_skills.CanUseSkill(skill)) _skills.UseSkill(skill);
++    }
++    internal async Task CompleteAsync()
++    {
++        if (_finished || _finishing) return;
++        _finishing = true;
++        try
++        {
++            if (!_begun || !InOriginalSession) return;
++            bool sameRun = ReferenceEquals(_scriptToken, _manager.ScriptCts) &&
++                string.Equals(_script, _manager.LoadedScript, StringComparison.OrdinalIgnoreCase);
++            // A new script owns its combat/options; a manually stopped script only needs attack cleanup.
++            if ((!sameRun && _manager.ScriptRunning) || (Interrupted && _manager.ScriptRunning && !IsPaused(_manager))) return;
++            _combat.CancelAutoAttack();
++            if (_options.InfiniteRange) _options.InfiniteRange = _infiniteRange;
++            if (!_combat.StopAttacking) _combat.StopAttacking = _stopAttacking;
++            try
++            {
++                if (!Interrupted && _player.Playing && _flash.IsWorldLoaded && !string.IsNullOrWhiteSpace(Room))
++                {
++                    if (!string.Equals(_map.FullName, Room, StringComparison.OrdinalIgnoreCase))
++                    {
++                        // AQW can reject an immediate second transfer while its transfer cooldown expires.
++                        for (int attempt = 0; attempt < 3 && !Interrupted && _player.Playing; attempt++)
++                        {
++                            if (_flash.IsWorldLoaded && string.Equals(_map.FullName, Room, StringComparison.OrdinalIgnoreCase)) break;
++                            _map.JoinPacket(Room, string.IsNullOrWhiteSpace(Cell) ? "Enter" : Cell, string.IsNullOrWhiteSpace(Pad) ? "Spawn" : Pad);
++                            for (int i = 0; i < 40 && !Interrupted && _player.Playing; i++)
++                            {
++                                if (_flash.IsWorldLoaded && string.Equals(_map.FullName, Room, StringComparison.OrdinalIgnoreCase)) break;
++                                await Task.Delay(100);
++                            }
++                        }
++                    }
++                    if (!Interrupted && _flash.IsWorldLoaded && string.Equals(_map.FullName, Room, StringComparison.OrdinalIgnoreCase)
++                        && !string.Equals(_player.Cell, Cell, StringComparison.OrdinalIgnoreCase))
++                        _map.Jump(Cell, string.IsNullOrWhiteSpace(Pad) ? "Left" : Pad);
++                }
++            }
++            finally
++            {
++                if (_wasRunning && !_wasPaused && !Interrupted && _manager.ScriptRunning && IsPaused(_manager))
++                {
++                    _ownChange = true;
++                    try { SetPaused(false); } finally { _ownChange = false; }
++                }
++                else if (_stoppedOriginal && _wasRunning && !Interrupted && !_manager.ScriptRunning && _player.Playing && _flash.IsWorldLoaded)
++                {
++                    var silent = _manager.GetType().GetProperty("SilentConfig");
++                    object? previous = silent?.GetValue(_manager);
++                    _ownChange = true;
++                    try { silent?.SetValue(_manager, true); await _manager.StartScript(); }
++                    finally { if (previous is not null) silent?.SetValue(_manager, previous); _ownChange = false; }
++                }
++            }
++        }
++        finally
++        {
++            _finished = true; _finishing = false;
++            _manager.PropertyChanged -= OnManagerChanged;
++        }
++    }
++    public void Dispose() => _manager.PropertyChanged -= OnManagerChanged;
++}
+diff --git a/Skua.Core/Services/RescueShared/SharedRescueSettings.cs b/Skua.Core/Services/RescueShared/SharedRescueSettings.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.Core/Services/RescueShared/SharedRescueSettings.cs
+@@ -0,0 +1,106 @@
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.Json;
++
++namespace WatchDog.Shared;
++
++// Kept byte-identical in Watch Dog and VibeSkuffle. No client-specific dependencies.
++internal sealed class SharedRescueSettings : IDisposable
++{
++    internal sealed record State(bool Enabled, string[] ExcludedAccounts, long Revision);
++    private static readonly Lazy<SharedRescueSettings> Default = new(() => new(DefaultPath));
++    internal static SharedRescueSettings Instance => Default.Value;
++    internal static string DefaultPath => Path.Combine(
++        Environment.GetEnvironmentVariable("WATCHDOG_SHARED_RESCUE_ROOT") ??
++        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Skua", "WatchDog"),
++        "rescue-settings.json");
++    private readonly string _path;
++    private readonly Mutex _writer;
++    private readonly FileSystemWatcher _watcher;
++    private readonly Timer _fallback;
++    private readonly object _gate = new();
++    private State _state = new(false, [], 0);
++    private bool _disposed;
++    internal event Action? Changed;
++    internal SharedRescueSettings(string path)
++    {
++        _path = Path.GetFullPath(path);
++        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
++        string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(_path.ToUpperInvariant())));
++        _writer = new Mutex(false, "WatchDog.RescueSettings." + hash);
++        Reload();
++        _watcher = new FileSystemWatcher(Path.GetDirectoryName(_path)!, Path.GetFileName(_path))
++        { NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size };
++        _watcher.Changed += OnFileChanged; _watcher.Created += OnFileChanged;
++        _watcher.Deleted += OnFileChanged; _watcher.Renamed += OnFileChanged;
++        _watcher.EnableRaisingEvents = true;
++        _fallback = new Timer(_ => Reload(), null, 500, 500);
++    }
++    internal bool Enabled { get { lock (_gate) return _state.Enabled; } }
++    internal bool IsAllowed(string? account)
++    {
++        if (string.IsNullOrWhiteSpace(account)) return false;
++        lock (_gate) return !_state.ExcludedAccounts.Contains(account.Trim(), StringComparer.OrdinalIgnoreCase);
++    }
++    internal void SetEnabled(bool value) => Update(s => s with { Enabled = value });
++    internal void SetAllowed(string account, bool value)
++    {
++        if (string.IsNullOrWhiteSpace(account)) return;
++        account = account.Trim();
++        Update(s => s with { ExcludedAccounts = value
++            ? s.ExcludedAccounts.Where(a => !a.Equals(account, StringComparison.OrdinalIgnoreCase)).ToArray()
++            : s.ExcludedAccounts.Where(a => !a.Equals(account, StringComparison.OrdinalIgnoreCase)).Append(account).ToArray() });
++    }
++    private State Read()
++    {
++        if (!File.Exists(_path)) return new(false, [], 0);
++        using var file = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
++        State state = JsonSerializer.Deserialize<State>(file) ?? throw new InvalidDataException("Invalid rescue settings.");
++        return state with { ExcludedAccounts = (state.ExcludedAccounts ?? []).Where(a => !string.IsNullOrWhiteSpace(a)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() };
++    }
++    private void Update(Func<State, State> change)
++    {
++        bool held = false;
++        try
++        {
++            try { held = _writer.WaitOne(TimeSpan.FromSeconds(5)); } catch (AbandonedMutexException) { held = true; }
++            if (!held) throw new IOException("Rescue settings are busy; try again.");
++            State before = Read(), after = change(before);
++            if (Same(before, after)) { Reload(); return; }
++            after = after with { Revision = before.Revision + 1 };
++            string temporary = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
++            try
++            {
++                File.WriteAllText(temporary, JsonSerializer.Serialize(after), new UTF8Encoding(false));
++                File.Move(temporary, _path, true);
++            }
++            finally { if (File.Exists(temporary)) File.Delete(temporary); }
++        }
++        finally { if (held) _writer.ReleaseMutex(); }
++        Reload();
++    }
++    private static bool Same(State a, State b) => a.Enabled == b.Enabled &&
++        a.ExcludedAccounts.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).SequenceEqual(
++            b.ExcludedAccounts.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
++    private void OnFileChanged(object sender, FileSystemEventArgs args) => Reload();
++    internal void Reload()
++    {
++        bool changed;
++        lock (_gate)
++        {
++            if (_disposed) return;
++            State next;
++            try { next = Read(); } catch { return; } // A bad/incomplete read never resets a valid preference.
++            changed = !Same(_state, next);
++            _state = next;
++        }
++        if (changed && Changed is { } handlers)
++            foreach (Action handler in handlers.GetInvocationList())
++                try { handler(); } catch { }
++    }
++    public void Dispose()
++    {
++        lock (_gate) { if (_disposed) return; _disposed = true; }
++        _watcher.Dispose(); _fallback.Dispose(); _writer.Dispose(); Changed = null;
 +    }
 +}
 diff --git a/Skua.Core/Services/UnifiedSettingsService.cs b/Skua.Core/Services/UnifiedSettingsService.cs
@@ -7853,7 +8181,19 @@ diff --git a/package-build.ps1 b/package-build.ps1
      $AppDlls = Get-ChildItem -Path $AppBin -Filter "*.dll" -File
      foreach ($dll in $AppDlls) {
          if ($ExcludedDlls -notcontains $dll.Name) {
-@@ -140,9 +145,10 @@
+@@ -77,7 +82,10 @@
+     $ManagerDlls = Get-ChildItem -Path $ManagerBin -Filter "*.dll" -File
+     foreach ($dll in $ManagerDlls) {
+         if ($ExcludedDlls -notcontains $dll.Name) {
+-            Copy-Item $dll.FullName (Join-Path $AssembliesDir $dll.Name) -Force
++            $destination = Join-Path $AssembliesDir $dll.Name
++            if (!(Test-Path -LiteralPath $destination) -or $dll.LastWriteTimeUtc -ge (Get-Item -LiteralPath $destination).LastWriteTimeUtc) {
++                Copy-Item $dll.FullName $destination -Force
++            }
+         }
+     }
+ 
+@@ -140,9 +148,10 @@
  
      # 9. Clean up stray files from target root
      $AllowedRootFiles = @(

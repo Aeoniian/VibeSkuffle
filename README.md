@@ -26,7 +26,17 @@ Nothing else to install. The game player is in the `ruffle` folder. Scripts defa
 `%APPDATA%\Skua\Scripts`; accounts and settings remain in `%APPDATA%\VibeSkua`.
 VibeSkuffle can run side by side with a normal VibeSkua.
 
-### New in Beta9
+### New in Beta9.5
+
+**One live Rescue Allies switch for every updated client, with individual helper opt-outs and idle saviors.**
+Use Game Options → Gameplay & Character for the shared switch and the per-account checkbox. Idle helpers
+can join, fight, return home and stay idle; existing running/paused scripts restore appropriately. The standalone
+[Watch Dog Beta5](https://github.com/Aeoniian/Watch-Dog/releases/tag/beta5) uses the same shared settings.
+
+**On Beta9? Install Beta9.5 directly through Manager → Updater.**
+[Read the full release notes](docs/RELEASE-beta9.5.md).
+
+### Added in Beta9
 
 - **VibeSkua 2.0.9 and Cosmetics**, with upstream quest, scheduler, script-control and shutdown fixes.
 - **Automatic AC banking and non-AC rejection**, combat guards, and two new Current Drops reject buttons.
@@ -103,15 +113,20 @@ what the watchdog fixed. See [docs/SETTINGS.md](docs/SETTINGS.md#discord-alerts-
 Everything recovery does is written to `login-watchdog.log` next to `VibeSkuffle.exe` (time and account
 name, never passwords). Logs are size-capped so they can't fill your drive.
 
-### Rescue Allies (Game Options → Rescue Allies)
-When an account running a script keeps dying (10 deaths without a kill, or 15 minutes of only deaths), every other
-account **on the same server** that is running a script and has *Rescue Allies* on stops its script, goes to that
-room and cell and fights there. As soon as the stuck account gets a kill they go back to where they were and their
-scripts start again. They give up after 20 minutes.
-If the boss is hidden behind a questline the helpers haven't done, they borrow the stuck account's quest progress
-while helping (client-side only, like ButlerV5's quest clone) and put their own back exactly as it was before their
-scripts start again, so their scripts never see quests as done that aren't. Off by default; turn it on and click Save Options (this setting is shared, so it
-applies to every account started afterwards).
+### Rescue Allies (Game Options → Gameplay & Character)
+
+**Rescue Allies - all accounts** is a live master switch shared with every updated Watch Dog/VibeSkuffle client
+on this PC. **Allow this account to rescue** is a separate saved opt-out for the logged-in account. Excluded
+helpers can still receive help. Defaults: shared master off, account eligibility on.
+
+When a scripted account keeps dying (10 deaths without a kill, or 15 minutes of only deaths), eligible accounts
+on the same server go to help. **Helpers can be idle; no running or loaded script is needed.** They return to
+their original room/cell afterward. Running scripts pause/resume, previously paused scripts remain paused,
+and idle accounts stay idle. Manual stop/logout/new-script actions take precedence. Manual Auto Attack/Hunt
+is left alone. Helpers give up after 20 minutes, and temporary quest-progress borrowing is restored.
+
+The plugin exposes live controls under **Plugins → Rescue Allies**. Update/restart all participating copies
+once. Shared preferences: `%APPDATA%\Skua\WatchDog\rescue-settings.json`.
 
 ### Drops
 - **Saved automatic options** under Game Options → Drops & Looting: Pickup AC Drops and Send to Bank,

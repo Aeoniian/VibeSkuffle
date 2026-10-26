@@ -104,3 +104,16 @@ script/display controls and the selected/running script's name.
 
 Scripts default to `%APPDATA%\Skua\Scripts`; settings/accounts remain in `%APPDATA%\VibeSkua`.
 Client updates use VibeSkuffle GitHub releases. Script updates remain independent.
+
+## Beta9.5: shared Rescue Allies controls
+
+Game Options → Gameplay & Character has **Rescue Allies - all accounts** and **Allow this account to rescue**.
+The master switch updates every open updated client; the second checkbox only excludes the logged-in account
+from helping and does not stop it receiving help. Defaults are master off and eligibility on.
+
+Idle accounts can rescue without a script. Supported running scripts pause/resume, previously paused scripts
+stay paused, and idle accounts return idle. Manual stop/logout/new-script actions take precedence.
+
+The standalone Watch Dog plugin exposes the same live controls under Plugins → Rescue Allies. Shared values
+and exclusions are saved in `%APPDATA%\Skua\WatchDog\rescue-settings.json`. All participating clients need
+the updated code loaded; restart once after installation. Settings apply immediately without Save Options.
