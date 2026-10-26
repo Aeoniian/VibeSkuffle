@@ -1,8 +1,7 @@
 diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
-index 8741637..db3d635 100644
 --- a/Skua.App.Avalonia/App.axaml.cs
 +++ b/Skua.App.Avalonia/App.axaml.cs
-@@ -88,7 +88,10 @@ public partial class App : Application
+@@ -88,7 +88,10 @@
          services.AddSingleton(HotKeys.CreateHotKeys);
          services.AddSingleton<IHotKeyService, HotKeyService>();
          services.AddSingleton<ISoundService, SoundService>();
@@ -14,7 +13,7 @@ index 8741637..db3d635 100644
          services.AddSingleton<IScreenshotService, ScreenshotService>();
          services.AddSingleton<SkuaStartupHandler>();
          Skua.App.Avalonia.AppStartup.Services.AddSkuaMainAppViewModels(services);
-@@ -206,15 +209,21 @@ public partial class App : Application
+@@ -204,15 +207,21 @@
                          try
                          {
                              var parentProcess = System.Diagnostics.Process.GetProcessById(hostPid);
@@ -36,7 +35,7 @@ index 8741637..db3d635 100644
                          }
                          catch { }
                          try { System.Diagnostics.Process.GetCurrentProcess().Kill(); } catch { }
-@@ -226,7 +235,7 @@ public partial class App : Application
+@@ -224,7 +233,7 @@
                  string[] clientArgs = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Skip(args, 1));
                  string payload = System.Text.Json.JsonSerializer.Serialize(clientArgs);
                  bool createdNew;
@@ -45,7 +44,7 @@ index 8741637..db3d635 100644
  
                  if (!createdNew)
                  {
-@@ -235,7 +244,7 @@ public partial class App : Application
+@@ -233,7 +242,7 @@
                      {
                          try
                          {
@@ -54,7 +53,7 @@ index 8741637..db3d635 100644
                              pipeClient.Connect(1000);
                              using System.IO.StreamWriter sw = new(pipeClient);
                              sw.WriteLine(payload);
-@@ -260,7 +269,7 @@ public partial class App : Application
+@@ -258,7 +267,7 @@
                      try
                      {
                          AppMutex?.Dispose();
@@ -63,7 +62,7 @@ index 8741637..db3d635 100644
                      }
                      catch { }
                  }
-@@ -281,6 +290,8 @@ public partial class App : Application
+@@ -281,6 +290,8 @@
          AppDomain.CurrentDomain.UnhandledException += (_, e) =>
          {
              Exception ex = e.ExceptionObject as Exception ?? new Exception("Unknown unhandled exception.");
@@ -72,7 +71,7 @@ index 8741637..db3d635 100644
              ShowUnhandledException("AppDomain.CurrentDomain.UnhandledException", ex);
          };
  
-@@ -356,8 +367,20 @@ public partial class App : Application
+@@ -356,8 +367,20 @@
          catch { }
      }
  
@@ -93,9 +92,71 @@ index 8741637..db3d635 100644
          DisposeTrayIcon();
          try
          {
+diff --git a/Skua.App.Avalonia/Flash/ClientQuickControls.cs b/Skua.App.Avalonia/Flash/ClientQuickControls.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.App.Avalonia/Flash/ClientQuickControls.cs
+@@ -0,0 +1,58 @@
++using CommunityToolkit.Mvvm.DependencyInjection;
++using Skua.App.Avalonia.ViewModels;
++using Skua.Core.Interfaces;
++using System;
++using System.Threading;
++using System.Threading.Tasks;
++
++namespace Skua.App.Avalonia.Flash;
++
++internal static class ClientQuickControls
++{
++    private static int _scriptAction;
++    public static string ScriptLabel
++    {
++        get
++        {
++            var manager = Ioc.Default.GetService<IScriptManager>();
++            string name = System.IO.Path.GetFileName(manager?.LoadedScript ?? "");
++            if (string.IsNullOrWhiteSpace(name)) return manager?.ScriptRunning == true ? "Script running" : "No script selected";
++            return $"{(manager?.ScriptRunning == true ? "Running" : "Selected")}: {name}";
++        }
++    }
++    public static async void Execute(string action)
++    {
++        try
++        {
++            var options = Ioc.Default.GetRequiredService<IScriptOption>();
++            var manager = Ioc.Default.GetRequiredService<IScriptManager>();
++            switch (action)
++            {
++                case "start":
++                    if (Interlocked.Exchange(ref _scriptAction, 1) != 0) return;
++                    try
++                    {
++                        if (!manager.ScriptRunning)
++                        {
++                            var loader = Ioc.Default.GetRequiredService<ScriptLoaderViewModel>();
++                            if (string.IsNullOrWhiteSpace(manager.LoadedScript)) loader.LoadScript();
++                            if (!string.IsNullOrWhiteSpace(manager.LoadedScript)) await loader.StartScriptAsync(manager.LoadedScript);
++                        }
++                    }
++                    finally { Volatile.Write(ref _scriptAction, 0); }
++                    break;
++                case "stop": await manager.StopScript(); break;
++                case "headless": options.HeadlessMode = !options.HeadlessMode; break;
++                case "lagkiller": options.LagKiller = !options.LagKiller; break;
++                case "restart":
++                    if (Ioc.Default.GetService<IFlashUtil>() is IRestartableGamePlayer player && player.CanRestartClient)
++                        await Task.Run(() => player.RestartClient(manager.ScriptRunning));
++                    break;
++            }
++        }
++        catch (Exception ex)
++        {
++            Ioc.Default.GetService<IDialogService>()?.ShowMessageBox(ex.Message, "Account control");
++        }
++    }
++}
 diff --git a/Skua.App.Avalonia/Flash/FlashBackend.cs b/Skua.App.Avalonia/Flash/FlashBackend.cs
 new file mode 100644
-index 0000000..1fbecc5
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/FlashBackend.cs
 @@ -0,0 +1,35 @@
@@ -136,7 +197,6 @@ index 0000000..1fbecc5
 +}
 diff --git a/Skua.App.Avalonia/Flash/RuffleControl.cs b/Skua.App.Avalonia/Flash/RuffleControl.cs
 new file mode 100644
-index 0000000..4d95294
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleControl.cs
 @@ -0,0 +1,140 @@
@@ -282,10 +342,9 @@ index 0000000..4d95294
 +#endif
 diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.PlayerSettings.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.PlayerSettings.cs
 new file mode 100644
-index 0000000..f4515bf
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.PlayerSettings.cs
-@@ -0,0 +1,285 @@
+@@ -0,0 +1,292 @@
 +namespace Skua.App.Avalonia.Flash;
 +
 +#if IS_WINDOWS
@@ -390,6 +449,13 @@ index 0000000..f4515bf
 +    {
 +        try
 +        {
++            if (_session is { } session && session.Connected.IsSet && !_disposed)
++            {
++                var manager = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Skua.Core.Interfaces.IScriptManager>();
++                var options = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Skua.Core.Interfaces.IScriptOption>();
++                Send(session, new JObject { ["t"] = "client_state", ["running"] = manager?.ScriptRunning == true, ["script_label"] = ClientQuickControls.ScriptLabel,
++                    ["headless"] = options?.HeadlessMode == true, ["lagkiller"] = options?.LagKiller == true });
++            }
 +            if (_disposed || CurrentPlayerSettings is not { } current)
 +                return;
 +            DateTime stamp = File.Exists(SharedSettingsPath) ? File.GetLastWriteTimeUtc(SharedSettingsPath) : DateTime.MinValue;
@@ -573,10 +639,9 @@ index 0000000..f4515bf
 +#endif
 diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 new file mode 100644
-index 0000000..a3badc8
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
-@@ -0,0 +1,1039 @@
+@@ -0,0 +1,1044 @@
 +using Skua.Core.Interfaces;
 +using System;
 +using System.Xml.Linq;
@@ -823,6 +888,11 @@ index 0000000..a3badc8
 +
 +            case "settings":
 +                OnPlayerSettings(message);
++                break;
++
++            case "client_action":
++                string action = (string?)message["v"] ?? "";
++                Dispatcher.UIThread.Post(() => ClientQuickControls.Execute(action));
 +                break;
 +
 +            case "graphics":
@@ -1616,11 +1686,26 @@ index 0000000..a3badc8
 +    public void TrimGameMemory() { }
 +}
 +#endif
+diff --git a/Skua.App.Avalonia/Program.cs b/Skua.App.Avalonia/Program.cs
+--- a/Skua.App.Avalonia/Program.cs
++++ b/Skua.App.Avalonia/Program.cs
+@@ -15,9 +15,12 @@
+ 
+ internal static class Program
+ {
++    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
++    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+     [STAThread]
+     public static void Main(string[] args)
+     {
++        if (OperatingSystem.IsWindows()) SetCurrentProcessExplicitAppUserModelID("Aeoniian.VibeSkuffle.Client");
+         InitializeAssemblyResolvers();
+         RunApp(args);
+     }
 diff --git a/Skua.App.Avalonia/Services/DialogService.cs b/Skua.App.Avalonia/Services/DialogService.cs
-index 0430147..8fc6ce6 100644
 --- a/Skua.App.Avalonia/Services/DialogService.cs
 +++ b/Skua.App.Avalonia/Services/DialogService.cs
-@@ -108,7 +108,7 @@ public class DialogService : IDialogService
+@@ -108,7 +108,7 @@
          {
              OptionContainerViewModel options => ShowOptionContainerDialog(options, string.IsNullOrWhiteSpace(title) || title == nameof(OptionContainerViewModel) ? options.Title : title),
              IOptionContainerViewModel optionsVm => ShowOptionContainerDialog(optionsVm as OptionContainerViewModel ?? new OptionContainerViewModel(optionsVm.Container), title),
@@ -1629,7 +1714,7 @@ index 0430147..8fc6ce6 100644
              AssignHotKeyDialogViewModel hotKey => ShowAssignHotKeyDialog(hotKey, title),
              SkillRuleEditorDialogViewModel skillRules => ShowSkillRuleEditorDialog(skillRules, title),
              MessageBoxDialogViewModel messageBox => ShowMessageBoxInternal(messageBox.Message, messageBox.Title, messageBox.YesAndNo),
-@@ -171,6 +171,12 @@ public class DialogService : IDialogService
+@@ -171,6 +171,12 @@
          };
  
          dialog.Content = WrapWithShell(title, content);
@@ -1644,7 +1729,6 @@ index 0430147..8fc6ce6 100644
      }
 diff --git a/Skua.App.Avalonia/Services/HostCrashRecovery.cs b/Skua.App.Avalonia/Services/HostCrashRecovery.cs
 new file mode 100644
-index 0000000..ca8432c
 --- /dev/null
 +++ b/Skua.App.Avalonia/Services/HostCrashRecovery.cs
 @@ -0,0 +1,208 @@
@@ -1857,10 +1941,9 @@ index 0000000..ca8432c
 +    }
 +}
 diff --git a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
-index 0920843..23fb9ae 100644
 --- a/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
 +++ b/Skua.App.Avalonia/Services/SkuaStartupHandler.cs
-@@ -71,6 +71,25 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -71,6 +71,25 @@
              StrongReferenceMessenger.Default.Register<SkuaStartupHandler, ScriptStoppedMessage, int>(this, (int)MessageChannels.ScriptStatus, async (r, m) =>
              {
                  await Task.Delay(2000);
@@ -1886,7 +1969,7 @@ index 0920843..23fb9ae 100644
                  try { _bot.Servers.Logout(); } catch { }
                  await Task.Delay(1000);
                  Environment.Exit(0);
-@@ -80,12 +99,13 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -80,12 +99,13 @@
  
      private void LoadGame(string function, params object[] args)
      {
@@ -1902,7 +1985,7 @@ index 0920843..23fb9ae 100644
      }
  
      private void Login(string function, params object[] args)
-@@ -100,9 +120,10 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -100,9 +120,10 @@
          {
              _bot.Servers.EnsureRelogin(string.IsNullOrWhiteSpace(_options.Server) ? "Twilly" : _options.Server!);
  
@@ -1915,7 +1998,7 @@ index 0920843..23fb9ae 100644
              {
                  await Task.Delay(250);
                  wait++;
-@@ -126,7 +147,14 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -126,7 +147,14 @@
                              scriptLoader.ScriptManager.SilentConfig = true;
                          }
                          scriptLoader.LoadScript(_options.Script);
@@ -1931,7 +2014,7 @@ index 0920843..23fb9ae 100644
                      }
                      catch { }
                  });
-@@ -169,6 +197,8 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -169,6 +197,8 @@
          public string? UseTheme { get; private set; }
          public string? GitHubToken { get; private set; }
          public bool ExitOnScriptStop { get; private set; }
@@ -1940,7 +2023,7 @@ index 0920843..23fb9ae 100644
  
          public static (bool Parsed, StartupOptions Options) Parse(string[] args)
          {
-@@ -223,6 +253,9 @@ public sealed class SkuaStartupHandler : IDisposable
+@@ -223,6 +253,9 @@
                      case "--exit-on-finish":
                          options.ExitOnScriptStop = true;
                          break;
@@ -1951,7 +2034,6 @@ index 0920843..23fb9ae 100644
                      case "--host-pid":
                          NextValue();
 diff --git a/Skua.App.Avalonia/Skua.App.Avalonia.csproj b/Skua.App.Avalonia/Skua.App.Avalonia.csproj
-index ebfa084..d441a39 100644
 --- a/Skua.App.Avalonia/Skua.App.Avalonia.csproj
 +++ b/Skua.App.Avalonia/Skua.App.Avalonia.csproj
 @@ -9,8 +9,8 @@
@@ -1966,12 +2048,13 @@ index ebfa084..d441a39 100644
      </PropertyGroup>
  
 diff --git a/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs b/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
-index 0986fea..aea6811 100644
 --- a/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
-@@ -9,16 +9,19 @@ using System;
+@@ -8,32 +8,46 @@
+ using System;
  using System.Collections.Generic;
  using System.Collections.ObjectModel;
++using System.ComponentModel;
  using System.Linq;
 +using System.Threading.Tasks;
  
@@ -1990,7 +2073,17 @@ index 0986fea..aea6811 100644
          FilteredCurrentDrops = new ObservableCollection<ItemBase>();
      }
  
-@@ -34,6 +37,14 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
+     protected override void OnActivated()
+     {
++        _drops.PropertyChanged += DropsPropertyChanged;
+         StrongReferenceMessenger.Default.Register<CurrentDropsViewModel, ItemDroppedMessage, int>(this, (int)MessageChannels.GameEvents, CurrentDropsChanged);
+         RefreshDrops();
+     }
+ 
+     protected override void OnDeactivated()
+     {
++        _drops.PropertyChanged -= DropsPropertyChanged;
+         StrongReferenceMessenger.Default.UnregisterAll(this);
      }
  
      private readonly IScriptPlayer _player;
@@ -2005,7 +2098,7 @@ index 0986fea..aea6811 100644
      private readonly IScriptDrop _drops;
      private string _searchText = string.Empty;
  
-@@ -103,6 +114,62 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
+@@ -103,9 +117,56 @@
          RefreshDrops();
      }
  
@@ -2018,41 +2111,8 @@ index 0986fea..aea6811 100644
 +        Banking = true;
 +        try
 +        {
-+            List<string> names = _drops.CurrentDropInfos.Where(d => d.Coins).Select(d => d.Name.Trim())
-+                .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-+            if (names.Count == 0)
-+            {
-+                Status = "No AC drops to pick up.";
-+                return;
-+            }
-+            Status = $"Picking up {names.Count} AC drop(s)...";
-+            (List<string> banked, List<string> notBanked) = await Task.Run(() =>
-+            {
-+                _drops.Pickup(names.ToArray());
-+                // A picked-up drop leaves the drop list before it shows in the inventory: wait for it
-+                // (up to 10 seconds) instead of deciding right away that nothing was picked up.
-+                List<string> picked;
-+                DateTime until = DateTime.UtcNow.AddSeconds(10);
-+                while (true)
-+                {
-+                    picked = names.Where(n => _inventory.Contains(n)).ToList();
-+                    if (picked.Count == names.Count || DateTime.UtcNow > until || !_player.Playing)
-+                        break;
-+                    System.Threading.Thread.Sleep(250);
-+                }
-+                List<string> ok = new(), failed = new();
-+                if (picked.Count == 0)
-+                    return (ok, names);
-+                if (!_bank.Loaded)
-+                    _bank.Load(true);
-+                foreach (string n in picked)
-+                    (_inventory.EnsureToBank(n) ? ok : failed).Add(n);
-+                failed.AddRange(names.Except(picked, StringComparer.OrdinalIgnoreCase));
-+                return (ok, failed);
-+            });
-+            Status = banked.Count > 0
-+                ? $"Banked: {string.Join(", ", banked)}" + (notBanked.Count > 0 ? $". Not banked (no space or not picked up): {string.Join(", ", notBanked)}" : "")
-+                : $"Couldn't bank: {string.Join(", ", notBanked)} (not picked up, or no inventory or bank space?)";
++            Status = "Waiting for a safe break in combat...";
++            Status = await _drops.PickupACToBankAsync();
 +        }
 +        catch (Exception ex)
 +        {
@@ -2065,23 +2125,57 @@ index 0986fea..aea6811 100644
 +        }
 +    }
 +
++    [RelayCommand]
++    private void RejectAll()
++    {
++        _drops.RejectCurrentDrops(false);
++        RefreshDrops();
++    }
++
++    [RelayCommand]
++    private void RejectNonAC()
++    {
++        _drops.RejectCurrentDrops(true);
++        RefreshDrops();
++    }
++
      private void CurrentDropsChanged(CurrentDropsViewModel recipient, ItemDroppedMessage message)
      {
-         recipient.RefreshDrops();
+-        recipient.RefreshDrops();
++        global::Avalonia.Threading.Dispatcher.UIThread.Post(recipient.RefreshDrops);
++    }
++
++    private void DropsPropertyChanged(object? sender, PropertyChangedEventArgs e)
++    {
++        if (e.PropertyName is nameof(IScriptDrop.CurrentDropInfos) or nameof(IScriptDrop.CurrentDrops) or nameof(IScriptDrop.ACBankingStatus))
++            global::Avalonia.Threading.Dispatcher.UIThread.Post(() =>
++            {
++                if (!Banking && e.PropertyName == nameof(IScriptDrop.ACBankingStatus)) Status = _drops.ACBankingStatus;
++                RefreshDrops();
++            });
+     }
+ 
+     private void RefreshDrops()
+@@ -128,4 +189,4 @@
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}
 diff --git a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
-index 72293b2..7682b99 100644
 --- a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
-@@ -10,7 +10,7 @@ namespace Skua.App.Avalonia.ViewModels.MainMenu;
+@@ -10,7 +10,7 @@
  public sealed partial class MainViewModel : ObservableObject
  {
      [ObservableProperty]
--    private string _title = "VibeSkua V2.0.7";
-+    private string _title = "VibeSkuffle V2.0.7";
+-    private string _title = "VibeSkua V2.0.9";
++    private string _title = "VibeSkuffle V2.0.9";
  
      public MainMenuViewModel MainMenu { get; }
  
-@@ -21,7 +21,7 @@ public sealed partial class MainViewModel : ObservableObject
+@@ -21,7 +21,7 @@
      public MainViewModel(MainMenuViewModel mainMenu, IDiscordWebhookService discordWebhookService)
      {
          MainMenu = mainMenu;
@@ -2091,10 +2185,9 @@ index 72293b2..7682b99 100644
      }
  
 diff --git a/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs b/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
-index 1569ff9..c29fec0 100644
 --- a/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
-@@ -273,11 +273,35 @@ public partial class PacketInterceptorViewModel : BotControlViewModelBase
+@@ -273,11 +273,35 @@
          int port = SelectedServer.Port != 0 ? SelectedServer.Port : 5588;
          _gameProxy.Destination = new IPEndPoint(ip, port);
          _gameProxy.Start();
@@ -2135,7 +2228,6 @@ index 1569ff9..c29fec0 100644
  
      protected override void OnActivated()
 diff --git a/Skua.App.Avalonia/Views/CurrentDropsView.axaml b/Skua.App.Avalonia/Views/CurrentDropsView.axaml
-index e6608e5..1594254 100644
 --- a/Skua.App.Avalonia/Views/CurrentDropsView.axaml
 +++ b/Skua.App.Avalonia/Views/CurrentDropsView.axaml
 @@ -128,7 +128,7 @@
@@ -2143,11 +2235,11 @@ index e6608e5..1594254 100644
              CornerRadius="8"
              Padding="10">
 -      <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
-+      <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
++      <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
          <Button Grid.Column="0"
                  Classes="skua-button skua-primary"
                  Height="34"
-@@ -158,6 +158,21 @@
+@@ -158,6 +158,25 @@
              <TextBlock Text="Pickup AC Only" VerticalAlignment="Center" />
            </StackPanel>
          </Button>
@@ -2162,7 +2254,11 @@ index e6608e5..1594254 100644
 +            <TextBlock Text="Pickup AC Only and Send to Bank" VerticalAlignment="Center" />
 +          </StackPanel>
 +        </Button>
-+        <TextBlock Grid.Row="2" Grid.ColumnSpan="3"
++        <Button Grid.Row="2" Grid.Column="0" Classes="skua-button" Height="34"
++                Content="Reject All" Command="{Binding RejectAllCommand}" />
++        <Button Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Classes="skua-button" Height="34"
++                Content="Reject All Except AC" Command="{Binding RejectNonACCommand}" />
++        <TextBlock Grid.Row="3" Grid.ColumnSpan="3"
 +                   Text="{Binding Status}"
 +                   IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
 +                   TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
@@ -2170,10 +2266,9 @@ index e6608e5..1594254 100644
      </Border>
    </Grid>
 diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
-index 3892328..904e4ab 100644
 --- a/Skua.App.Avalonia/Views/MainWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
-@@ -78,6 +78,72 @@ public partial class MainWindow : Window
+@@ -78,6 +78,72 @@
      private int _preThrottleFPS = -1;
      private string? _preThrottleQuality = null;
  
@@ -2246,10 +2341,33 @@ index 3892328..904e4ab 100644
      public void HideTitleBar()
      {
          _isTitleBarPermanentlyHidden = true;
-@@ -129,8 +195,94 @@ public partial class MainWindow : Window
+@@ -93,6 +159,21 @@
+     public MainWindow()
+     {
+         InitializeComponent();
++        if (HeadlessOverlay != null)
++        {
++            var menu = new ContextMenu();
++            var scriptInfo = new MenuItem { IsEnabled = false, Header = "No script selected" };
++            menu.Items.Add(scriptInfo);
++            menu.Opening += (_, _) => scriptInfo.Header = Skua.App.Avalonia.Flash.ClientQuickControls.ScriptLabel;
++            foreach (var item in new[] { ("Start Script", "start"), ("Stop Script", "stop"),
++                         ("Turn Off Headless", "headless"), ("Toggle Lag Killer", "lagkiller"), ("Restart Client", "restart") })
++            {
++                var entry = new MenuItem { Header = item.Item1 };
++                entry.Click += (_, _) => Skua.App.Avalonia.Flash.ClientQuickControls.Execute(item.Item2);
++                menu.Items.Add(entry);
++            }
++            HeadlessOverlay.ContextMenu = menu;
++        }
+         _mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
+         _mainMenuVm = Ioc.Default.GetRequiredService<MainMenuViewModel>();
+         _flash = Ioc.Default.GetRequiredService<IFlashUtil>();
+@@ -129,7 +210,93 @@
          MainMenuControl.Items.Clear();
          foreach (MainMenuItemViewModel item in _mainMenuVm.MainMenuItems)
              MainMenuControl.Items.Add(CreateMainMenuItem(item, isTopLevel: true));
+-    }
 +#if IS_WINDOWS
 +        // VibeSkuffle: Mugetsu's settings, before Plugins (the last item).
 +        if (_flash is Skua.App.Avalonia.Flash.RuffleFlashUtil ruffle)
@@ -2333,15 +2451,14 @@ index 3892328..904e4ab 100644
 +        _graphicsMenuRefresh = () => Dispatcher.UIThread.Post(Refresh);
 +        ruffle.PlayerSettingsChanged += _graphicsMenuRefresh;
 +        return top;
-     }
- 
++    }
++
 +    private Action? _graphicsMenuRefresh;
 +#endif
-+
+ 
      private global::Avalonia.Controls.MenuItem CreateMainMenuItem(IMainMenuItemViewModel viewModel, bool isTopLevel = false)
      {
-         global::Avalonia.Controls.MenuItem menuItem = new()
-@@ -245,6 +397,8 @@ public partial class MainWindow : Window
+@@ -245,6 +412,8 @@
      private void RegisterMessages()
      {
          WeakReferenceMessenger.Default.Register<MainWindow, FlashChangedMessage<AxShockwaveFlash>>(this, static (r, m) => r.OnFlashControlChanged(m.Flash));
@@ -2350,7 +2467,7 @@ index 3892328..904e4ab 100644
      }
      #endif
  
-@@ -263,6 +417,9 @@ public partial class MainWindow : Window
+@@ -263,6 +432,9 @@
                      Dispatcher.UIThread.Post(() =>
                      {
                          bool isHeadless = _options.HeadlessMode;
@@ -2360,10 +2477,11 @@ index 3892328..904e4ab 100644
                          if (HeadlessOverlay != null) HeadlessOverlay.IsVisible = isHeadless;
                          if (FlashHost != null) FlashHost.IsVisible = !isHeadless && _isFlashLoaded;
                      });
-@@ -298,6 +455,28 @@ public partial class MainWindow : Window
+@@ -297,6 +469,28 @@
+             }
  #endif
          }
- 
++
 +        _throttleTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
 +        _throttleTimer.Tick += (_, _) =>
 +        {
@@ -2385,11 +2503,10 @@ index 3892328..904e4ab 100644
 +            WriteTabState();
 +        };
 +        _throttleTimer.Start();
-+
+ 
          _tabTitleSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
          string lastWrittenUsername = "";
-         _tabTitleSyncTimer.Tick += (s, ev) =>
-@@ -356,6 +535,9 @@ public partial class MainWindow : Window
+@@ -356,6 +550,9 @@
              Dispatcher.UIThread.Post(() =>
              {
                  LoadingBar.IsVisible = false;
@@ -2399,10 +2516,13 @@ index 3892328..904e4ab 100644
                  FlashHost.IsVisible = !_options.HeadlessMode;
                  HeadlessOverlay.IsVisible = _options.HeadlessMode;
                  try
-@@ -368,6 +550,56 @@ public partial class MainWindow : Window
-         }
-     }
- 
+@@ -365,6 +562,56 @@
+                 }
+                 catch { }
+             });
++        }
++    }
++
 +    /// <summary>Applies or lifts the background-tab throttle (2 fps, low quality); see _throttleWanted.</summary>
 +    private void UpdateThrottle()
 +    {
@@ -2450,13 +2570,10 @@ index 3892328..904e4ab 100644
 +                }
 +            }
 +            catch { }
-+        }
-+    }
-+
- #if IS_WINDOWS
-     private IntPtr WindowSubclassProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam, nuint uIdSubclass, IntPtr dwRefData)
-     {
-@@ -417,15 +649,43 @@ public partial class MainWindow : Window
+         }
+     }
+ 
+@@ -417,14 +664,42 @@
          }
          else if (uMsg == WM_SKUA_LOGIN)
          {
@@ -2467,6 +2584,8 @@ index 3892328..904e4ab 100644
 -                var servers = Ioc.Default.GetRequiredService<IScriptServers>();
 -                string targetServer = string.IsNullOrWhiteSpace(options.ReloginServer) ? "Twilly" : options.ReloginServer;
 -                servers.Relogin(targetServer);
+-            });
+-            return IntPtr.Zero;
 +                // One login at a time: a second click while this one is still logging in is ignored.
 +                if (System.Threading.Interlocked.Exchange(ref _loginRequestBusy, 1) == 1)
 +                    return;
@@ -2491,20 +2610,19 @@ index 3892328..904e4ab 100644
 +                {
 +                    System.Threading.Interlocked.Exchange(ref _loginRequestBusy, 0);
 +                }
-             });
-             return IntPtr.Zero;
-         }
++            });
++            return IntPtr.Zero;
++        }
 +        else if (uMsg == Skua.Core.AppStartup.HotKeys.WM_SKUA_LOGIN_STATE)
 +        {
 +            if (_loginRequestBusy == 1)
 +                return new IntPtr(3);
 +            var bot = Ioc.Default.GetRequiredService<IScriptInterface>();
 +            return new IntPtr(bot.Player.LoggedIn ? 2 : 1);
-+        }
+         }
          else if (uMsg == 0x0400 + 448) // WM_SKUA_LOGOUT
          {
-             Ioc.Default.GetRequiredService<IScriptServers>().Logout();
-@@ -631,46 +891,8 @@ public partial class MainWindow : Window
+@@ -631,46 +906,8 @@
          }
          else if (uMsg == 0x0400 + 452) // WM_SKUA_THROTTLE
          {
@@ -2554,7 +2672,6 @@ index 3892328..904e4ab 100644
          }
          else if (uMsg == WM_SKUA_OPEN_BANK)
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
-index 274c1e7..26d8054 100644
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
 @@ -7,7 +7,7 @@
@@ -2566,11 +2683,28 @@ index 274c1e7..26d8054 100644
          WindowStartupLocation="CenterScreen" Background="{DynamicResource SkuaPageBrush}">
      <Grid RowDefinitions="Auto,*">
          
+@@ -95,6 +95,17 @@
+                                 <Style Selector="TabControl /template/ Rectangle#PART_Separator">
+                                     <Setter Property="IsVisible" Value="False" />
+                                 </Style>
++                                <Style Selector="TabItem.drag-source">
++                                    <Setter Property="Opacity" Value="0.55" />
++                                </Style>
++                                <Style Selector="TabItem.insert-before /template/ Border#PART_LayoutRoot, TabItem.insert-before /template/ Border#PART_RootBorder">
++                                    <Setter Property="BorderBrush" Value="{DynamicResource SkuaAccentBrush}" />
++                                    <Setter Property="BorderThickness" Value="3,1,1,0" />
++                                </Style>
++                                <Style Selector="TabItem.insert-after /template/ Border#PART_LayoutRoot, TabItem.insert-after /template/ Border#PART_RootBorder">
++                                    <Setter Property="BorderBrush" Value="{DynamicResource SkuaAccentBrush}" />
++                                    <Setter Property="BorderThickness" Value="1,1,3,0" />
++                                </Style>
+                             </TabControl.Styles>
+                             <TabControl.ItemsPanel>
+                                 <ItemsPanelTemplate>
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
-index 4eeac58..06d20ba 100644
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
-@@ -44,6 +44,11 @@ public partial class TabbedHostWindow : Window
+@@ -45,6 +45,11 @@
      private SubclassProc? _subclassProc;
      private const int WM_SKUA_CHILD_READY = 0x0400 + 440;
  
@@ -2582,7 +2716,15 @@ index 4eeac58..06d20ba 100644
      [DllImport("user32.dll", SetLastError = true)]
      public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
  
-@@ -280,7 +285,10 @@ public partial class TabbedHostWindow : Window
+@@ -222,6 +227,7 @@
+         public IntPtr ChildHwnd { get; set; } = IntPtr.Zero;
+         public bool IsThrottled { get; set; } = false;
+         public bool IsCustomNamed { get; set; } = false;
++        public string AccountOrderKey { get; set; } = "";
+     }
+ 
+     private readonly string[] _initialArgs;
+@@ -300,7 +306,10 @@
      {
          _initialArgs = initialArgs ?? Array.Empty<string>();
          InitializeComponent();
@@ -2594,19 +2736,28 @@ index 4eeac58..06d20ba 100644
  
          var options = Ioc.Default.GetRequiredService<IScriptOption>();
          MiscOptionsMenu.DataContext = options;
-@@ -326,6 +334,11 @@ public partial class TabbedHostWindow : Window
+@@ -345,6 +354,11 @@
+         var titleSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
          titleSyncTimer.Tick += (s, e) => SyncTabTitles();
          titleSyncTimer.Start();
- 
++
 +        // VibeSkuffle alerts: the once-a-day watchdog summary to Discord (alerts.txt).
 +        var summaryTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
 +        summaryTimer.Tick += (s, e) => System.Threading.Tasks.Task.Run(Skua.Core.Services.VibeAlerts.DailySummaryTick);
 +        summaryTimer.Start();
-+
+ 
          GridViewBorder.PointerEntered += GridViewBorder_PointerEntered;
          GridViewBorder.PointerExited += GridViewBorder_PointerExited;
-         GlobeBorder.PointerEntered += GlobeBorder_PointerEntered;
-@@ -563,6 +576,8 @@ public partial class TabbedHostWindow : Window
+@@ -395,7 +409,7 @@
+ 
+                         if (tab.Header is StackPanel headerPanel)
+                         {
+-                            var titleBlock = headerPanel.Children.OfType<TextBlock>().FirstOrDefault(tb => tb.Text != "✕");
++                            var titleBlock = headerPanel.Children.OfType<TextBlock>().FirstOrDefault(tb => tb.Text != "ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢");
+                             var editBox = headerPanel.Children.OfType<TextBox>().FirstOrDefault();
+                             if (titleBlock != null && (titleBlock.Text.StartsWith("User ") || titleBlock.Text.StartsWith("Skua ") || titleBlock.Text != username))
+                             {
+@@ -590,6 +604,8 @@
  
      private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
      {
@@ -2615,7 +2766,7 @@ index 4eeac58..06d20ba 100644
          _isClosing = true;
          App.DisposeTrayIcon();
          try { _pipeCts.Cancel(); } catch { }
-@@ -617,7 +632,7 @@ public partial class TabbedHostWindow : Window
+@@ -646,7 +662,7 @@
                  try
                  {
                      pipeServer = new NamedPipeServerStream(
@@ -2624,7 +2775,7 @@ index 4eeac58..06d20ba 100644
                          PipeDirection.In,
                          NamedPipeServerStream.MaxAllowedServerInstances,
                          PipeTransmissionMode.Byte,
-@@ -1162,7 +1177,8 @@ public partial class TabbedHostWindow : Window
+@@ -1193,7 +1209,8 @@
              string[] parts = (vm.DialogTextInput ?? "").Split(',');
              string targetMap = parts.Length > 0 ? parts[0].Trim() : "";
              string targetCell = parts.Length > 1 ? parts[1].Trim() : "Enter";
@@ -2634,10 +2785,18 @@ index 4eeac58..06d20ba 100644
              {
                  _lastJumpMap = targetMap;
                  _lastJumpCell = targetCell;
-@@ -1353,6 +1369,10 @@ public partial class TabbedHostWindow : Window
-                     if (info.ChildHwnd != IntPtr.Zero)
-                         SetWindowPos(info.ChildHwnd, HWND_TOP, -32000, -32000, 0, 0, SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | SWP_NOSIZE);
-                 }
+@@ -1391,9 +1408,15 @@
+ 
+             if (WindowState == WindowState.Minimized || !IsVisible)
+             {
+-                // Let Windows handle visibility for owned windows when the host is hidden.
+-                // Explicitly hiding the embedded Flash HWND can leave the child renderer black
+-                // after restoration, so do not send SW_HIDE to child windows here.
++                foreach (var info in _tabs.Values)
++                {
++                    if (info.ChildHwnd != IntPtr.Zero)
++                        SetWindowPos(info.ChildHwnd, HWND_TOP, -32000, -32000, 0, 0, SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS | SWP_NOSIZE);
++                }
 +                // The children are off-screen now: forget the last placement, or the restore below
 +                // sees "same position as before" and leaves them there (a black window).
 +                _lastX = int.MinValue;
@@ -2645,7 +2804,7 @@ index 4eeac58..06d20ba 100644
                  return;
              }
  
-@@ -1580,6 +1600,86 @@ public partial class TabbedHostWindow : Window
+@@ -1643,6 +1666,86 @@
              InstancesTabControl.SelectedItem = remaining;
      }
  
@@ -2732,7 +2891,67 @@ index 4eeac58..06d20ba 100644
      public void AddNewInstance(string rawArgs)
      {
          AddNewInstance(ParseRawCommandLine(rawArgs));
-@@ -1774,6 +1874,17 @@ public partial class TabbedHostWindow : Window
+@@ -1656,7 +1759,7 @@
+         var currentTitles = InstancesTabControl.Items.OfType<TabItem>()
+             .Select(t => t.Header as StackPanel)
+             .Where(p => p != null)
+-            .Select(p => p!.Children.OfType<TextBlock>().FirstOrDefault(tb => tb.Text != "✕")?.Text)
++            .Select(p => p!.Children.OfType<TextBlock>().FirstOrDefault(tb => tb.Text != "ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢")?.Text)
+             .Where(t => t != null && (t.StartsWith("User ") || t.StartsWith("Skua ")))
+             .Select(t =>
+             {
+@@ -1733,27 +1836,29 @@
+             CornerRadius = new CornerRadius(9),
+             VerticalAlignment = VerticalAlignment.Center
+         };
+-        TextBlock closeTxt = new TextBlock
+-        {
+-            Text = "✕",
+-            FontSize = 10,
+-            FontWeight = FontWeight.Bold,
++        MaterialIcon closeIcon = new MaterialIcon
++        {
++            Kind = MaterialIconKind.Close,
++            Width = 10,
++            Height = 10,
+             HorizontalAlignment = HorizontalAlignment.Center,
+-            VerticalAlignment = VerticalAlignment.Center
++            VerticalAlignment = VerticalAlignment.Center,
++            IsHitTestVisible = false
+         };
+-        closeTxt[!TextBlock.ForegroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("SkuaMutedTextBrush");
+-        closeBtn.Child = closeTxt;
++        closeIcon[!MaterialIcon.ForegroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("SkuaMutedTextBrush");
++        ToolTip.SetTip(closeBtn, "Close account tab");
++        closeBtn.Child = closeIcon;
+ 
+         headerPanel.Children.Add(tabIcon);
+         headerPanel.Children.Add(editTitle);
+         headerPanel.Children.Add(title);
+         headerPanel.Children.Add(closeBtn);
+ 
+-        closeBtn.PointerEntered += (s, ev) => { closeTxt.Foreground = Brushes.White; closeBtn.Background = new SolidColorBrush(Color.Parse("#EF4444")); };
+-        closeBtn.PointerExited += (s, ev) => { closeTxt[!TextBlock.ForegroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("SkuaMutedTextBrush"); closeBtn.Background = Brushes.Transparent; };
+-
+-        TabInfo info = new TabInfo();
+-
++        closeBtn.PointerEntered += (s, ev) => { closeIcon.Foreground = Brushes.White; closeBtn.Background = new SolidColorBrush(Color.Parse("#EF4444")); };
++        closeBtn.PointerExited += (s, ev) => { closeIcon[!MaterialIcon.ForegroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("SkuaMutedTextBrush"); closeBtn.Background = Brushes.Transparent; };
++        
++        TabInfo info = new TabInfo { AccountOrderKey = AccountKey(clientArgs ?? Array.Empty<string>()) };
++        
+         Action closeEditMode = () =>
+         {
+             if (!editTitle.IsVisible) return;
+@@ -1816,6 +1921,7 @@
+         }, DispatcherPriority.Background);
+ 
+         _tabs[newTab] = info;
++        RestoreTabOrder();
+ 
+         EnqueueSpawn(() =>
+         {
+@@ -1846,6 +1952,17 @@
                  {
                      if (!_isClosing)
                      {
@@ -2750,9 +2969,9 @@ index 4eeac58..06d20ba 100644
                          CloseTab(newTab);
                      }
                  });
-@@ -1781,13 +1892,9 @@ public partial class TabbedHostWindow : Window
+@@ -1870,13 +1987,9 @@
+             }
  
-             p.Start();
              info.Process = p;
 -            try
 -            {
@@ -2767,7 +2986,7 @@ index 4eeac58..06d20ba 100644
              HotKeys.RegisterSkuaPid((uint)p.Id);
  
              int pid = p.Id;
-@@ -1838,6 +1945,26 @@ public partial class TabbedHostWindow : Window
+@@ -1940,6 +2053,26 @@
          ContextMenu ctx = new ContextMenu();
          MenuItem closeItem = new MenuItem { Header = "Close Tab" };
          closeItem.Click += (s, ev) => CloseTab(newTab);
@@ -2794,7 +3013,7 @@ index 4eeac58..06d20ba 100644
          MenuItem closeOthersItem = new MenuItem { Header = "Close Other Tabs" };
          closeOthersItem.Click += (s, ev) =>
          {
-@@ -1851,6 +1978,21 @@ public partial class TabbedHostWindow : Window
+@@ -1953,6 +2086,21 @@
              var toRemove = InstancesTabControl.Items.OfType<TabItem>().Where((t, i) => i > idx && t.Header is StackPanel).ToList();
              foreach (var tab in toRemove) CloseTab(tab);
          };
@@ -2816,9 +3035,169 @@ index 4eeac58..06d20ba 100644
          ctx.Items.Add(closeItem);
          ctx.Items.Add(closeOthersItem);
          ctx.Items.Add(closeRightItem);
+@@ -1978,7 +2126,16 @@
+         newTab.ContextMenu = ctx;
+ 
+         Point startPoint = new Point();
+-        headerPanel.PointerPressed += (s, ev) =>
++        bool dragging = false;
++        headerPanel.AddHandler(PointerReleasedEvent, (s, ev) =>
++        {
++            if (!dragging && ev.InitialPressMouseButton == MouseButton.Left && _isGridViewEnabled)
++            {
++                InstancesTabControl.SelectedItem = newTab;
++                ExitGridView();
++            }
++        }, RoutingStrategies.Bubble);
++        headerPanel.PointerPressed += (s, ev) => 
+         {
+             var prop = ev.GetCurrentPoint(headerPanel).Properties;
+             if (prop.IsRightButtonPressed)
+@@ -1991,21 +2148,7 @@
+                 return;
+ 
+             startPoint = ev.GetPosition(null);
+-            InstancesTabControl.SelectedItem = newTab;
+-
+-            if (_isGridViewEnabled)
+-            {
+-                _isGridViewEnabled = false;
+-                UpdateGridViewBorderColor();
+-                foreach (var tInfo in _tabs.Values)
+-                {
+-                    if (tInfo.ChildHwnd != IntPtr.Zero)
+-                    {
+-                        PostMessage(tInfo.ChildHwnd, WM_SKUA_GRIDVIEW, IntPtr.Zero, IntPtr.Zero);
+-                    }
+-                }
+-                DoReposition();
+-            }
++            if (!_isGridViewEnabled) InstancesTabControl.SelectedItem = newTab;
+             ev.Handled = true;
+         };
+ 
+@@ -2019,8 +2162,8 @@
+ 
+         headerPanel.PointerMoved += async (s, ev) =>
+         {
+-            if (editTitle.IsVisible) return;
+-
++            if (editTitle.IsVisible || dragging) return;
++            
+             if (ev.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
+             {
+                 Point mousePos = ev.GetPosition(null);
+@@ -2029,10 +2172,34 @@
+                 {
+                     var dragData = new global::Avalonia.Input.DataObject();
+                     dragData.Set("TabItem", newTab);
+-                    await DragDrop.DoDragDrop(ev, dragData, DragDropEffects.Move);
++                    dragging = true;
++                    newTab.Classes.Add("drag-source");
++                    headerPanel.Cursor = new Cursor(StandardCursorType.SizeAll);
++                    try { await DragDrop.DoDragDrop(ev, dragData, DragDropEffects.Move); }
++                    finally
++                    {
++                        dragging = false;
++                        newTab.Classes.Remove("drag-source");
++                        headerPanel.Cursor = null;
++                        ClearTabDropIndicators();
++                    }
+                 }
+             }
+         };
++        
++        newTab.AddHandler(DragDrop.DragOverEvent, (s, ev) =>
++        {
++            ClearTabDropIndicators();
++            ev.DragEffects = ev.Data.Get("TabItem") is TabItem source && source != newTab ? DragDropEffects.Move : DragDropEffects.None;
++            if (ev.DragEffects == DragDropEffects.Move)
++                newTab.Classes.Add(ev.GetPosition(newTab).X < newTab.Bounds.Width / 2 ? "insert-before" : "insert-after");
++            ev.Handled = true;
++        });
++        newTab.AddHandler(DragDrop.DragLeaveEvent, (_, _) =>
++        {
++            newTab.Classes.Remove("insert-before");
++            newTab.Classes.Remove("insert-after");
++        });
+ 
+         newTab.AddHandler(DragDrop.DropEvent, (s, ev) =>
+         {
+@@ -2041,15 +2208,69 @@
+                 TabItem? droppedTab = ev.Data.Get("TabItem") as TabItem;
+                 if (droppedTab != null && droppedTab != newTab)
+                 {
++                    int sourceIndex = InstancesTabControl.Items.IndexOf(droppedTab);
+                     int targetIndex = InstancesTabControl.Items.IndexOf(newTab);
+-                    InstancesTabControl.Items.Remove(droppedTab);
+-                    InstancesTabControl.Items.Insert(targetIndex, droppedTab);
+-                    InstancesTabControl.SelectedItem = droppedTab;
++                    if (ev.GetPosition(newTab).X >= newTab.Bounds.Width / 2) targetIndex++;
++                    if (sourceIndex < targetIndex) targetIndex--;
++                    ClearTabDropIndicators();
++                    _ignoreSelectionChange = true;
++                    try
++                    {
++                        InstancesTabControl.Items.Remove(droppedTab);
++                        InstancesTabControl.Items.Insert(targetIndex, droppedTab);
++                        InstancesTabControl.SelectedItem = droppedTab;
++                    }
++                    finally { _ignoreSelectionChange = false; }
++                    SaveTabOrder();
++                    _lastActiveHwnd = IntPtr.Zero;
++                    _lastGridViewState = !_isGridViewEnabled;
++                    DoReposition();
++                    ev.Handled = true;
+                 }
+             }
+         });
+ 
+         #endregion Tab Interactions
++    }
++
++    private void ClearTabDropIndicators()
++    {
++        foreach (TabItem tab in InstancesTabControl.Items.OfType<TabItem>())
++        {
++            tab.Classes.Remove("insert-before");
++            tab.Classes.Remove("insert-after");
++        }
++    }
++    private void SaveTabOrder()
++    {
++        var settings = Ioc.Default.GetService<ISettingsService>();
++        if (settings == null) return;
++        List<string> order = InstancesTabControl.Items.OfType<TabItem>()
++            .Where(t => _tabs.ContainsKey(t)).Select(t => _tabs[t].AccountOrderKey)
++            .Where(k => k.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
++        // Retain positions for accounts temporarily absent during a restart.
++        order.AddRange(settings.Get("VibeSkuffleTabOrder", new List<string>()).Where(k => !order.Contains(k, StringComparer.OrdinalIgnoreCase)));
++        settings.Set("VibeSkuffleTabOrder", order);
++    }
++
++    private void RestoreTabOrder()
++    {
++        var order = Ioc.Default.GetService<ISettingsService>()?.Get("VibeSkuffleTabOrder", new List<string>());
++        if (order == null || order.Count == 0) return;
++        _ignoreSelectionChange = true;
++        object? selected = InstancesTabControl.SelectedItem;
++        var tabs = InstancesTabControl.Items.OfType<TabItem>().Where(t => _tabs.ContainsKey(t)).ToList();
++        foreach (TabItem tab in tabs.OrderBy(t =>
++        {
++            int index = order.FindIndex(k => k.Equals(_tabs[t].AccountOrderKey, StringComparison.OrdinalIgnoreCase));
++            return index < 0 ? int.MaxValue : index;
++        }).ToList())
++        {
++            InstancesTabControl.Items.Remove(tab);
++            InstancesTabControl.Items.Add(tab);
++        }
++        InstancesTabControl.SelectedItem = selected;
++        _ignoreSelectionChange = false;
+     }
+ 
+     #region Group Assignment Helper
 diff --git a/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs b/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs
 new file mode 100644
-index 0000000..38ff1c0
 --- /dev/null
 +++ b/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs
 @@ -0,0 +1,20 @@
@@ -2842,31 +3221,59 @@ index 0000000..38ff1c0
 +    /// </summary>
 +    void RestartClient(bool runScript);
 +}
+diff --git a/Skua.Core.Interfaces/Scripts/IScriptDrop.cs b/Skua.Core.Interfaces/Scripts/IScriptDrop.cs
+--- a/Skua.Core.Interfaces/Scripts/IScriptDrop.cs
++++ b/Skua.Core.Interfaces/Scripts/IScriptDrop.cs
+@@ -180,6 +180,9 @@
+     /// </summary>
+     /// <param name="skipWait">Whether <see cref="IScriptOption.SafeTimings"/> is ignored.</param>
+     void RejectAll(bool skipWait = false);
++    void RejectCurrentDrops(bool keepAC);
++    Task<string> PickupACToBankAsync(CancellationToken cancellationToken = default);
++    string ACBankingStatus { get; }
+ 
+     /// <summary>
+     /// Rejects all drops except those in the specified list of <paramref name="names"/>.
+@@ -192,4 +195,4 @@
+     /// </summary>
+     /// <param name="ids">IDs of the items to not reject.</param>
+     void RejectExcept(params int[] ids);
+-}
+\ No newline at end of file
++}
 diff --git a/Skua.Core.Interfaces/Scripts/IScriptInterface.cs b/Skua.Core.Interfaces/Scripts/IScriptInterface.cs
-index cbd0f96..d5aa955 100644
 --- a/Skua.Core.Interfaces/Scripts/IScriptInterface.cs
 +++ b/Skua.Core.Interfaces/Scripts/IScriptInterface.cs
-@@ -34,6 +34,12 @@ public interface IScriptInterfaceManager
- /// </remarks>
+@@ -35,6 +35,12 @@
  public interface IScriptInterface
  {
-+    /// <summary>
+     /// <summary>
 +    /// VibeSkuffle: true while a recovery is under way (re-login, game window restart, script restart, Rescue
 +    /// Allies), when a stopped script is about to start again rather than finished.
 +    /// </summary>
 +    bool RecoveryPending => false;
 +
-     /// <summary>
++    /// <summary>
      /// Static instance of the current <see cref="IScriptInterface"/>.
      /// </summary>
+     static IScriptInterface Instance { get; protected set; }
 diff --git a/Skua.Core.Interfaces/Scripts/IScriptOption.cs b/Skua.Core.Interfaces/Scripts/IScriptOption.cs
-index f736e5c..e67518b 100644
 --- a/Skua.Core.Interfaces/Scripts/IScriptOption.cs
 +++ b/Skua.Core.Interfaces/Scripts/IScriptOption.cs
-@@ -50,6 +50,18 @@ public interface IScriptOption : INotifyPropertyChanged
+@@ -39,6 +39,8 @@
+     /// When enabled will pick up any AC item that drops, even when the drop should be rejected.
+     /// </summary>
+     bool AcceptACDrops { get; set; }
++    bool PickupACDropsAndSendToBank { get; set; }
++    bool RejectNonACDrops { get; set; }
+ 
+     /// <summary>
+     /// When enabled will pick up any item that drops.
+@@ -49,6 +51,18 @@
+     /// When enabled will reject all items that drops (if <see cref="AcceptACDrops" /> is <see langword="true"/> will first accept AC items and then reject).
      /// </summary>
      bool RejectAllDrops { get; set; }
- 
++
 +    /// <summary>
 +    /// When enabled, a script's "Reject Else" (and its RejectExcept calls) no longer throw away drops the script
 +    /// didn't ask for; they stay in the drop list so they can be picked up by hand. "Reject All Drops" still works.
@@ -2878,19 +3285,16 @@ index f736e5c..e67518b 100644
 +    /// keeps dying (10 deaths without a kill, or 15 minutes of only deaths), then comes back and starts its script again.
 +    /// </summary>
 +    bool RescueAllies { get; set; }
-+
+ 
      /// <summary>
      /// Determines whether all monsters in the MAP should be provoked. They will all attack you at the same time.
-     /// </summary>
 diff --git a/Skua.Core.Interfaces/Scripts/IScriptServers.cs b/Skua.Core.Interfaces/Scripts/IScriptServers.cs
-index 2bd297c..e880eff 100644
 --- a/Skua.Core.Interfaces/Scripts/IScriptServers.cs
 +++ b/Skua.Core.Interfaces/Scripts/IScriptServers.cs
-@@ -22,6 +22,37 @@ public interface IScriptServers : INotifyPropertyChanged
-     /// <param name="password">The password associated with the specified username. Cannot be null.</param>
+@@ -23,6 +23,37 @@
      void SetLoginInfo(string username, string password);
  
-+    /// <summary>
+     /// <summary>
 +    /// Keeps the username and password the game currently holds (what the player typed in) so a re-login
 +    /// can still use them after the game is reloaded. Returns false when there are none.
 +    /// </summary>
@@ -2921,14 +3325,73 @@ index 2bd297c..e880eff 100644
 +    /// <summary>Logs out as part of a re-login (doesn't count as <see cref="UserLoggedOut"/>).</summary>
 +    void LogoutForRelogin();
 +
-     /// <summary>
++    /// <summary>
      /// The IP of the last server the player was connected to.
      /// </summary>
+     string LastIP { get; set; }
+diff --git a/Skua.Core.Models/ClientFileSources.cs b/Skua.Core.Models/ClientFileSources.cs
+--- a/Skua.Core.Models/ClientFileSources.cs
++++ b/Skua.Core.Models/ClientFileSources.cs
+@@ -12,20 +12,40 @@
+     public static bool IsNightly { get; } = AssemblyVersion.Contains('-', StringComparison.Ordinal);
+     public static string DisplayVersion { get; } = IsNightly ? AssemblyVersion + "-N" : AssemblyVersion;
+ 
+-    public static string LegacySkuaDIR { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Skua");
+-    public static string SkuaDIR { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeSkua");
++    // Isolated smoke-test processes can use temporary data without touching real accounts or scripts.
++    private static string DataRoot => Environment.GetEnvironmentVariable("VIBESKUFFLE_TEST_DATA_ROOT") is { Length: > 0 } testRoot
++        ? Path.GetFullPath(testRoot) : Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
++    public static string LegacySkuaDIR { get; } = Path.Combine(DataRoot, "Skua");
++    public static string SkuaDIR { get; } = Path.Combine(DataRoot, "VibeSkua");
+     public static string VibeSkuaDIR => SkuaDIR;
+     public static string SkuaSettingsDIR { get; } = Path.Combine(SkuaDIR, "Skua.settings.json");
+-    public static string SkuaScriptsDIR { get; } = Path.Combine(SkuaDIR, "Scripts");
++    public static string SkuaScriptsDIR { get; } = Path.Combine(LegacySkuaDIR, "Scripts");
+     public static string SkuaThemesDIR { get; } = Path.Combine(SkuaDIR, "themes");
+     public static string SkuaOptionsDIR { get; } = Path.Combine(SkuaDIR, "options");
+     public static string SkuaPluginsDIR { get; } = Path.Combine(SkuaDIR, "plugins");
+     public static string SkuaAdvancedSkillsFile { get; } = Path.Combine(SkuaDIR, "AdvancedSkills.json");
+     public static string SkuaQuestsFile { get; } = Path.Combine(SkuaDIR, "QuestData.json");
+-    public static string SkuaScriptsCommitFile { get; } = Path.Combine(SkuaDIR, "scripts-commit.txt");
+-    public static string SkuaScriptDatesFile { get; } = Path.Combine(SkuaDIR, "ScriptDates.json");
+-    public static string SkuaScriptsCacheFile { get; } = Path.Combine(SkuaDIR, "scripts_cache.json");
++    public static string SkuaScriptsCommitFile { get; } = Path.Combine(LegacySkuaDIR, "scripts-commit.txt");
++    public static string SkuaScriptDatesFile { get; } = Path.Combine(LegacySkuaDIR, "ScriptDates.json");
++    public static string SkuaScriptsCacheFile { get; } = Path.Combine(LegacySkuaDIR, "scripts_cache.json");
+     public static string SkuaJunkItemsFile { get; } = Path.Combine(SkuaScriptsDIR, "JunkItems.json");
++
++    public static string ResolveScriptPath(string path)
++    {
++        if (string.IsNullOrWhiteSpace(path)) return path;
++        try
++        {
++            string oldRoot = Path.GetFullPath(Path.Combine(VibeSkuaDIR, "Scripts")) + Path.DirectorySeparatorChar;
++            string full = Path.GetFullPath(path);
++            if (full.StartsWith(oldRoot, StringComparison.OrdinalIgnoreCase))
++            {
++                string candidate = Path.Combine(SkuaScriptsDIR, full[oldRoot.Length..]);
++                if (File.Exists(candidate)) return candidate;
++            }
++        }
++        catch { }
++        return path;
++    }
+ 
+     private static bool _migrationAttempted;
+     private static readonly object _migrationLock = new();
+@@ -41,7 +61,7 @@
+                 return;
+             _migrationAttempted = true;
+ 
+-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
++            string appData = DataRoot;
+             string vibeSkuaDir = Path.Combine(appData, "VibeSkua");
+             string legacySkuaDir = Path.Combine(appData, "Skua");
+             string migrationMarker = Path.Combine(vibeSkuaDir, ".migration_done");
 diff --git a/Skua.Core/AppStartup/HotKeys.cs b/Skua.Core/AppStartup/HotKeys.cs
-index 7b78a10..31651f8 100644
 --- a/Skua.Core/AppStartup/HotKeys.cs
 +++ b/Skua.Core/AppStartup/HotKeys.cs
-@@ -287,7 +287,7 @@ public class HotKeys
+@@ -287,7 +287,7 @@
  
              try
              {
@@ -2937,7 +3400,7 @@ index 7b78a10..31651f8 100644
                  foreach (var p in skuaProcesses)
                      pids.Add((uint)p.Id);
              }
-@@ -571,19 +571,122 @@ public class HotKeys
+@@ -571,19 +571,122 @@
          options.LagKiller = !options.LagKiller;
      }
  
@@ -2965,7 +3428,6 @@ index 7b78a10..31651f8 100644
 -        var skuaProcesses = System.Diagnostics.Process.GetProcessesByName(System.Diagnostics.Process.GetCurrentProcess().ProcessName);
 -        var pids = skuaProcesses.Select(p => p.Id).ToHashSet();
 -        
--        EnumWindows((hWnd, lp) =>
 +        PostToArmyClients(msg, wParam, lParam, includeSelf: true);
 +    }
 +
@@ -3026,32 +3488,36 @@ index 7b78a10..31651f8 100644
 +        var found = new List<IntPtr>();
 +
 +        void Consider(IntPtr hWnd)
-         {
-             GetWindowThreadProcessId(hWnd, out uint pid);
--            if (pids.Contains((int)pid))
++        {
++            GetWindowThreadProcessId(hWnd, out uint pid);
 +            if (!pids.Contains((int)pid))
 +                return;
 +            // Only a client's own top window: skip its inner child windows (same process as the parent).
 +            IntPtr parent = GetParent(hWnd);
 +            if (parent != IntPtr.Zero)
-             {
--                PostMessage(hWnd, msg, new IntPtr(wParam), new IntPtr(lParam));
++            {
 +                GetWindowThreadProcessId(parent, out uint parentPid);
 +                if (parentPid == pid)
 +                    return;
-             }
++            }
 +            found.Add(hWnd);
 +        }
 +
-+        EnumWindows((hWnd, lp) =>
-+        {
+         EnumWindows((hWnd, lp) =>
+         {
+-            GetWindowThreadProcessId(hWnd, out uint pid);
+-            if (pids.Contains((int)pid))
+-            {
+-                PostMessage(hWnd, msg, new IntPtr(wParam), new IntPtr(lParam));
+-            }
 +            Consider(hWnd);
 +            EnumChildWindows(hWnd, (child, lp2) => { Consider(child); return true; }, IntPtr.Zero);
              return true;
          }, IntPtr.Zero);
+-    }
 +        foreach (IntPtr hWnd in found)
 +            action(hWnd);
-     }
++    }
 +
 +    [DllImport("user32.dll", SetLastError = true)]
 +    private static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
@@ -3066,11 +3532,299 @@ index 7b78a10..31651f8 100644
 +    public const int LOGIN_USE_SERVER_FILE = 1;
 +    public static string LoginServerFile => System.IO.Path.Combine(System.IO.Path.GetTempPath(), "skua_login_server.txt");
  }
+diff --git a/Skua.Core/Plugins/PluginManager.cs b/Skua.Core/Plugins/PluginManager.cs
+--- a/Skua.Core/Plugins/PluginManager.cs
++++ b/Skua.Core/Plugins/PluginManager.cs
+@@ -26,6 +26,8 @@
+         {
+             foreach (string file in Directory.GetFiles(localPluginsDir, "*.dll"))
+             {
++                if (Path.GetFileName(file).Equals("ButlerV5.dll", StringComparison.OrdinalIgnoreCase))
++                    continue;
+                 string dest = Path.Combine(ClientFileSources.SkuaPluginsDIR, Path.GetFileName(file));
+                 try
+                 {
+@@ -36,8 +38,17 @@
+             }
+         }
+ 
++        string bundledButler = Path.Combine(localPluginsDir, "ButlerV5.dll");
++        if (File.Exists(bundledButler))
++        {
++            Exception? error = Load(bundledButler);
++            if (error != null) Trace.WriteLine($"Bundled ButlerV5 failed: {error}");
++        }
++        else Trace.WriteLine("Bundled ButlerV5.dll is missing; reinstall VibeSkuffle to restore it.");
++
+         Directory.GetFiles(ClientFileSources.SkuaPluginsDIR)
+-            .Where(f => f.EndsWith(".dll"))
++            .Where(f => f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) &&
++                        !Path.GetFileName(f).Equals("ButlerV5.dll", StringComparison.OrdinalIgnoreCase))
+             .ForEach(f =>
+             {
+                 Exception? e = Load(f);
+diff --git a/Skua.Core/Scripts/Inventory/ScriptInventory.cs b/Skua.Core/Scripts/Inventory/ScriptInventory.cs
+--- a/Skua.Core/Scripts/Inventory/ScriptInventory.cs
++++ b/Skua.Core/Scripts/Inventory/ScriptInventory.cs
+@@ -93,7 +93,7 @@
+ 
+     public bool ToBank(InventoryItem item)
+     {
+-        if (!CanBank(item))
++        if (!Player.Playing || Player.InCombat || !CanBank(item))
+             return false;
+         Send.Packet($"%xt%zm%bankFromInv%{Map.RoomID}%{item.ID}%{item.CharItemID}%");
+         Wait.ForInventoryToBank(item.Name);
+diff --git a/Skua.Core/Scripts/ScriptCombat.cs b/Skua.Core/Scripts/ScriptCombat.cs
+--- a/Skua.Core/Scripts/ScriptCombat.cs
++++ b/Skua.Core/Scripts/ScriptCombat.cs
+@@ -75,7 +75,7 @@
+ 
+     public bool Attack(string name)
+     {
+-        if (StopAttacking)
++        if (StopAttacking || ScriptDrop.BankingACDrops)
+         {
+             CancelTarget();
+             return false;
+@@ -86,7 +86,7 @@
+ 
+     public bool Attack(int id)
+     {
+-        if (StopAttacking)
++        if (StopAttacking || ScriptDrop.BankingACDrops)
+         {
+             CancelTarget();
+             return false;
+@@ -97,7 +97,7 @@
+ 
+     public bool AttackPlayer(string name)
+     {
+-        return Flash.Call<bool>("attackPlayer", name);
++        return !ScriptDrop.BankingACDrops && Flash.Call<bool>("attackPlayer", name);
+     }
+ 
+     private void PlayerDead(ScriptCombat recipient, PlayerDeathMessage message)
+diff --git a/Skua.Core/Scripts/ScriptDrop.ACBanking.cs b/Skua.Core/Scripts/ScriptDrop.ACBanking.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.Core/Scripts/ScriptDrop.ACBanking.cs
+@@ -0,0 +1,176 @@
++using Skua.Core.Interfaces;
++using Skua.Core.Models.Items;
++
++namespace Skua.Core.Scripts;
++
++public partial class ScriptDrop
++{
++    private readonly Lazy<IScriptBank> _bank;
++    private readonly Lazy<IScriptCombat> _combat;
++    private readonly SemaphoreSlim _bankGate = new(1, 1);
++    private readonly CancellationTokenSource _autoLootCts = new();
++    private readonly Task _autoLootTask;
++    private readonly Dictionary<int, (string Name, int Attempts)> _pendingBank = new();
++    private readonly Dictionary<int, DateTime> _lootRetry = new();
++    private bool _manualBankPending;
++    private readonly Dictionary<int, int> _pickupAttempts = new();
++    private int _lootSession;
++    private int _pendingSession;
++    private static int _bankingACDrops;
++    internal static bool BankingACDrops => Volatile.Read(ref _bankingACDrops) != 0;
++
++    public void RejectCurrentDrops(bool keepAC)
++    {
++        string[] keep = keepAC ? CurrentDropInfos.Where(d => d.Coins).Select(d => d.Name).ToArray() : Array.Empty<string>();
++        if (!Flash.Call<bool>("rejectExcept", string.Join(',', keep).ToLowerInvariant())) return;
++        HashSet<string> names = new(keep, StringComparer.OrdinalIgnoreCase);
++        _currentDropInfos.Remove(d => !names.Contains(d.Name));
++        OnPropertyChanged(nameof(CurrentDropInfos));
++        OnPropertyChanged(nameof(CurrentDrops));
++    }
++
++    public string ACBankingStatus { get; private set; } = "";
++    private void ReportACBanking(string status)
++    {
++        if (ACBankingStatus == status) return;
++        ACBankingStatus = status;
++        OnPropertyChanged(nameof(ACBankingStatus));
++    }
++
++    public Task<string> PickupACToBankAsync(CancellationToken cancellationToken = default) =>
++        Task.Run(async () =>
++        {
++            string status = await BankACDrops(false, cancellationToken);
++            ReportACBanking(status);
++            return status;
++        }, cancellationToken);
++
++    private async Task AutoLootLoop()
++    {
++        CancellationToken token = _autoLootCts.Token;
++        while (!token.IsCancellationRequested)
++        {
++            try
++            {
++                await Task.Delay(1000, token);
++                if (!Player.LoggedIn) continue;
++                // Rejection is legal during combat and must never be blocked behind banking.
++                if (Options.RejectNonACDrops && CurrentDropInfos.Any(d => !d.Coins))
++                    RejectCurrentDrops(true);
++                if ((Options.PickupACDropsAndSendToBank || _manualBankPending) && !Player.InCombat && Player.Playing)
++                {
++                    string status = await BankACDrops(!_manualBankPending, token, true);
++                    if (status != "No AC drops to bank.") ReportACBanking(status);
++                }
++            }
++            catch (OperationCanceledException) when (token.IsCancellationRequested) { break; }
++            catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"AC loot: {ex.Message}"); }
++        }
++    }
++
++    private async Task<string> BankACDrops(bool automatic, CancellationToken token, bool resuming = false)
++    {
++        if (!await _bankGate.WaitAsync(0, token)) return "AC banking is already queued.";
++        string account = Player.Username;
++        int session = Volatile.Read(ref _lootSession);
++        if (_pendingSession != session)
++        {
++            _pendingBank.Clear(); _lootRetry.Clear(); _pickupAttempts.Clear(); _pendingSession = session;
++        }
++        if (!automatic && !resuming) { _lootRetry.Clear(); _pickupAttempts.Clear(); }
++        if (!automatic) _manualBankPending = true;
++        try
++        {
++            if (!Player.Playing) return "Log in before banking AC drops.";
++            DateTime deadline = DateTime.UtcNow.AddSeconds(60);
++            while (Player.InCombat)
++            {
++                if (automatic) return "Waiting for combat to end.";
++                if (!Player.Playing || Player.Username != account) return "AC banking cancelled after logout.";
++                if (DateTime.UtcNow >= deadline) return "Still in combat. Try again after combat ends.";
++                await Task.Delay(250, token);
++            }
++            ItemBase[] drops = CurrentDropInfos.Where(d => d.Coins && !d.Temp && (!_pickupAttempts.TryGetValue(d.ID, out int count) || count < 3) &&
++                (!_lootRetry.TryGetValue(d.ID, out DateTime retry) || retry <= DateTime.UtcNow)).ToArray();
++            if (drops.Length == 0 && _pendingBank.Count == 0) return "No AC drops to bank.";
++
++            Interlocked.Exchange(ref _bankingACDrops, 1);
++            _combat.Value.CancelAutoAttack();
++            // Let attacks already sent settle, then recheck before every operation.
++            await Task.Delay(500, token);
++            if (!SafeToBank(account)) return "Combat resumed; AC banking will wait.";
++            List<string> banked = new(), failed = new();
++            foreach (ItemBase drop in drops)
++            {
++                if (!SafeToBank(account) || (automatic && !Options.PickupACDropsAndSendToBank)) break;
++                if (session != Volatile.Read(ref _lootSession) || !CurrentDropInfos.Any(d => d.ID == drop.ID)) continue;
++                _pickupAttempts[drop.ID] = _pickupAttempts.GetValueOrDefault(drop.ID) + 1;
++                InventoryItem? previous = Inventory.Items.FirstOrDefault(i => i.ID == drop.ID);
++                if (previous?.Equipped == true || (previous != null && !Inventory.CanBank(previous)) || !Inventory.HasSpaceFor(drop))
++                {
++                    failed.Add(drop.Name);
++                    _lootRetry[drop.ID] = DateTime.UtcNow.AddSeconds(30);
++                    continue;
++                }
++                int quantity = previous?.Quantity ?? 0;
++                // Use the same server operation as Pickup, bypassing only our automatic-queue guard.
++                Send.Packet($"%xt%zm%getDrop%{Map.RoomID}%{drop.ID}%");
++                _currentDropInfos.Remove(d => d.ID == drop.ID);
++                DateTime until = DateTime.UtcNow.AddSeconds(10);
++                bool received = false;
++                while (SafeAccount(account) && DateTime.UtcNow < until)
++                {
++                    InventoryItem? item = Inventory.Items.FirstOrDefault(i => i.ID == drop.ID);
++                    if (item != null && item.Quantity > quantity) { received = true; break; }
++                    await Task.Delay(200, token);
++                }
++                if (received) _pendingBank[drop.ID] = (drop.Name, 0);
++                else failed.Add(drop.Name);
++            }
++
++            foreach (var entry in _pendingBank.ToArray())
++            {
++                if (!SafeToBank(account)) break;
++                if (_lootRetry.TryGetValue(entry.Key, out DateTime retry) && retry > DateTime.UtcNow) continue;
++                InventoryItem? item = Inventory.Items.FirstOrDefault(i => i.ID == entry.Key);
++                if (item == null) { _pendingBank.Remove(entry.Key); continue; }
++                if (!_bank.Value.Loaded) _bank.Value.Load(true);
++                if (!SafeToBank(account)) break;
++                if (item.Equipped || !Inventory.CanBank(item))
++                {
++                    failed.Add(entry.Value.Name);
++                    _pendingBank.Remove(entry.Key);
++                    continue;
++                }
++                if (Inventory.ToBank(item))
++                {
++                    banked.Add(entry.Value.Name);
++                    _pendingBank.Remove(entry.Key);
++                }
++                else
++                {
++                    int attempts = entry.Value.Attempts + 1;
++                    failed.Add(entry.Value.Name);
++                    if (attempts >= 3) _pendingBank.Remove(entry.Key);
++                    else _pendingBank[entry.Key] = (entry.Value.Name, attempts);
++                    _lootRetry[entry.Key] = DateTime.UtcNow.AddSeconds(30);
++                }
++            }
++            OnPropertyChanged(nameof(CurrentDropInfos));
++            OnPropertyChanged(nameof(CurrentDrops));
++            return (banked.Count > 0 ? $"Banked: {string.Join(", ", banked)}. " : "") +
++                (failed.Count > 0 ? $"Not banked: {string.Join(", ", failed.Distinct())}. Check inventory/bank space and item restrictions." :
++                _pendingBank.Count > 0 ? "Remaining items queued until out of combat." : banked.Count == 0 ? "No eligible AC drops." : "");
++        }
++        finally
++        {
++            if (!SafeAccount(account) || session != Volatile.Read(ref _lootSession)) { _pendingBank.Clear(); _lootRetry.Clear(); _pickupAttempts.Clear(); }
++            _manualBankPending = !automatic && _pendingBank.Count > 0;
++            Interlocked.Exchange(ref _bankingACDrops, 0);
++            _bankGate.Release();
++        }
++    }
++
++    private bool SafeAccount(string account) => _pendingSession == Volatile.Read(ref _lootSession) && Player.LoggedIn && Player.Username.Equals(account, StringComparison.OrdinalIgnoreCase);
++    private bool SafeToBank(string account) => SafeAccount(account) && Player.Playing && !Player.InCombat;
++}
 diff --git a/Skua.Core/Scripts/ScriptDrop.cs b/Skua.Core/Scripts/ScriptDrop.cs
-index 513dd82..098fad3 100644
 --- a/Skua.Core/Scripts/ScriptDrop.cs
 +++ b/Skua.Core/Scripts/ScriptDrop.cs
-@@ -132,6 +132,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -17,7 +17,7 @@
+         Lazy<IScriptWait> wait,
+         Lazy<IScriptOption> options,
+         Lazy<IScriptPlayer> player,
+-        Lazy<IScriptInventory> inventory)
++        Lazy<IScriptInventory> inventory, Lazy<IScriptBank> bank, Lazy<IScriptCombat> combat)
+     {
+         _lazySend = send;
+         _lazyWait = wait;
+@@ -26,6 +26,9 @@
+         _lazyPlayer = player;
+         _lazyFlash = flash;
+         _lazyInventory = inventory;
++        _bank = bank;
++        _combat = combat;
++        _autoLootTask = Task.Run(AutoLootLoop);
+ 
+         StrongReferenceMessenger.Default.Register<ScriptDrop, ItemDroppedMessage, int>(this, (int)MessageChannels.GameEvents, AddDrop);
+         StrongReferenceMessenger.Default.Register<ScriptDrop, LogoutMessage, int>(this, (int)MessageChannels.GameEvents, ClearDrops);
+@@ -75,6 +78,7 @@
+             return;
+ 
+         ItemBase drop = _currentDropInfos.Find(d => d.Name.ToLowerInvariant() == name.ToLowerInvariant())!;
++        if ((drop.Coins && Options.PickupACDropsAndSendToBank) || (!drop.Coins && Options.RejectNonACDrops)) return;
+         if (!drop.Temp && !Inventory.HasSpaceFor(drop))
+             return;
+         Send.Packet($"%xt%zm%getDrop%{Map.RoomID}%{drop.ID}%");
+@@ -86,6 +90,7 @@
+     public void Pickup(int id)
+     {
+         ItemBase? drop = CurrentDropInfos.FirstOrDefault(i => i.ID == id);
++        if (drop != null && ((drop.Coins && Options.PickupACDropsAndSendToBank) || (!drop.Coins && Options.RejectNonACDrops))) return;
+         if (drop is null || (!drop.Temp && !Inventory.HasSpaceFor(drop)))
+             return;
+ 
+@@ -132,6 +137,8 @@
      {
          if (Options.AcceptACDrops)
              PickupACItems();
@@ -3079,7 +3833,7 @@ index 513dd82..098fad3 100644
          RejectExceptCore(names);
      }
  
-@@ -139,6 +141,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -139,6 +146,8 @@
      {
          if (Options.AcceptACDrops)
              PickupACItems();
@@ -3088,7 +3842,16 @@ index 513dd82..098fad3 100644
          IEnumerable<string> items = CurrentDropInfos.Where(d => ids.Contains(d.ID)).Select(d => d.Name);
          RejectExceptCore(items);
      }
-@@ -273,7 +277,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -153,7 +162,7 @@
+     private void RejectExceptCore(IEnumerable<string> names)
+     {
+         HashSet<string> keep = new(names, StringComparer.OrdinalIgnoreCase);
+-        if (Options.AcceptACDrops)
++        if (Options.AcceptACDrops || Options.PickupACDropsAndSendToBank)
+             keep.UnionWith(CurrentDropInfos.Where(d => d.Coins).Select(d => d.Name));
+         if (!Flash.Call<bool>("rejectExcept", keep.Join(',').ToLowerInvariant()))
+             return;
+@@ -273,7 +282,7 @@
                  if (pickupNames.Length > 0)
                      Pickup(pickupNames);
  
@@ -3097,9 +3860,32 @@ index 513dd82..098fad3 100644
                      RejectExcept(BuildRejectElseWhitelist(pickupNames, pickupIDs));
              }
              catch (OperationCanceledException) when (token.IsCancellationRequested)
+@@ -320,6 +329,7 @@
+ 
+     private void ClearDrops(ScriptDrop recipient, LogoutMessage message)
+     {
++        Interlocked.Increment(ref recipient._lootSession);
+         recipient._currentDropInfos.Clear();
+         recipient.OnPropertyChanged(nameof(recipient.CurrentDropInfos));
+         recipient.OnPropertyChanged(nameof(recipient.CurrentDrops));
+@@ -357,6 +367,7 @@
+     {
+         if (_disposed) return;
+         _disposed = true;
++        _autoLootCts.Cancel();
+ 
+         try
+         {
+@@ -385,6 +396,7 @@
+     {
+         if (_disposed) return;
+         _disposed = true;
++        _autoLootCts.Cancel();
+ 
+         try
+         {
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..2349f78
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 @@ -0,0 +1,722 @@
@@ -3827,7 +4613,6 @@ index 0000000..2349f78
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.Rescue.cs b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
 new file mode 100644
-index 0000000..b897e0f
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
 @@ -0,0 +1,398 @@
@@ -4230,10 +5015,9 @@ index 0000000..b897e0f
 +    }
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.cs b/Skua.Core/Scripts/ScriptInterface.cs
-index 8775d94..acb7273 100644
 --- a/Skua.Core/Scripts/ScriptInterface.cs
 +++ b/Skua.Core/Scripts/ScriptInterface.cs
-@@ -12,7 +12,7 @@ using System.Diagnostics;
+@@ -12,7 +12,7 @@
  
  namespace Skua.Core.Scripts;
  
@@ -4242,7 +5026,7 @@ index 8775d94..acb7273 100644
  {
      private CancellationTokenSource? ScriptInterfaceCTS;
      private readonly Thread ScriptInterfaceThread;
-@@ -343,6 +343,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -343,6 +343,7 @@
                  });
  
                  _limit.LimitedRun("connDetail", 100, () => (lastConnChange, lastConnDetail) = CheckStuckonLoading(lastConnChange, lastConnDetail));
@@ -4250,7 +5034,7 @@ index 8775d94..acb7273 100644
  
                  if (Manager.ScriptRunning)
                      RunScriptHandlers();
-@@ -389,6 +390,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -389,6 +390,8 @@
      /// <param name="lastConnChange">Last time the loading message changed.</param>
      /// <param name="lastConnDetail">Last loading message.</param>
      /// <returns>The last loading message and its time</returns>
@@ -4259,19 +5043,20 @@ index 8775d94..acb7273 100644
      private (int newTime, string newText) CheckStuckonLoading(int lastConnChange, string lastConnDetail)
      {
          string connDetail = Flash.IsNull("mcConnDetail.stage") ? "null" : Flash.GetGameObject("mcConnDetail.txtDetail.text", "null")!;
-@@ -396,8 +399,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -396,8 +399,10 @@
              return (Environment.TickCount, connDetail);
          if (connDetail.Contains("has been lost") && !_waitForLogin)
          {
 -            if (!Servers.IsIntentionalLogout)
+-            {
 +            // Checked 10 times a second: with auto relogin off this used to log (and try) every time.
 +            if (!Servers.IsIntentionalLogout && Environment.TickCount - _lastConnLostLog > 15000)
-             {
++            {
 +                _lastConnLostLog = Environment.TickCount;
                  Log("Connection lost detected. Triggering auto re-login.");
                  BeginLogout();
              }
-@@ -415,7 +420,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -415,7 +420,7 @@
                          if (Options.AutoRelogin)
                              BeginLogout();
                          else
@@ -4280,7 +5065,7 @@ index 8775d94..acb7273 100644
                          return;
                      }
                      Map.Join(Map.LastMap);
-@@ -426,7 +431,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -426,7 +431,7 @@
                  if (Options.AutoRelogin)
                      BeginLogout();
                  else
@@ -4289,7 +5074,7 @@ index 8775d94..acb7273 100644
              }
          }
          if (connDetail == lastConnDetail)
-@@ -474,6 +479,14 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -474,6 +479,14 @@
                  break;
  
              case "loaded":
@@ -4304,7 +5089,7 @@ index 8775d94..acb7273 100644
                  Initialize();
                  break;
  
-@@ -493,6 +506,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -493,6 +506,8 @@
                          case "logout":
                              Log("Intentional logout button clicked by user in game. Auto re-login disarmed.");
                              Servers.IsIntentionalLogout = true;
@@ -4313,7 +5098,7 @@ index 8775d94..acb7273 100644
                              CancelRelogin();
                              if (Manager.ScriptRunning)
                                  _ = Manager.StopScript();
-@@ -501,6 +516,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -501,6 +516,8 @@
                          case "changeServer":
                              Log("Intentional 'Change Server' button clicked by user in game. Auto re-login disarmed.");
                              Servers.IsIntentionalLogout = true;
@@ -4322,7 +5107,7 @@ index 8775d94..acb7273 100644
                              CancelRelogin();
                              if (Manager.ScriptRunning)
                                  _ = Manager.StopScript();
-@@ -537,6 +554,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -537,6 +554,8 @@
                  break;
  
              case "pext":
@@ -4331,7 +5116,7 @@ index 8775d94..acb7273 100644
                  dynamic packet = JsonConvert.DeserializeObject<dynamic>((string)args[0])!;
                  string type = packet["params"].type;
                  dynamic data = packet["params"].dataObj;
-@@ -664,6 +683,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -664,6 +683,10 @@
                                  Stats.QuestsCompleted++;
                                  Messenger.Send<QuestTurninMessage, int>(new(Convert.ToInt32(data.QuestID)), (int)MessageChannels.GameEvents);
                              }
@@ -4342,7 +5127,7 @@ index 8775d94..acb7273 100644
                              break;
  
                          case "loadBank":
-@@ -714,6 +737,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -714,6 +737,8 @@
                      case "eLO2":
                          Log("In-game exit logout packet (eLO) detected. Disarming auto re-login.");
                          Servers.IsIntentionalLogout = true;
@@ -4351,7 +5136,7 @@ index 8775d94..acb7273 100644
                          CancelRelogin();
                          if (Manager.ScriptRunning)
                              _ = Manager.StopScript();
-@@ -723,6 +748,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -723,6 +748,8 @@
                      case "eSL2":
                          Log("In-game exit to server list packet (eSL) detected. Disarming auto re-login.");
                          Servers.IsIntentionalLogout = true;
@@ -4360,7 +5145,7 @@ index 8775d94..acb7273 100644
                          CancelRelogin();
                          if (Manager.ScriptRunning)
                              _ = Manager.StopScript();
-@@ -803,6 +830,12 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -803,6 +830,12 @@
          bool wasRunning = Manager.ScriptRunning;
          CancellationTokenSource reloginCts = new();
          _reloginCTS = reloginCts;
@@ -4373,7 +5158,7 @@ index 8775d94..acb7273 100644
          _waitForLogin = true;
          try
          {
-@@ -822,7 +855,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -822,7 +855,7 @@
              {
                  delay = Math.Max(800, Options.ReloginTryDelay);
              }
@@ -4382,7 +5167,7 @@ index 8775d94..acb7273 100644
          }
          catch
          {
-@@ -856,6 +889,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -856,6 +889,7 @@
      private void Relogin(int delay, bool startScript, CancellationTokenSource reloginCts)
      {
          reloginCts.Token.ThrowIfCancellationRequested();
@@ -4390,11 +5175,69 @@ index 8775d94..acb7273 100644
          Servers.DisconnectForRelogin();
          Log($"Waiting {delay}ms for re-login.");
          _reloginTask = Schedule(delay, async _ =>
+diff --git a/Skua.Core/Scripts/ScriptManager.cs b/Skua.Core/Scripts/ScriptManager.cs
+--- a/Skua.Core/Scripts/ScriptManager.cs
++++ b/Skua.Core/Scripts/ScriptManager.cs
+@@ -483,6 +483,8 @@
+             {
+                 foreach (string file in Directory.EnumerateFiles(ClientFileSources.SkuaPluginsDIR, "*.dll"))
+                 {
++                    if (Path.GetFileName(file).Equals("ButlerV5.dll", StringComparison.OrdinalIgnoreCase))
++                        continue;
+                     if (CanLoadAssembly(file))
+                     {
+                         _refCache.Add(file);
+@@ -496,6 +498,8 @@
+             }
+         }
+ 
++        string bundledButler = Path.Combine(AppContext.BaseDirectory, "plugins", "ButlerV5.dll");
++        if (File.Exists(bundledButler)) references.Add(bundledButler);
+         return references;
+     }
+ 
+@@ -1293,6 +1297,7 @@
+ 
+     public void SetLoadedScript(string path)
+     {
++        path = ClientFileSources.ResolveScriptPath(path);
+         LoadedScript = path;
+     }
+ 
 diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.cs
-index 4b52722..1e278b5 100644
 --- a/Skua.Core/Scripts/ScriptOption.cs
 +++ b/Skua.Core/Scripts/ScriptOption.cs
-@@ -111,6 +111,16 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -26,6 +26,8 @@
+         _settingsService = settingsService;
+         _isInitializing = true;
+         GetOptions();
++        _pickupACDropsAndSendToBank = settingsService.Get<bool>("VibeSkuffle.PickupACDropsAndSendToBank");
++        _rejectNonACDrops = settingsService.Get<bool>("VibeSkuffle.RejectNonACDrops");
+         OptionDictionary = GenerateDictionary().ToImmutableDictionary();
+         StrongReferenceMessenger.Default.Register<ScriptOption, ScriptStoppedMessage, int>(this, (int)MessageChannels.ScriptStatus, ScriptStopped);
+         StrongReferenceMessenger.Default.Register<ScriptOption, MapChangedMessage, int>(this, (int)MessageChannels.GameEvents, MapChanged);
+@@ -87,6 +89,20 @@
+         set => SetProperty(ref _acceptACDrops, value, true);
+     }
+ 
++    private bool _pickupACDropsAndSendToBank;
++    public bool PickupACDropsAndSendToBank
++    {
++        get => _pickupACDropsAndSendToBank;
++        set { if (SetProperty(ref _pickupACDropsAndSendToBank, value, true) && !_isInitializing) _settingsService?.Set("VibeSkuffle.PickupACDropsAndSendToBank", value); }
++    }
++
++    private bool _rejectNonACDrops;
++    public bool RejectNonACDrops
++    {
++        get => _rejectNonACDrops;
++        set { if (SetProperty(ref _rejectNonACDrops, value, true) && !_isInitializing) _settingsService?.Set("VibeSkuffle.RejectNonACDrops", value); }
++    }
++
+     private bool _acceptAllDrops;
+ 
+     public bool AcceptAllDrops
+@@ -111,6 +127,16 @@
          }
      }
  
@@ -4411,7 +5254,7 @@ index 4b52722..1e278b5 100644
      [ObservableProperty]
      private bool _restPackets;
  
-@@ -129,8 +139,9 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -129,8 +155,9 @@
      [CallBinding("killLag", Get = false, HasSetter = true)]
      private bool _lagKiller;
  
@@ -4422,7 +5265,7 @@ index 4b52722..1e278b5 100644
  
      [ObjectBinding("ui.mcFPS.visible", HasSetter = true)]
      private bool _showFPS = false;
-@@ -181,7 +192,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -181,7 +208,7 @@
              }
              else
              {
@@ -4431,11 +5274,29 @@ index 4b52722..1e278b5 100644
                  _lazyFlash.Value.Call("setGameObject", "stage.quality", "HIGH");
                  _lazyFlash.Value.Call("setGameObject", "world.rootClass.mixer.soundTransform.volume", 1);
              }
+@@ -454,4 +481,4 @@
+         }
+         return dict;
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Skua.Core/Scripts/ScriptPathResolver.cs b/Skua.Core/Scripts/ScriptPathResolver.cs
+--- a/Skua.Core/Scripts/ScriptPathResolver.cs
++++ b/Skua.Core/Scripts/ScriptPathResolver.cs
+@@ -30,7 +30,7 @@
+ 
+         if (Path.IsPathRooted(normalizedSpecifier))
+         {
+-            candidates.Add(normalizedSpecifier);
++            candidates.Add(ClientFileSources.ResolveScriptPath(normalizedSpecifier));
+         }
+         else if (normalizedSpecifier.StartsWith($".{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
+                  normalizedSpecifier.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
 diff --git a/Skua.Core/Scripts/ScriptServers.cs b/Skua.Core/Scripts/ScriptServers.cs
-index 6d38204..8a9a6f5 100644
 --- a/Skua.Core/Scripts/ScriptServers.cs
 +++ b/Skua.Core/Scripts/ScriptServers.cs
-@@ -50,6 +50,44 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -50,6 +50,44 @@
      private string _password;
  
      public string LastIP { get; set; } = string.Empty;
@@ -4480,7 +5341,7 @@ index 6d38204..8a9a6f5 100644
      public string LastName { get; set; } = string.Empty;
      public bool IsIntentionalLogout { get; set; }
      public string? CachedUsername => _loginInfoSetted && !string.IsNullOrWhiteSpace(_username) ? _username : (!string.IsNullOrWhiteSpace(Player.Username) && Player.Username != "loginInfo.strUsername" ? Player.Username : null);
-@@ -69,12 +107,25 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -69,12 +107,25 @@
      private void _login(string username, string password)
      {
          IsIntentionalLogout = false;
@@ -4506,7 +5367,7 @@ index 6d38204..8a9a6f5 100644
          CommunityToolkit.Mvvm.Messaging.StrongReferenceMessenger.Default.Send<Skua.Core.Messaging.LogoutRequestedMessage, int>(new(), (int)Skua.Core.Messaging.MessageChannels.GameEvents);
          DisconnectToLogin();
      }
-@@ -308,22 +359,29 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -308,22 +359,29 @@
  
          HashSet<string> triedServers = attemptedServers ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
  
@@ -4540,7 +5401,7 @@ index 6d38204..8a9a6f5 100644
          if (selectedServer is not null)
              return selectedServer;
  
-@@ -446,6 +504,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -446,6 +504,7 @@
          bool autoRelogSwitch = Options.AutoRelogin;
          Options.AutoRelogin = false;
          ReloginLog($"Relogging on server {server.Name} [{server.PlayerCount}/{server.MaxPlayers}].");
@@ -4548,7 +5409,7 @@ index 6d38204..8a9a6f5 100644
  
          StrongReferenceMessenger.Default.Send<LogoutRequestedMessage, int>(new(), (int)MessageChannels.GameEvents);
          StrongReferenceMessenger.Default.Send<LogoutMessage, int>((int)MessageChannels.GameEvents);
-@@ -483,13 +542,16 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -483,13 +542,16 @@
          return Task.Run(() => EnsureRelogin(serverName, CancellationToken.None)).GetAwaiter().GetResult();
      }
  
@@ -4566,7 +5427,7 @@ index 6d38204..8a9a6f5 100644
          if (server is null)
          {
              ReloginLog("No eligible servers available for auto relogin.");
-@@ -617,6 +679,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -617,6 +679,7 @@
                      continue;
                  }
                  attemptedServers.Add(targetServer.Name ?? string.Empty);
@@ -4574,7 +5435,7 @@ index 6d38204..8a9a6f5 100644
  
                  ReloginLog($"Attempt {tries}/{Options.ReloginTries}: trying {targetServer.Name} [{targetServer.PlayerCount}/{targetServer.MaxPlayers}].");
  
-@@ -707,7 +770,11 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -707,7 +770,11 @@
                      await WaitReloginDelay(token);
              }
          }
@@ -4587,11 +5448,252 @@ index 6d38204..8a9a6f5 100644
  
          if (!Player.Playing)
              ReloginLog("Unable to reconnect within configured retries.");
+diff --git a/Skua.Core/Scripts/ScriptSkill.cs b/Skua.Core/Scripts/ScriptSkill.cs
+--- a/Skua.Core/Scripts/ScriptSkill.cs
++++ b/Skua.Core/Scripts/ScriptSkill.cs
+@@ -61,10 +61,9 @@
+         return false;
+     }
+ 
+-    [MethodCallBinding("useSkill")]
+-    private bool _useSkill(int index)
+-    {
+-        return false;
++    public bool UseSkill(int index)
++    {
++        return !ScriptDrop.BankingACDrops && Flash.Call<bool>("useSkill", index);
+     }
+ 
+     public ISkillProvider? OverrideProvider { get; set; } = null;
+@@ -330,13 +329,13 @@
+             {
+                 // if SkillUseMode is UseIfAvailable then use skills without waiting for cooldown
+                 case SkillUseMode.UseIfAvailable:
+-                    if ((Options.AttackWithoutTarget || CanUseSkill(skill)) && !Combat.StopAttacking)
++                    if ((Options.AttackWithoutTarget || CanUseSkill(skill)) && !Combat.StopAttacking && !ScriptDrop.BankingACDrops)
+                         this.UseSkill(skill);
+                     break;
+ 
+                 // if SkillUseMode is WaitForCooldown then use skills with waiting for cooldown
+                 case SkillUseMode.WaitForCooldown:
+-                    if (Options.AttackWithoutTarget || (skill != -1 && Wait.ForTrue(() => CanUseSkill(skill), null, SkillTimeout, SkillInterval) && !Combat.StopAttacking))
++                    if (!ScriptDrop.BankingACDrops && !Combat.StopAttacking && (Options.AttackWithoutTarget || (skill != -1 && Wait.ForTrue(() => CanUseSkill(skill), null, SkillTimeout, SkillInterval))))
+                         this.UseSkill(skill);
+                     break;
+             }
+diff --git a/Skua.Core/Services/ClientUpdateService.cs b/Skua.Core/Services/ClientUpdateService.cs
+--- a/Skua.Core/Services/ClientUpdateService.cs
++++ b/Skua.Core/Services/ClientUpdateService.cs
+@@ -1,126 +1,16 @@
+ using Skua.Core.Interfaces;
+-using Skua.Core.Models;
+-using Velopack;
+-using Velopack.Sources;
+-
+ namespace Skua.Core.Services;
+-
++// Application updates are handled by VibeSkuffle Manager. Script updates remain independent.
+ public class ClientUpdateService : IClientUpdateService
+ {
+-    private const string UpdateRepository = "https://github.com/NinjaXz/VibeSkua";
+-    private readonly IDialogService _dialogService;
+-    private readonly ISettingsService _settingsService;
+-    private UpdateManager? _updateManager;
+-    private Velopack.UpdateInfo? _pendingUpdate;
+-    private bool? _managerNightly;
+-
+-    public ClientUpdateService(IDialogService dialogService, ISettingsService settingsService)
++    public ClientUpdateService(IDialogService dialogService, ISettingsService settingsService) { }
++    public string? LatestVersion => null;
++    public bool UpdateAvailable => false;
++    public bool UsingNightlyChannel => false;
++    public Task CheckForUpdateAsync() => Task.CompletedTask;
++    public Task DownloadUpdateAsync(IProgress<string>? progress)
+     {
+-        _dialogService = dialogService;
+-        _settingsService = settingsService;
+-    }
+-
+-    public string? LatestVersion => _pendingUpdate?.TargetFullRelease.Version.ToString();
+-
+-    public bool UpdateAvailable => _pendingUpdate is not null;
+-
+-    public bool UsingNightlyChannel => _settingsService.Get("UseNightlyBuilds", false);
+-
+-    public async Task CheckForUpdateAsync()
+-    {
+-        try
+-        {
+-            _updateManager = GetUpdateManager();
+-            if (_updateManager is null || !_updateManager.IsInstalled)
+-            {
+-                _pendingUpdate = null;
+-                return;
+-            }
+-            Velopack.UpdateInfo? update = await _updateManager.CheckForUpdatesAsync();
+-            _pendingUpdate = ShouldOfferUpdate(update) ? update : null;
+-        }
+-        catch
+-        {
+-            _pendingUpdate = null;
+-        }
+-    }
+-
+-    public async Task DownloadUpdateAsync(IProgress<string>? progress)
+-    {
+-        try
+-        {
+-            _updateManager = GetUpdateManager();
+-            if (_updateManager is null || !_updateManager.IsInstalled)
+-            {
+-                progress?.Report("App is running in portable/uninstalled mode.");
+-                return;
+-            }
+-
+-            if (_pendingUpdate is null)
+-            {
+-                Velopack.UpdateInfo? update = await _updateManager.CheckForUpdatesAsync();
+-                _pendingUpdate = ShouldOfferUpdate(update) ? update : null;
+-            }
+-
+-            if (_pendingUpdate is null)
+-            {
+-                progress?.Report("You have the latest version.");
+-                return;
+-            }
+-
+-            progress?.Report($"Downloading {_pendingUpdate.TargetFullRelease.Version}...");
+-            await _updateManager.DownloadUpdatesAsync(
+-                _pendingUpdate,
+-                value => progress?.Report($"Downloading... {value}%"));
+-
+-            progress?.Report("Installing update and restarting...");
+-            _updateManager.ApplyUpdatesAndRestart(_pendingUpdate);
+-        }
+-        catch (Exception e)
+-        {
+-            progress?.Report("Error while updating.");
+-            _dialogService.ShowMessageBox($"Error Message:\r\n{e.Message}", "Update Error");
+-        }
+-    }
+-
+-    private bool ShouldOfferUpdate(Velopack.UpdateInfo? update)
+-    {
+-        if (update is null)
+-            return false;
+-
+-        if (!UsingNightlyChannel)
+-            return true;
+-
+-        return !string.Equals(
+-            update.TargetFullRelease.Version.ToString(),
+-            ClientFileSources.AssemblyVersion,
+-            StringComparison.Ordinal);
+-    }
+-
+-    private UpdateManager GetUpdateManager()
+-    {
+-        bool nightly = UsingNightlyChannel;
+-        if (_updateManager is not null && _managerNightly == nightly)
+-            return _updateManager;
+-
+-        _managerNightly = nightly;
+-        _pendingUpdate = null;
+-
+-        if (!nightly)
+-            return new UpdateManager(
+-                new GithubSource(UpdateRepository, null, true),
+-                new UpdateOptions
+-                {
+-                    ExplicitChannel = "win",
+-                    AllowVersionDowngrade = ClientFileSources.IsNightly
+-                });
+-
+-        return new UpdateManager(
+-            new GithubSource(UpdateRepository, null, true),
+-            new UpdateOptions
+-            {
+-                ExplicitChannel = "nightly",
+-                AllowVersionDowngrade = true
+-            });
++        progress?.Report("Open VibeSkuffle Manager → Updater to update the client from GitHub.");
++        return Task.CompletedTask;
+     }
+ }
+diff --git a/Skua.Core/Services/PortableUpdatePackage.cs b/Skua.Core/Services/PortableUpdatePackage.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.Core/Services/PortableUpdatePackage.cs
+@@ -0,0 +1,65 @@
++using System.IO.Compression;
++using System.Security.Cryptography;
++using System.Text.Json;
++
++namespace Skua.Core.Services;
++
++/// <summary>Only application-owned, hash-verified files may enter an update transaction.</summary>
++public static class PortableUpdatePackage
++{
++    public sealed record Manifest(string Version, Dictionary<string, string> Files);
++    public const string ManifestName = "vibeskuffle-update.json";
++    public static bool IsApplicationFile(string relative)
++    {
++        string path = relative.Replace('\\', '/');
++        if (Path.IsPathRooted(path) || path.Split('/').Any(p => p is "" or "." or ".." || p.Contains(':'))) return false;
++        string lower = path.ToLowerInvariant();
++        if (lower.StartsWith("assemblies/")) return lower.EndsWith(".dll") || lower.EndsWith(".so") || lower.EndsWith(".dylib");
++        if (lower.StartsWith("ruffle/")) return lower is "ruffle/mugetsu.exe" || lower.EndsWith(".dll");
++        if (lower.StartsWith("plugins/")) return lower is "plugins/butlerv5.dll" or "plugins/dailytracker.dll" or "plugins/skua.plugin.dailytracker.dll" or "plugins/skua.plugin.cosmetics.dll";
++        return lower is "vibeskuffle.exe" or "vibeskuffle.dll" or "vibeskuffle.deps.json" or "vibeskuffle.runtimeconfig.json"
++            or "vibeskuffle.manager.exe" or "vibeskuffle.manager.dll" or "vibeskuffle.manager.deps.json" or "vibeskuffle.manager.runtimeconfig.json"
++            or "skua.swf" or "use-ruffle.txt" or "velopack.dll" or "build-info.txt" or "release-version.txt" or "client-update.ps1";
++    }
++
++    public static Manifest Stage(string archive, string destination)
++    {
++        using ZipArchive zip = ZipFile.OpenRead(archive);
++        ZipArchiveEntry[] manifests = zip.Entries.Where(e => e.Name.Equals(ManifestName, StringComparison.OrdinalIgnoreCase)).ToArray();
++        if (manifests.Length != 1) throw new InvalidDataException("This release has no unique safe-update manifest. Install it manually.");
++        ZipArchiveEntry manifestEntry = manifests[0];
++        if (manifestEntry.Length > 2_000_000) throw new InvalidDataException("Invalid update manifest size.");
++        using Stream manifestStream = manifestEntry.Open();
++        Manifest manifest = JsonSerializer.Deserialize<Manifest>(manifestStream, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
++            ?? throw new InvalidDataException("Invalid update manifest.");
++        if (manifest.Files == null || manifest.Files.Count == 0 || manifest.Files.Count > 5000) throw new InvalidDataException("Invalid update file list.");
++        string prefix = manifestEntry.FullName[..^ManifestName.Length];
++        var entries = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
++        foreach (ZipArchiveEntry entry in zip.Entries)
++            if (!entries.TryAdd(entry.FullName.Replace('\\', '/'), entry)) throw new InvalidDataException("Duplicate archive path.");
++        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
++        long size = 0;
++        Directory.CreateDirectory(destination);
++        foreach ((string relative, string expected) in manifest.Files)
++        {
++            if (!IsApplicationFile(relative) || !seen.Add(relative.Replace('\\', '/')))
++                throw new InvalidDataException($"Protected or duplicate update path: {relative}");
++            if (expected == null || expected.Length != 64 || !expected.All(Uri.IsHexDigit)) throw new InvalidDataException("Invalid SHA-256.");
++            string archivePath = prefix + relative.Replace('\\', '/');
++            if (!entries.TryGetValue(archivePath, out ZipArchiveEntry? entry)) throw new InvalidDataException($"Missing application file: {relative}");
++            size += entry.Length;
++            if (size > 1_000_000_000) throw new InvalidDataException("Update exceeds maximum unpacked size.");
++            string output = Path.GetFullPath(Path.Combine(destination, relative));
++            if (!output.StartsWith(Path.GetFullPath(destination) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Unsafe update path.");
++            Directory.CreateDirectory(Path.GetDirectoryName(output)!);
++            using (Stream input = entry.Open())
++            using (FileStream target = File.Create(output)) input.CopyTo(target);
++            using FileStream verify = File.OpenRead(output);
++            if (!Convert.ToHexString(SHA256.HashData(verify)).Equals(expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException($"Hash mismatch: {relative}");
++        }
++        foreach (string required in new[] { "VibeSkuffle.exe", "VibeSkuffle.dll", "VibeSkuffle.Manager.exe", "VibeSkuffle.Manager.dll", "ruffle/Mugetsu.exe", "plugins/ButlerV5.dll" })
++            if (!seen.Contains(required)) throw new InvalidDataException($"Incomplete client package: {required}");
++        File.WriteAllText(Path.Combine(destination, ManifestName), JsonSerializer.Serialize(manifest));
++        return manifest;
++    }
++}
 diff --git a/Skua.Core/Services/UnifiedSettingsService.cs b/Skua.Core/Services/UnifiedSettingsService.cs
-index e4ad755..1058b35 100644
 --- a/Skua.Core/Services/UnifiedSettingsService.cs
 +++ b/Skua.Core/Services/UnifiedSettingsService.cs
-@@ -39,7 +39,13 @@ public class UnifiedSettingsService
+@@ -39,7 +39,13 @@
  
              try
              {
@@ -4606,7 +5708,7 @@ index e4ad755..1058b35 100644
  
                  if (!File.Exists(ClientFileSources.SkuaSettingsDIR))
                  {
-@@ -157,6 +163,7 @@ public class UnifiedSettingsService
+@@ -157,6 +163,7 @@
                      managerProp.SetValue(_root.Manager, value);
                  }
  
@@ -4614,7 +5716,7 @@ index e4ad755..1058b35 100644
                  SaveSettings();
              }
              catch (Exception ex)
-@@ -532,13 +539,19 @@ public class UnifiedSettingsService
+@@ -532,13 +539,19 @@
          }
      }
  
@@ -4625,31 +5727,34 @@ index e4ad755..1058b35 100644
          try
          {
 -            _fileMutex.WaitOne();
+-
+-            string tempFile = ClientFileSources.SkuaSettingsDIR + ".tmp";
 +            AcquireFileMutex();
 +
 +            if (merge && _dirtyKeys.Count > 0)
 +                MergeIntoDisk();
 +            _dirtyKeys.Clear();
- 
--            string tempFile = ClientFileSources.SkuaSettingsDIR + ".tmp";
++
 +            // Own temp name per program, so two saving at once can't mix their files.
 +            string tempFile = ClientFileSources.SkuaSettingsDIR + $".{Environment.ProcessId}.tmp";
  
              JsonSerializerOptions options = GetJsonOptions();
              string json = JsonSerializer.Serialize(_root, options);
-@@ -546,9 +559,10 @@ public class UnifiedSettingsService
+@@ -546,9 +559,10 @@
  
              if (File.Exists(ClientFileSources.SkuaSettingsDIR))
              {
 -                File.Delete(ClientFileSources.SkuaSettingsDIR);
+-            }
+-
 +                try { File.Copy(ClientFileSources.SkuaSettingsDIR, BackupPath, overwrite: true); } catch { }
-             }
- 
++            }
++
 +            // Replaces the file in one step (it used to be deleted first, leaving a moment with no file).
              File.Move(tempFile, ClientFileSources.SkuaSettingsDIR, overwrite: true);
  
              // Signal cross-process settings change event
-@@ -667,17 +681,76 @@ public class UnifiedSettingsService
+@@ -667,17 +681,76 @@
          lock (_lock)
          {
              _root.Shared.ApplicationVersion = ClientFileSources.AssemblyVersion;
@@ -4729,7 +5834,6 @@ index e4ad755..1058b35 100644
              finally
 diff --git a/Skua.Core/Services/VibeAlerts.cs b/Skua.Core/Services/VibeAlerts.cs
 new file mode 100644
-index 0000000..294101a
 --- /dev/null
 +++ b/Skua.Core/Services/VibeAlerts.cs
 @@ -0,0 +1,299 @@
@@ -5033,7 +6137,6 @@ index 0000000..294101a
 +    }
 +}
 diff --git a/Skua.Manager.Avalonia/App.axaml b/Skua.Manager.Avalonia/App.axaml
-index a7a368a..7222fe0 100644
 --- a/Skua.Manager.Avalonia/App.axaml
 +++ b/Skua.Manager.Avalonia/App.axaml
 @@ -33,12 +33,12 @@
@@ -5052,10 +6155,9 @@ index a7a368a..7222fe0 100644
                          <NativeMenuItem Header="Reset Scripts" Click="TrayResetScripts_Click" />
                          <NativeMenuItem Header="Check Client Update" Click="TrayCheckUpdate_Click" />
 diff --git a/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs b/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs
-index 95c31b8..64e7cd1 100644
 --- a/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs
 +++ b/Skua.Manager.Avalonia/AppStartup/SkuaManager.cs
-@@ -37,7 +37,7 @@ internal class SkuaManager
+@@ -37,7 +37,7 @@
      {
          List<DisplayOptionItemViewModelBase> options = new()
          {
@@ -5065,10 +6167,26 @@ index 95c31b8..64e7cd1 100644
  
          return new(options, s.GetRequiredService<ISettingsService>(), s.GetRequiredService<IFileDialogService>());
 diff --git a/Skua.Manager.Avalonia/Program.cs b/Skua.Manager.Avalonia/Program.cs
-index 977c532..a620f60 100644
 --- a/Skua.Manager.Avalonia/Program.cs
 +++ b/Skua.Manager.Avalonia/Program.cs
-@@ -37,7 +37,12 @@ internal static class Program
+@@ -17,6 +17,8 @@
+ 
+ internal static class Program
+ {
++    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
++    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+     private static EventWaitHandle? _singleInstanceWaitHandle;
+ 
+     static Program()
+@@ -27,6 +29,7 @@
+     [STAThread]
+     public static void Main(string[] args)
+     {
++        if (OperatingSystem.IsWindows()) SetCurrentProcessExplicitAppUserModelID("Aeoniian.VibeSkuffle.Manager");
+         InitializeAssemblyResolvers();
+ 
+         VelopackApp.Build()
+@@ -37,7 +40,12 @@
              .OnRestarted(_ => AppShortcutHelper.CreateOrUpdateShortcuts(createIfMissing: true))
              .Run();
  
@@ -5082,7 +6200,7 @@ index 977c532..a620f60 100644
          bool createdNew;
          try
          {
-@@ -45,7 +50,7 @@ internal static class Program
+@@ -45,7 +53,7 @@
          }
          catch
          {
@@ -5091,11 +6209,135 @@ index 977c532..a620f60 100644
          }
  
          if (!createdNew)
+diff --git a/Skua.Manager.Avalonia/Services/PortableClientUpdater.cs b/Skua.Manager.Avalonia/Services/PortableClientUpdater.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.Manager.Avalonia/Services/PortableClientUpdater.cs
+@@ -0,0 +1,120 @@
++using Skua.Core.Services;
++using System;
++using System.Collections.Generic;
++using System.Diagnostics;
++using System.IO;
++using System.Linq;
++using System.Net.Http;
++using System.Security.Cryptography;
++using System.Text.Json;
++using System.Text.RegularExpressions;
++using System.Threading.Tasks;
++
++namespace Skua.Manager.Avalonia.Services;
++
++public sealed class PortableClientUpdater
++{
++    public sealed record Release(string Tag, string Name, string Notes, string Url, string? Digest, long Size);
++    public Release? Available { get; private set; }
++    private static readonly HttpClient Http = CreateHttp();
++    private static HttpClient CreateHttp()
++    {
++        var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
++        client.DefaultRequestHeaders.UserAgent.ParseAdd("VibeSkuffle-Updater/1.0");
++        return client;
++    }
++    public static string InstalledVersion
++    {
++        get
++        {
++            string path = Path.Combine(AppContext.BaseDirectory, "release-version.txt");
++            return File.Exists(path) ? File.ReadAllText(path).Trim() : "v1.0.0-beta8";
++        }
++    }
++    public static int CompareVersions(string left, string right)
++    {
++        static int[] Numbers(string value) => Regex.Matches(value, @"\d+").Select(m => int.Parse(m.Value)).ToArray();
++        int[] a = Numbers(left), b = Numbers(right);
++        // Compare the three release numbers, then stable > beta; compare beta/hotfix numerically.
++        for (int i = 0; i < 3; i++)
++        {
++            int cmp = (i < a.Length ? a[i] : 0).CompareTo(i < b.Length ? b[i] : 0);
++            if (cmp != 0) return cmp;
++        }
++        bool ap = left.Contains("beta", StringComparison.OrdinalIgnoreCase), bp = right.Contains("beta", StringComparison.OrdinalIgnoreCase);
++        if (ap != bp) return ap ? -1 : 1;
++        for (int i = 3; i < Math.Max(a.Length, b.Length); i++)
++        {
++            int cmp = (i < a.Length ? a[i] : 0).CompareTo(i < b.Length ? b[i] : 0);
++            if (cmp != 0) return cmp;
++        }
++        bool ad = left.Contains("-dev", StringComparison.OrdinalIgnoreCase), bd = right.Contains("-dev", StringComparison.OrdinalIgnoreCase);
++        return ad == bd ? 0 : ad ? -1 : 1;
++    }
++    public async Task Check()
++    {
++        Available = null;
++        using var data = JsonDocument.Parse(await Http.GetStringAsync("https://api.github.com/repos/Aeoniian/VibeSkuffle/releases?per_page=100"));
++        foreach (JsonElement release in data.RootElement.EnumerateArray())
++        {
++            if (release.GetProperty("draft").GetBoolean()) continue;
++            string tag = release.GetProperty("tag_name").GetString() ?? "";
++            string name = release.GetProperty("name").GetString() ?? tag;
++            if (CompareVersions(name, InstalledVersion) <= 0 || (Available != null && CompareVersions(name, Available.Name) <= 0)) continue;
++            foreach (JsonElement asset in release.GetProperty("assets").EnumerateArray())
++            {
++                string file = asset.GetProperty("name").GetString() ?? "";
++                if (!file.StartsWith("VibeSkuffle-", StringComparison.OrdinalIgnoreCase) || !file.EndsWith("-win-x64.zip", StringComparison.OrdinalIgnoreCase)) continue;
++                string url = asset.GetProperty("browser_download_url").GetString() ?? "";
++                if (!url.StartsWith("https://github.com/Aeoniian/VibeSkuffle/releases/download/", StringComparison.OrdinalIgnoreCase)) continue;
++                Available = new(tag, name, release.GetProperty("body").GetString() ?? "", url,
++                    asset.TryGetProperty("digest", out var digest) ? digest.GetString() : null, asset.GetProperty("size").GetInt64());
++            }
++        }
++    }
++    public async Task<string> DownloadAndStage(IProgress<int> progress)
++    {
++        Release release = Available ?? throw new InvalidOperationException("Check for updates first.");
++        string job = Path.Combine(Path.GetTempPath(), "VibeSkuffleUpdate", Guid.NewGuid().ToString("N"));
++        Directory.CreateDirectory(job);
++        string archive = Path.Combine(job, "update.zip");
++        using (var response = await Http.GetAsync(release.Url, HttpCompletionOption.ResponseHeadersRead))
++        {
++            response.EnsureSuccessStatusCode();
++            await using Stream source = await response.Content.ReadAsStreamAsync();
++            await using FileStream target = File.Create(archive);
++            byte[] buffer = new byte[81920]; long total = 0; int count;
++            while ((count = await source.ReadAsync(buffer)) > 0)
++            {
++                total += count;
++                if (total > 600_000_000) throw new InvalidDataException("Update download exceeds maximum size.");
++                await target.WriteAsync(buffer.AsMemory(0, count));
++                progress.Report(release.Size > 0 ? (int)Math.Min(99, total * 100 / release.Size) : 0);
++            }
++            if (total != release.Size) throw new InvalidDataException("Incomplete update download.");
++        }
++        if (release.Digest?.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) == true)
++        {
++            await using FileStream file = File.OpenRead(archive);
++            string hash = Convert.ToHexString(await SHA256.HashDataAsync(file));
++            if (!hash.Equals(release.Digest[7..], StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Release download hash mismatch.");
++        }
++        string staged = Path.Combine(job, "staged");
++        PortableUpdatePackage.Manifest manifest = await Task.Run(() => PortableUpdatePackage.Stage(archive, staged));
++        if (CompareVersions(manifest.Version, release.Name) != 0) throw new InvalidDataException("Package version does not match the release.");
++        progress.Report(100);
++        return job;
++    }
++
++    public static void StartInstaller(string job)
++    {
++        string script = Path.Combine(AppContext.BaseDirectory, "client-update.ps1");
++        if (!File.Exists(script)) throw new FileNotFoundException("The update helper is missing. Reinstall VibeSkuffle.");
++        string helper = Path.Combine(job, "install.ps1");
++        File.Copy(script, helper);
++        var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden };
++        foreach (string arg in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helper, "-InstallDirectory", AppContext.BaseDirectory, "-JobDirectory", job, "-ManagerProcessId", Environment.ProcessId.ToString() })
++            start.ArgumentList.Add(arg);
++        _ = Process.Start(start) ?? throw new InvalidOperationException("Could not start the update helper.");
++    }
++}
 diff --git a/Skua.Manager.Avalonia/Services/SkuaExecutableLocator.cs b/Skua.Manager.Avalonia/Services/SkuaExecutableLocator.cs
-index 162c7b3..ad4d481 100644
 --- a/Skua.Manager.Avalonia/Services/SkuaExecutableLocator.cs
 +++ b/Skua.Manager.Avalonia/Services/SkuaExecutableLocator.cs
-@@ -12,7 +12,7 @@ internal static class SkuaExecutableLocator
+@@ -12,7 +12,7 @@
  
      private static string Resolve()
      {
@@ -5104,7 +6346,7 @@ index 162c7b3..ad4d481 100644
          if (File.Exists(vibePath))
              return vibePath;
  
-@@ -23,15 +23,15 @@ internal static class SkuaExecutableLocator
+@@ -23,15 +23,15 @@
          string repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
          string[] candidates =
          [
@@ -5126,7 +6368,6 @@ index 162c7b3..ad4d481 100644
          ];
  
 diff --git a/Skua.Manager.Avalonia/Skua.Manager.Avalonia.csproj b/Skua.Manager.Avalonia/Skua.Manager.Avalonia.csproj
-index d5e2735..4dfdb1f 100644
 --- a/Skua.Manager.Avalonia/Skua.Manager.Avalonia.csproj
 +++ b/Skua.Manager.Avalonia/Skua.Manager.Avalonia.csproj
 @@ -8,8 +8,8 @@
@@ -5140,8 +6381,38 @@ index d5e2735..4dfdb1f 100644
      <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
    </PropertyGroup>
  
+@@ -37,6 +37,7 @@
+   </ItemGroup>
+ 
+   <ItemGroup>
++    <None Update="client-update.ps1" CopyToOutputDirectory="PreserveNewest" />
+     <None Update="app.manifest">
+       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+     </None>
+diff --git a/Skua.Manager.Avalonia/UserControls/AboutUserControl.axaml b/Skua.Manager.Avalonia/UserControls/AboutUserControl.axaml
+--- a/Skua.Manager.Avalonia/UserControls/AboutUserControl.axaml
++++ b/Skua.Manager.Avalonia/UserControls/AboutUserControl.axaml
+@@ -1,16 +1,6 @@
+ <UserControl xmlns="https://github.com/avaloniaui"
+              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+-             xmlns:sharedContent="clr-namespace:Skua.Shared.Avalonia.Controls.Content;assembly=Skua.Shared.Avalonia"
+-             xmlns:sharedControls="clr-namespace:Skua.Shared.Avalonia.Controls.Buttons;assembly=Skua.Shared.Avalonia"
+-             x:Class="Skua.Manager.Avalonia.UserControls.AboutUserControl"
+-             d:DesignWidth="900"
+-             d:DesignHeight="600"
+-             mc:Ignorable="d">
+-    <ScrollViewer Margin="20,10,20,20"
+-                  HorizontalScrollBarVisibility="Disabled"
+-                  VerticalScrollBarVisibility="Auto">
+-        <sharedContent:MarkdownDocumentView Markdown="{Binding MarkdownDoc}" />
+-    </ScrollViewer>
++             xmlns:sharedViews="clr-namespace:Skua.Shared.Avalonia.Views;assembly=Skua.Shared.Avalonia"
++             x:Class="Skua.Manager.Avalonia.UserControls.AboutUserControl">
++    <sharedViews:AboutView />
+ </UserControl>
 diff --git a/Skua.Manager.Avalonia/UserControls/LauncherUserControl.axaml b/Skua.Manager.Avalonia/UserControls/LauncherUserControl.axaml
-index 671f5e9..3165dbc 100644
 --- a/Skua.Manager.Avalonia/UserControls/LauncherUserControl.axaml
 +++ b/Skua.Manager.Avalonia/UserControls/LauncherUserControl.axaml
 @@ -26,7 +26,7 @@
@@ -5153,11 +6424,212 @@ index 671f5e9..3165dbc 100644
                      <TextBlock Text="Spin up new game client instances and manage active processes."
                                 FontSize="12"
                                 Foreground="{DynamicResource SkuaMutedTextBrush}" />
+diff --git a/Skua.Manager.Avalonia/ViewModels/AppUpdaterViewModel.cs b/Skua.Manager.Avalonia/ViewModels/AppUpdaterViewModel.cs
+--- a/Skua.Manager.Avalonia/ViewModels/AppUpdaterViewModel.cs
++++ b/Skua.Manager.Avalonia/ViewModels/AppUpdaterViewModel.cs
+@@ -1,141 +1,64 @@
+ using CommunityToolkit.Mvvm.ComponentModel;
+ using CommunityToolkit.Mvvm.Input;
++using CommunityToolkit.Mvvm.Messaging;
++using Skua.Core.Messaging;
++using Skua.Core.Interfaces;
++using Skua.Manager.Avalonia.Services;
++using System;
+ using System.Threading.Tasks;
+-using Velopack;
+-using Velopack.Locators;
+-using Velopack.Sources;
+-using System.Diagnostics;
+-using System;
+-using Skua.Core.Interfaces;
+ 
+ namespace Skua.Manager.Avalonia.ViewModels;
+ 
+ public partial class AppUpdaterViewModel : ObservableObject
+ {
+-    private readonly IDispatcherService _dispatcherService;
+-
+-    public AppUpdaterViewModel(IDispatcherService dispatcherService)
++    private readonly PortableClientUpdater _updater = new();
++    private readonly IDialogService _dialogs;
++    public AppUpdaterViewModel(IDispatcherService dispatcherService, IDialogService dialogs)
+     {
+-        _dispatcherService = dispatcherService;
++        _dialogs = dialogs;
++        StrongReferenceMessenger.Default.Register<AppUpdaterViewModel, CheckClientUpdateMessage>(this,
++            (recipient, message) => global::Avalonia.Threading.Dispatcher.UIThread.Post(async () => await recipient.CheckForUpdateAsync()));
+     }
+-
+-    [ObservableProperty]
+-    private string _updateStatus = "Ready to check for updates.";
+-
+-    [ObservableProperty]
+-    private bool _isChecking;
+-
+-    [ObservableProperty]
+-    private bool _updateAvailable;
+-
+-    [ObservableProperty]
+-    private int _progressValue;
+-
+-    private UpdateInfo? _updateInfo;
+-    private UpdateManager? _updateManager;
++    [ObservableProperty] private string _updateStatus = "Check GitHub for VibeSkuffle client updates. Scripts and settings are preserved.";
++    [ObservableProperty] private bool _isChecking;
++    [ObservableProperty] private bool _updateAvailable;
++    [ObservableProperty] private int _progressValue;
++    [ObservableProperty] private string _releaseNotes = "";
+ 
+     public async Task CheckForUpdateAsync()
+     {
+-        _updateInfo = null;
+-        _dispatcherService.Invoke(() =>
+-        {
+-            IsChecking = true;
+-            UpdateStatus = "Checking for updates...";
+-            ProgressValue = 0;
+-        });
++        if (IsChecking) return;
++        IsChecking = true;
++        UpdateAvailable = false;
++        ReleaseNotes = "";
++        ProgressValue = 0;
+         try
+         {
+-            var locator = VelopackLocator.CreateDefaultForPlatform(null, null);
+-            _updateManager = new UpdateManager(new GithubSource("https://github.com/NinjaXz/VibeSkua", null, false), null, locator);
+-            if (!_updateManager.IsInstalled)
+-            {
+-                _dispatcherService.Invoke(() =>
+-                {
+-                    UpdateStatus = "You have the latest version (Portable)";
+-                    UpdateAvailable = false;
+-                });
+-                return;
+-            }
+-            _updateInfo = await _updateManager.CheckForUpdatesAsync();
+-
+-            _dispatcherService.Invoke(() =>
+-            {
+-                if (_updateInfo == null)
+-                {
+-                    UpdateStatus = "You are up to date!";
+-                    UpdateAvailable = false;
+-                }
+-                else
+-                {
+-                    UpdateStatus = $"Update {_updateInfo.TargetFullRelease.Version} available!";
+-                    UpdateAvailable = true;
+-                }
+-            });
++            UpdateStatus = "Checking VibeSkuffle GitHub releases...";
++            await _updater.Check();
++            UpdateAvailable = _updater.Available != null;
++            ReleaseNotes = _updater.Available?.Notes ?? "";
++            UpdateStatus = UpdateAvailable ? $"{_updater.Available!.Name} is available. Installed: {PortableClientUpdater.InstalledVersion}." : $"Up to date: {PortableClientUpdater.InstalledVersion}.";
+         }
+-        catch (Exception ex)
+-        {
+-            _dispatcherService.Invoke(() =>
+-            {
+-                UpdateStatus = $"Error checking updates: {ex.Message}";
+-                UpdateAvailable = false;
+-            });
+-        }
+-        finally
+-        {
+-            _dispatcherService.Invoke(() => IsChecking = false);
+-        }
++        catch (Exception ex) { UpdateAvailable = false; UpdateStatus = $"Couldn't check GitHub: {ex.Message}"; }
++        finally { IsChecking = false; }
+     }
+-
+-    [RelayCommand]
+-    private async Task CheckForUpdate()
+-    {
+-        await CheckForUpdateAsync();
+-    }
+-
++    [RelayCommand] private Task CheckForUpdate() => CheckForUpdateAsync();
+     public async Task DownloadAndInstallAsync()
+     {
+-        if (_updateInfo == null) return;
+-
+-        _dispatcherService.Invoke(() =>
+-        {
+-            IsChecking = true;
+-            UpdateStatus = "Downloading update...";
+-        });
++        if (IsChecking || !UpdateAvailable) return;
++        if (_dialogs.ShowMessageBox("Download and install this VibeSkuffle update? This Manager and its clients will close. Scripts, account settings, and custom plugins are preserved.", "Update VibeSkuffle", true) != true) return;
++        IsChecking = true;
+         try
+         {
+-            if (_updateManager == null)
+-            {
+-                var locator = VelopackLocator.CreateDefaultForPlatform(null, null);
+-                _updateManager = new UpdateManager(new GithubSource("https://github.com/NinjaXz/VibeSkua", null, false), null, locator);
+-            }
+-
+-            Action<int> progressObj = (progress) => 
+-            {
+-                _dispatcherService.Invoke(() =>
+-                {
+-                    ProgressValue = progress;
+-                    UpdateStatus = $"Downloading... {progress}%";
+-                });
+-            };
+-
+-            await _updateManager.DownloadUpdatesAsync(_updateInfo, progressObj);
+-
+-            _dispatcherService.Invoke(() => UpdateStatus = "Installing update and restarting...");
+-            await Task.Run(() => _updateManager.ApplyUpdatesAndRestart(_updateInfo));
++            UpdateStatus = "Downloading and verifying client files...";
++            string job = await _updater.DownloadAndStage(new Progress<int>(p => ProgressValue = p));
++            PortableClientUpdater.StartInstaller(job);
++            if (global::Avalonia.Application.Current?.ApplicationLifetime is global::Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime lifetime)
++                lifetime.Shutdown();
+         }
+-        catch (Exception ex)
+-        {
+-            _dispatcherService.Invoke(() => UpdateStatus = $"Error updating: {ex.Message}");
+-        }
+-        finally
+-        {
+-            _dispatcherService.Invoke(() => IsChecking = false);
+-        }
++        catch (Exception ex) { UpdateStatus = $"Update stopped safely: {ex.Message}"; }
++        finally { IsChecking = false; }
+     }
+-
+-    [RelayCommand]
+-    private async Task DownloadAndInstall()
+-    {
+-        await DownloadAndInstallAsync();
+-    }
++    [RelayCommand] private Task DownloadAndInstall() => DownloadAndInstallAsync();
+ }
 diff --git a/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs b/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs
-index 2814a1b..184818d 100644
 --- a/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs
 +++ b/Skua.Manager.Avalonia/ViewModels/LauncherViewModel.cs
-@@ -57,7 +57,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
+@@ -11,6 +11,8 @@
+ using System.Collections.Generic;
+ using System.Diagnostics;
+ using System.Linq;
++using System.IO;
++using System.Threading;
+ using System.Threading.Tasks;
+ using Timer = System.Timers.Timer;
+ 
+@@ -23,6 +25,7 @@
+     public RangedObservableCollection<ProcessInfo> SkuaProcesses { get; } = new();
+     private Timer _timer;
+     private bool _disposed;
++    private int _refreshing;
+ 
+     public LauncherViewModel(ISettingsService settingsService, IDispatcherService dispatcherService)
+         : base("Launcher")
+@@ -57,12 +60,12 @@
          {
              try
              {
@@ -5166,7 +6638,13 @@ index 2814a1b..184818d 100644
                  _dispatcherService.Invoke(() =>
                  {
                      try
-@@ -109,7 +109,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
+                     {
+-                        recipient.SkuaProcesses.Add(procInfo);
++                        if (!recipient.SkuaProcesses.Any(p => p.ProcessId == procInfo.ProcessId)) recipient.SkuaProcesses.Add(procInfo);
+                     }
+                     catch { }
+                 });
+@@ -109,7 +112,7 @@
                  Process? proc = Process.Start(startInfo);
                  if (proc != null)
                  {
@@ -5175,7 +6653,7 @@ index 2814a1b..184818d 100644
                      _dispatcherService.Invoke(() => SkuaProcesses.Add(procInfo));
                  }
              }
-@@ -117,7 +117,7 @@ public partial class LauncherViewModel : BotControlViewModelBase, IDisposable
+@@ -117,7 +120,7 @@
              {
                  IDialogService dialogService = Ioc.Default.GetService<IDialogService>()!;
  
@@ -5184,11 +6662,82 @@ index 2814a1b..184818d 100644
              }
          });
      }
+@@ -147,13 +150,32 @@
+ 
+     private void RemoveStoppedCurrentProcess(object source, System.Timers.ElapsedEventArgs e)
+     {
+-        foreach (ProcessInfo? procInfo in SkuaProcesses.ToList())
+-        {
+-            if (procInfo.HasExited)
+-            {
+-                _dispatcherService.Invoke(() => SkuaProcesses.Remove(procInfo));
+-            }
+-        }
++        if (_disposed || Interlocked.Exchange(ref _refreshing, 1) != 0) return;
++        try
++        {
++            Process[] active = Process.GetProcessesByName("VibeSkuffle");
++            _dispatcherService.Invoke(() =>
++            {
++                foreach (ProcessInfo old in SkuaProcesses.ToList())
++                    if (old.HasExited) { SkuaProcesses.Remove(old); old.Process.Dispose(); }
++                foreach (Process process in active)
++                {
++                    ProcessInfo? row = SkuaProcesses.FirstOrDefault(p => p.ProcessId == process.Id);
++                    string name = $"VibeSkuffle #{process.Id}";
++                    try
++                    {
++                        string state = Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", $"{process.Id}.txt");
++                        if (File.Exists(state)) name = File.ReadLines(state).FirstOrDefault()?.Trim() ?? name;
++                        else if (process.MainWindowTitle.Contains("Tabs", StringComparison.OrdinalIgnoreCase)) name = "Account tab host";
++                    }
++                    catch { }
++                    if (row == null) SkuaProcesses.Add(new ProcessInfo(process, name));
++                    else { row.AccountName = name; process.Dispose(); }
++                }
++            });
++        }
++        catch { }
++        finally { Volatile.Write(ref _refreshing, 0); }
+     }
+ 
+     [RelayCommand]
+@@ -204,20 +226,8 @@
+                 StrongReferenceMessenger.Default.Unregister<UpdateStartedMessage>(this);
+                 StrongReferenceMessenger.Default.Unregister<AddProcessMessage>(this);
+ 
+-                // Close any remaining processes, killing those that don't exit in time
+-                List<ProcessInfo> remaining = SkuaProcesses.ToList();
+-                try
+-                {
+-                    Task.Run(() => Task.WhenAll(remaining.Select(async procInfo =>
+-                    {
+-                        try
+-                        {
+-                            await ProcessCloser.CloseAsync(procInfo.Process, ProcessCloser.DefaultTimeout);
+-                        }
+-                        catch { }
+-                    }))).Wait(ProcessCloser.DefaultTimeout + TimeSpan.FromSeconds(2));
+-                }
+-                catch { }
++                foreach (ProcessInfo procInfo in SkuaProcesses)
++                    procInfo.Process.Dispose();
+                 SkuaProcesses?.Clear();
+             }
+             _disposed = true;
 diff --git a/Skua.Manager.Avalonia/ViewModels/ManagerMainViewModel.cs b/Skua.Manager.Avalonia/ViewModels/ManagerMainViewModel.cs
-index f9cde9c..979ee27 100644
 --- a/Skua.Manager.Avalonia/ViewModels/ManagerMainViewModel.cs
 +++ b/Skua.Manager.Avalonia/ViewModels/ManagerMainViewModel.cs
-@@ -19,11 +19,11 @@ public partial class ManagerMainViewModel : ObservableRecipient
+@@ -8,6 +8,8 @@
+ using Skua.Core.Utils;
+ using Skua.Shared.Avalonia.ViewModels;
+ using System.Collections.Generic;
++using System.Linq;
++using System.Threading.Tasks;
+ 
+ namespace Skua.Manager.Avalonia.ViewModels;
+ 
+@@ -19,11 +21,11 @@
          _selectedTab = Tabs[0];
          _dialogService = dialogService;
          _settingsService = settingsService;
@@ -5202,8 +6751,24 @@ index f9cde9c..979ee27 100644
  
      [RelayCommand]
      private void ShowManager()
+@@ -32,9 +34,14 @@
+     }
+ 
+     [RelayCommand]
+-    private void CheckUpdate()
++    private async Task CheckUpdate()
+     {
+-        StrongReferenceMessenger.Default.Send<CheckClientUpdateMessage>();
++        TabItemViewModel? tab = Tabs.FirstOrDefault(t => t.Content is AppUpdaterViewModel);
++        if (tab?.Content is AppUpdaterViewModel updater)
++        {
++            SelectedTab = tab;
++            await updater.CheckForUpdateAsync();
++        }
+     }
+ 
+     [RelayCommand]
 diff --git a/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml b/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml
-index d74c3da..092fdf9 100644
 --- a/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml
 +++ b/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml
 @@ -18,7 +18,7 @@
@@ -5215,8 +6780,17 @@ index d74c3da..092fdf9 100644
                         FontSize="26"
                         FontWeight="Light"
                         HorizontalAlignment="Center"
+@@ -30,6 +30,9 @@
+                        HorizontalAlignment="Center"
+                        Margin="0,0,0,24" />
+ 
++            <ScrollViewer MaxHeight="200" Margin="0,0,0,16" IsVisible="{Binding UpdateAvailable}">
++                <TextBlock Text="{Binding ReleaseNotes}" TextWrapping="Wrap" MaxWidth="650" />
++            </ScrollViewer>
+             <ProgressBar Value="{Binding ProgressValue}"
+                          Minimum="0"
+                          Maximum="100"
 diff --git a/Skua.Manager.Avalonia/Views/ScriptUpdaterView.axaml b/Skua.Manager.Avalonia/Views/ScriptUpdaterView.axaml
-index aaa4048..e091c76 100644
 --- a/Skua.Manager.Avalonia/Views/ScriptUpdaterView.axaml
 +++ b/Skua.Manager.Avalonia/Views/ScriptUpdaterView.axaml
 @@ -18,7 +18,7 @@
@@ -5228,11 +6802,128 @@ index aaa4048..e091c76 100644
                         FontSize="26"
                         FontWeight="Light"
                         HorizontalAlignment="Center"
+diff --git a/Skua.Manager.Avalonia/client-update.ps1 b/Skua.Manager.Avalonia/client-update.ps1
+new file mode 100644
+--- /dev/null
++++ b/Skua.Manager.Avalonia/client-update.ps1
+@@ -0,0 +1,105 @@
++param(
++    [Parameter(Mandatory=$true)][string]$InstallDirectory,
++    [Parameter(Mandatory=$true)][string]$JobDirectory,
++    [int]$ManagerProcessId = 0,
++    [switch]$SkipProcessManagement,
++    [switch]$NoRestart,
++    [int]$TestFailAfterCopy = 0
++)
++$ErrorActionPreference = 'Stop'
++$installRoot = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\')
++$jobRoot = [IO.Path]::GetFullPath($JobDirectory).TrimEnd('\')
++$stageRoot = Join-Path $jobRoot 'staged'
++$backupRoot = Join-Path $jobRoot 'rollback'
++$logFile = Join-Path $jobRoot 'result.txt'
++$changed = [Collections.Generic.List[object]]::new()
++$committed = $false
++function Get-SafeTarget([string]$relative) {
++    $normal = $relative.Replace('\','/')
++    if ([IO.Path]::IsPathRooted($normal) -or $normal -match '(^|/)\.{1,2}(/|$)|:|//') { throw "Unsafe update path: $relative" }
++    $allowed = $normal -match '^(?i:Assemblies)/[^:]+\.(?i:dll|so|dylib)$' -or
++        $normal -match '^(?i:ruffle)/(?:Mugetsu\.exe|[^:]+\.dll)$' -or
++        $normal -match '^(?i:plugins)/(?:ButlerV5|DailyTracker|Skua\.Plugin\.DailyTracker|Skua\.Plugin\.Cosmetics)\.dll$' -or
++        $normal -match '^(?i:VibeSkuffle(?:\.Manager)?\.(?:exe|dll|deps\.json|runtimeconfig\.json)|skua\.swf|use-ruffle\.txt|Velopack\.dll|build-info\.txt|release-version\.txt|client-update\.ps1)$'
++    if (!$allowed) { throw "Protected update path: $relative" }
++    $target = [IO.Path]::GetFullPath((Join-Path $installRoot $relative))
++    if (!$target.StartsWith($installRoot + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Update escaped installation folder.' }
++    $check = $target
++    while ($check -and $check.StartsWith($installRoot,[StringComparison]::OrdinalIgnoreCase)) {
++        if ((Test-Path -LiteralPath $check) -and ((Get-Item -LiteralPath $check -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Linked update destination: $check" }
++        if ($check -eq $installRoot) { break }
++        $check = Split-Path -Parent $check
++    }
++    return $target
++}
++try {
++    $manifest = Get-Content -LiteralPath (Join-Path $stageRoot 'vibeskuffle-update.json') -Raw | ConvertFrom-Json
++    $files = @($manifest.Files.PSObject.Properties)
++    if ($files.Count -eq 0) { throw 'Empty update manifest.' }
++    $seen = @{}
++    foreach ($file in $files) {
++        $target = Get-SafeTarget $file.Name
++        if ($seen.ContainsKey($target)) { throw 'Duplicate update destination.' }
++        $seen[$target] = $true
++        $source = Join-Path $stageRoot $file.Name
++        if (!(Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing update file: $($file.Name)" }
++        if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $file.Value) { throw "Update hash mismatch: $($file.Name)" }
++    }
++    if (!$SkipProcessManagement) {
++        if ($ManagerProcessId -gt 0) {
++            $manager = Get-Process -Id $ManagerProcessId -ErrorAction SilentlyContinue
++            if ($manager -and !$manager.WaitForExit(60000)) { throw 'Manager did not close. No files changed.' }
++        }
++        $clients = @(Get-Process -Name VibeSkuffle -ErrorAction SilentlyContinue | Where-Object {
++            try { [IO.Path]::GetDirectoryName($_.MainModule.FileName).Equals($installRoot,[StringComparison]::OrdinalIgnoreCase) } catch { $false }
++        })
++        foreach ($client in $clients) { $null = $client.CloseMainWindow() }
++        foreach ($client in $clients) {
++            if (!$client.WaitForExit(30000)) { throw 'A client is still running. Close it and retry the update. No files changed.' }
++        }
++    }
++    New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
++    foreach ($file in $files) {
++        $target = Get-SafeTarget $file.Name
++        $backup = Join-Path $backupRoot $file.Name
++        if (Test-Path -LiteralPath $target) {
++            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $backup) | Out-Null
++            Copy-Item -LiteralPath $target -Destination $backup
++        }
++    }
++    $copied = 0
++    foreach ($file in $files) {
++        $target = Get-SafeTarget $file.Name
++        $backup = Join-Path $backupRoot $file.Name
++        $changed.Add(@{Target=$target; Backup=$backup; Existed=(Test-Path -LiteralPath $target)})
++        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
++        Copy-Item -LiteralPath (Join-Path $stageRoot $file.Name) -Destination $target -Force
++        $copied++
++        if ($TestFailAfterCopy -gt 0 -and $copied -ge $TestFailAfterCopy) { throw 'Injected update failure for rollback test.' }
++    }
++    $committed = $true
++    "Update installed: $($manifest.Version). Rollback files: $backupRoot" | Set-Content -LiteralPath $logFile
++}
++catch {
++    $problem = $_.Exception.Message
++    $rollbackProblems = @()
++    for ($index=$changed.Count-1; $index -ge 0; $index--) {
++        $item = $changed[$index]
++        try {
++            if ($item.Existed) { Copy-Item -LiteralPath $item.Backup -Destination $item.Target -Force }
++            elseif (Test-Path -LiteralPath $item.Target) { Remove-Item -LiteralPath $item.Target -Force }
++        }
++        catch { $rollbackProblems += $_.Exception.Message }
++    }
++    "Update failed: $problem`r`nRollback errors: $($rollbackProblems -join '; ')`r`nBackups: $backupRoot" | Set-Content -LiteralPath $logFile
++    if (!$NoRestart) {
++        Add-Type -AssemblyName PresentationFramework
++        [Windows.MessageBox]::Show("Update failed: $problem`nDetails: $logFile",'VibeSkuffle update') | Out-Null
++    }
++}
++finally {
++    if (!$NoRestart -and (Test-Path -LiteralPath (Join-Path $installRoot 'VibeSkuffle.Manager.exe'))) {
++        Start-Process -FilePath (Join-Path $installRoot 'VibeSkuffle.Manager.exe') -WorkingDirectory $installRoot -WindowStyle Hidden
++    }
++}
++if (!$committed) { exit 1 }
 diff --git a/Skua.Plugin.ButlerV5/Broadcaster.cs b/Skua.Plugin.ButlerV5/Broadcaster.cs
-index ad80d97..3d1e28d 100644
 --- a/Skua.Plugin.ButlerV5/Broadcaster.cs
 +++ b/Skua.Plugin.ButlerV5/Broadcaster.cs
-@@ -24,6 +24,7 @@ public class Broadcaster
+@@ -14,6 +14,7 @@
+     private readonly Func<bool> _enabled;
+     private readonly Func<bool> _questClone;
+     private readonly Action<string> _log;
++    private readonly string _followersDirectory;
+     private DateTime _lastQuestPublish = DateTime.MinValue;
+     private DateTime _lastAttackingSeen = DateTime.MinValue;
+     private volatile bool _publishing;
+@@ -24,6 +25,7 @@
  
      private string _lastUsername = "";
      private string _lastWritten = "";
@@ -5240,7 +6931,24 @@ index ad80d97..3d1e28d 100644
      private string _lastKnownRoom = "1";
      private volatile string _lastServer = "";
      private bool _lastOffGoto;
-@@ -64,11 +65,59 @@ public class Broadcaster
+@@ -44,7 +46,7 @@
+ 
+     public Broadcaster(IScriptInterface bot, Func<bool> enabled, Func<bool> questClone,
+         Func<string?> followingProvider, Func<string?> scriptNameProvider,
+-        Func<string?> declinedProvider, Func<bool> parkingProvider, Action<string> log)
++        Func<string?> declinedProvider, Func<bool> parkingProvider, Action<string> log, string? followersDirectory = null)
+     {
+         _bot = bot;
+         _enabled = enabled;
+@@ -54,6 +56,7 @@
+         _declinedProvider = declinedProvider;
+         _parkingProvider = parkingProvider;
+         _log = log;
++        _followersDirectory = followersDirectory ?? Path.Combine(SyncFile.Directory, "followers");
+     }
+ 
+     /// <summary>Usernames this account (as master) has ordered to follow it.</summary>
+@@ -64,9 +67,62 @@
  
      public void SetFollowers(IEnumerable<string> followers)
      {
@@ -5250,14 +6958,14 @@ index ad80d97..3d1e28d 100644
 +            list = _followers = followers.Select(f => f.Trim()).Where(f => f.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 +        SaveFollowers(list);
          WriteNow();
-     }
- 
++    }
++
 +    // The followers list is also kept on disk, so a master whose client is restarted (crash, the tab window
 +    // starting it again) gets its followers back and they follow it again. Only within 30 minutes; after
 +    // "Release all" the saved list is empty.
-+    private static readonly TimeSpan FollowersKeep = TimeSpan.FromMinutes(30);
-+    private static string FollowersPath(string username) =>
-+        Path.Combine(SyncFile.Directory, "followers", $"{username.ToLowerInvariant()}.txt");
++    // Assignments survive outages of any length; only explicit releases clear them.
++    private string FollowersPath(string username) =>
++        Path.Combine(_followersDirectory, $"{username.ToLowerInvariant()}.txt");
 +
 +    private void SaveFollowers(List<string> list)
 +    {
@@ -5268,7 +6976,9 @@ index ad80d97..3d1e28d 100644
 +                return;
 +            string path = FollowersPath(user);
 +            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-+            File.WriteAllLines(path, list);
++            string temporary = path + $".{Environment.ProcessId}.tmp";
++            File.WriteAllLines(temporary, list);
++            File.Move(temporary, path, true);
 +        }
 +        catch { }
 +    }
@@ -5281,10 +6991,13 @@ index ad80d97..3d1e28d 100644
 +            if (string.IsNullOrWhiteSpace(username))
 +                return;
 +            lock (_writeLock)
-+                if (_followers.Count > 0)
-+                    return;
++            {
++                if (_lastUsername.Length > 0 && !_lastUsername.Equals(username, StringComparison.OrdinalIgnoreCase))
++                    _followers = new();
++                if (_followers.Count > 0) return;
++            }
 +            string path = FollowersPath(username);
-+            if (!File.Exists(path) || DateTime.UtcNow - File.GetLastWriteTimeUtc(path) > FollowersKeep)
++            if (!File.Exists(path))
 +                return;
 +            List<string> saved = File.ReadAllLines(path).Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
 +            if (saved.Count == 0)
@@ -5296,12 +7009,10 @@ index ad80d97..3d1e28d 100644
 +            _log($"Restored {saved.Count} follower{(saved.Count == 1 ? "" : "s")} from before the restart; they follow again.");
 +        }
 +        catch { }
-+    }
-+
+     }
+ 
      public void Start()
-     {
-         DebugLog.Log("Broadcaster", "Start: polling watcher + Logout event");
-@@ -106,6 +155,8 @@ public class Broadcaster
+@@ -106,6 +162,8 @@
                          DebugLog.Log("Broadcaster", $"login state flipped -> {(loggedIn ? "logged in as " + _bot.Player?.Username : "logged out")}");
                          if (!loggedIn)
                              WriteOffline();
@@ -5310,7 +7021,7 @@ index ad80d97..3d1e28d 100644
                      }
  
                      if (loggedIn)
-@@ -285,13 +336,17 @@ public class Broadcaster
+@@ -285,13 +343,17 @@
      private void WriteIfChanged(SyncData data)
      {
          string serialized = data.Serialize();
@@ -5331,10 +7042,25 @@ index ad80d97..3d1e28d 100644
          else
          {
 diff --git a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs b/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
-index d5f32fb..4d9f5a5 100644
 --- a/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
 +++ b/Skua.Plugin.ButlerV5/ButlerV5Plugin.cs
-@@ -425,6 +425,94 @@ public class ButlerV5Plugin : ISkuaPlugin
+@@ -364,6 +364,7 @@
+         }
+ 
+         _follower?.Start(master, source);
++        SaveFollowAssignment();
+     }
+ 
+     public void StopFollow()
+@@ -381,6 +382,7 @@
+         }
+ 
+         _follower?.Stop();
++        SaveFollowAssignment();
+     }
+ 
+     /// <summary>Master side: publish the list of accounts that should follow this one.</summary>
+@@ -425,6 +427,104 @@
              index >= 0 ? "Released a butler." : "Summoned a butler to follow me.");
      }
  
@@ -5358,10 +7084,20 @@ index d5f32fb..4d9f5a5 100644
 +    /// Log in every other open client that is logged out, on this account's server so they can be summoned
 +    /// right away. Accounts already in game are left alone.
 +    /// </summary>
-+    public async void LogInAll()
++    public void LogInAll()
 +    {
-+        if (_loggingInAll)
++        if (_loggingInAll) return;
++        if (!string.Equals(System.Reflection.Assembly.GetEntryAssembly()?.GetName().Name, "VibeSkuffle", StringComparison.OrdinalIgnoreCase))
++        {
++            SetLogInAllStatus("Use the Manager to log in stock Skua/VibeSkua accounts.");
 +            return;
++        }
++        LogInAllVibeSkuffle();
++    }
++
++    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
++    private async void LogInAllVibeSkuffle()
++    {
 +        _loggingInAll = true;
 +        DebugLog.Log("UI", "Log in all clicked");
 +        try
@@ -5429,7 +7165,7 @@ index d5f32fb..4d9f5a5 100644
      /// <summary>Order every online plugin account to follow this one.</summary>
      public void SummonAll()
      {
-@@ -452,7 +540,8 @@ public class ButlerV5Plugin : ISkuaPlugin
+@@ -452,7 +552,8 @@
          // never does what the per-row button forbids: busy (script) accounts; anyone
          // already following me manually (dual-state); accounts that are themselves masters
          // (summoning them makes them butler+master, the other way a conga line forms);
@@ -5439,7 +7175,7 @@ index d5f32fb..4d9f5a5 100644
          string myServer = MyServerName;
          bool AlreadyManual(SyncData d) =>
              d.Following.Equals(me, StringComparison.OrdinalIgnoreCase) &&
-@@ -465,14 +554,18 @@ public class ButlerV5Plugin : ISkuaPlugin
+@@ -465,14 +566,18 @@
          bool FollowingAnother(SyncData d) =>
              !string.IsNullOrEmpty(d.Following) && !d.Following.Equals(me, StringComparison.OrdinalIgnoreCase);
          bool Unavailable(SyncData d) =>
@@ -5461,11 +7197,107 @@ index d5f32fb..4d9f5a5 100644
          if (online.Count == 0)
          {
              Log("No available butlers to summon.");
+@@ -690,6 +795,55 @@
+     /// Follower side of "Follow me": watches other accounts' files and obeys when an
+     /// online master lists this account. A manual follow always wins over orders.
+     /// </summary>
++    private string? _assignmentUser;
++    private string _lastAssignment = "";
++    private string AssignmentPath(string user) => Path.Combine(SyncFile.Directory, "assignments", user.ToLowerInvariant() + ".txt");
++
++    private void RestoreFollowAssignment(string user)
++    {
++        if (user.Equals(_assignmentUser, StringComparison.OrdinalIgnoreCase)) return;
++        if (_assignmentUser != null)
++        {
++            _follower?.Stop();
++            _declinedMaster = null;
++        }
++        _assignmentUser = user;
++        _lastAssignment = "";
++        try
++        {
++            string path = AssignmentPath(user);
++            if (!File.Exists(path)) return;
++            string[] lines = File.ReadAllLines(path);
++            _declinedMaster = lines.Length > 2 && lines[2].Length > 0 ? lines[2] : null;
++            if (lines.Length >= 2 && !string.IsNullOrWhiteSpace(lines[0]) &&
++                Enum.TryParse(lines[1], out FollowSource source) && source != FollowSource.None &&
++                (source != FollowSource.Ordered || GetOption("obeySummons", true)))
++            {
++                _follower?.Start(lines[0], source);
++                DebugLog.Log("OrderWatcher", $"Restored saved {source} assignment to {lines[0]} after client restart.");
++            }
++        }
++        catch (Exception ex) { DebugLog.Log("OrderWatcher", $"Unable to restore follow assignment: {ex.Message}"); }
++    }
++
++    private void SaveFollowAssignment()
++    {
++        if (string.IsNullOrWhiteSpace(_assignmentUser) || !PluginEnabled) return;
++        try
++        {
++            string text = $"{_follower?.Master}\n{_follower?.Source ?? FollowSource.None}\n{_declinedMaster}\n";
++            if (text == _lastAssignment) return;
++            string path = AssignmentPath(_assignmentUser);
++            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
++            string temporary = path + $".{Environment.ProcessId}.tmp";
++            File.WriteAllText(temporary, text);
++            File.Move(temporary, path, true);
++            _lastAssignment = text;
++            DebugLog.Log("OrderWatcher", $"Saved assignment: master={_follower?.Master ?? "none"}, source={_follower?.Source}.");
++        }
++        catch (Exception ex) { DebugLog.Log("OrderWatcher", $"Unable to save follow assignment: {ex.Message}"); }
++    }
++
+     private void StartOrderWatcher()
+     {
+         _orderWatcherCts = new CancellationTokenSource();
+@@ -711,6 +865,8 @@
+                         _classTypePushed = false;
+ 
+                     CheckOptionsReload();
++                    if (me != null && PluginEnabled)
++                        RestoreFollowAssignment(me);
+ 
+                     // Master switch. Keep the class bridge + option reload above running so
+                     // we always notice it being turned back on, but if ButlerV5 is disabled,
+@@ -725,6 +881,7 @@
+                             DebugLog.Log("OrderWatcher", "ButlerV5 disabled - ceasing all activity (stop in place)");
+                             Log("ButlerV5 disabled - stopped. Turn 'Enable ButlerV5' back on to resume.");
+                             _follower?.Stop(); // cease in place, no park
++                            _assignmentUser = null; // reload the retained assignment when enabled again
+                         }
+                         else
+                         {
+@@ -815,12 +972,10 @@
+                                 _follower.Stop(park: true);
+                             }
+                             else if (_orderGoneSince == DateTime.MinValue)
++                            {
+                                 _orderGoneSince = DateTime.UtcNow;
+-                            else if ((DateTime.UtcNow - _orderGoneSince).TotalSeconds >= 2.5)
+-                            {
+-                                _orderGoneSince = DateTime.MinValue;
+-                                DebugLog.Log("OrderWatcher", "order gone 2.5s (master offline/unreadable) - stopping and parking");
+-                                _follower.Stop(park: true);
++                                DebugLog.Log("OrderWatcher", $"Master {curMaster} unavailable; retaining assignment and waiting for recovery.");
++                                // The follower loop already parks safely and resumes when the master returns.
+                             }
+                         }
+                         else
+@@ -832,6 +987,7 @@
+                 catch
+                 {
+                 }
++                SaveFollowAssignment();
+                 WaitForOrderTick(token);
+             }
+         }, token);
 diff --git a/Skua.Plugin.ButlerV5/DebugLog.cs b/Skua.Plugin.ButlerV5/DebugLog.cs
-index 0b5b0e8..5dd94da 100644
 --- a/Skua.Plugin.ButlerV5/DebugLog.cs
 +++ b/Skua.Plugin.ButlerV5/DebugLog.cs
-@@ -40,6 +40,7 @@ public static class DebugLog
+@@ -40,6 +40,7 @@
      private static readonly string _path = Path.Combine(_dir, $"debug_pid{Environment.ProcessId}.log");
  
      private const int MaxMem = 2000;
@@ -5473,7 +7305,7 @@ index 0b5b0e8..5dd94da 100644
      private static readonly List<LogLine> _mem = new();
      private static long _seq;
      private static string? _lastNorm;
-@@ -71,6 +72,14 @@ public static class DebugLog
+@@ -71,6 +72,14 @@
                  lock (_fileLock)
                  {
                      Directory.CreateDirectory(_dir);
@@ -5489,10 +7321,9 @@ index 0b5b0e8..5dd94da 100644
                  }
              }
 diff --git a/Skua.Plugin.ButlerV5/Follower.cs b/Skua.Plugin.ButlerV5/Follower.cs
-index 8b9caab..d12f286 100644
 --- a/Skua.Plugin.ButlerV5/Follower.cs
 +++ b/Skua.Plugin.ButlerV5/Follower.cs
-@@ -89,6 +89,10 @@ public class Follower
+@@ -89,6 +89,10 @@
      private string? _fullCountRoom;  // the room we're currently counting full-warnings for
      private string? _blockedRoom;    // a specific full room-instance we've parked on
      private int _badReads;
@@ -5503,7 +7334,7 @@ index 8b9caab..d12f286 100644
      private bool _suspended;
      private bool _wasLoggedIn;
      private bool? _lastWithMaster;
-@@ -133,6 +137,8 @@ public class Follower
+@@ -133,6 +137,8 @@
  
          Master = master;
          Source = source;
@@ -5512,7 +7343,7 @@ index 8b9caab..d12f286 100644
          _lastReportedOffGoto = null;
          _directJoinTarget = null;
          _directJoinAttempts = 0;
-@@ -331,9 +337,41 @@ public class Follower
+@@ -331,9 +337,48 @@
                  {
                      ParkOnce($"{master} is on a different server (theirs='{m.Server}' mine='{GameServer.CurrentName(_bot)}'). Parked.",
                          "The master is on a different server. Parked.");
@@ -5535,7 +7366,14 @@ index 8b9caab..d12f286 100644
 +                            // Spread out (several followers usually hop at once), log out, let the login screen
 +                            // come up, then log in on the master's server (with retries).
 +                            Thread.Sleep(Random.Shared.Next(0, 6000));
-+                            _bot.Servers.LogoutForRelogin();
++                            var relogLogout = _bot.Servers.GetType().GetMethod("LogoutForRelogin", Type.EmptyTypes);
++                            if (relogLogout == null)
++                            {
++                                DebugLog.Log("Follower", "Server following unavailable in this client; keeping assignment until master returns.");
++                                Wait(token, 5000);
++                                continue;
++                            }
++                            relogLogout.Invoke(_bot.Servers, null);
 +                            Thread.Sleep(3000);
 +                            bool ok = _bot.Servers.EnsureRelogin(m.Server);
 +                            DebugLog.Log("Follower", $"server hop to {m.Server}: {(ok ? "ok" : "failed")}");
@@ -5555,10 +7393,9 @@ index 8b9caab..d12f286 100644
                  // Circuit breaker: a map we repeatedly failed to enter (entry gate kept
                  // bouncing us to battleon) is blocked until the master moves elsewhere.
 diff --git a/Skua.Plugin.ButlerV5/RosterWindow.cs b/Skua.Plugin.ButlerV5/RosterWindow.cs
-index 5f727fd..39c433f 100644
 --- a/Skua.Plugin.ButlerV5/RosterWindow.cs
 +++ b/Skua.Plugin.ButlerV5/RosterWindow.cs
-@@ -19,6 +19,7 @@ public sealed class RosterWindow : Window
+@@ -19,6 +19,7 @@
      private readonly Button _releaseAllButton;
      private readonly Button _summonAllButton;
      private readonly TextBlock _footerText;
@@ -5566,7 +7403,7 @@ index 5f727fd..39c433f 100644
      private string _lastSnapshot = "";
  
      public RosterWindow(ButlerV5Plugin plugin)
-@@ -97,7 +98,7 @@ public sealed class RosterWindow : Window
+@@ -97,7 +98,7 @@
          Grid footer = new()
          {
              Margin = new Thickness(2, 10, 2, 0),
@@ -5575,7 +7412,7 @@ index 5f727fd..39c433f 100644
          };
          _footerText = AvaloniaUi.TextBlock(11, AvaloniaUi.SubText);
          _footerText.VerticalAlignment = VerticalAlignment.Center;
-@@ -112,15 +113,27 @@ public sealed class RosterWindow : Window
+@@ -112,15 +113,27 @@
          Grid.SetColumn(_summonAllButton, 1);
          footer.Children.Add(_summonAllButton);
  
@@ -5604,7 +7441,7 @@ index 5f727fd..39c433f 100644
          _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
          _timer.Tick += (_, _) => Refresh();
          _timer.Start();
-@@ -130,6 +143,7 @@ public sealed class RosterWindow : Window
+@@ -130,6 +143,7 @@
          {
              _timer.Stop();
              _plugin.SyncFilesChanged -= OnSyncFilesChanged;
@@ -5612,10 +7449,11 @@ index 5f727fd..39c433f 100644
          };
      }
  
-@@ -141,6 +155,30 @@ public sealed class RosterWindow : Window
+@@ -140,6 +154,30 @@
+     }
  
      public void RefreshRoster() => Refresh(force: true);
- 
++
 +    /// <summary>
 +    /// For the empty roster: the other accounts that have a sync file and why each doesn't count as online,
 +    /// so a screenshot shows the cause (e.g. "its client (process 1234) isn't running").
@@ -5639,11 +7477,10 @@ index 5f727fd..39c433f 100644
 +            return "";
 +        }
 +    }
-+
+ 
      private void Refresh(bool force = false)
      {
-         List<SyncData> online = Roster.GetOnline(_plugin.OwnUsername);
-@@ -170,7 +208,10 @@ public sealed class RosterWindow : Window
+@@ -170,7 +208,10 @@
              _timer.Interval = interval;
          _footerText.Text = pluginOff
              ? "ButlerV5 is DISABLED - turn it on in Settings"
@@ -5655,7 +7492,7 @@ index 5f727fd..39c433f 100644
  
          string myServer = _plugin.MyServerName;
          string snapshot = string.Join(";", online.Select(d =>
-@@ -185,7 +226,7 @@ public sealed class RosterWindow : Window
+@@ -185,7 +226,7 @@
          if (online.Count == 0)
          {
              TextBlock empty = AvaloniaUi.TextBlock(12, AvaloniaUi.SubText);
@@ -5664,7 +7501,7 @@ index 5f727fd..39c433f 100644
              empty.TextAlignment = TextAlignment.Center;
              empty.TextWrapping = TextWrapping.Wrap;
              empty.Margin = new Thickness(0, 40, 0, 0);
-@@ -278,7 +319,6 @@ public sealed class RosterWindow : Window
+@@ -278,7 +319,6 @@
                  : summonedByMe ? $"Release {account.Username} before following them."
                  : followingMe ? $"{account.Username} is following you."
                  : followingOther ? $"{account.Username} is following {account.Following}."
@@ -5672,7 +7509,7 @@ index 5f727fd..39c433f 100644
                  : null;
          if (followBlock != null)
          {
-@@ -304,7 +344,6 @@ public sealed class RosterWindow : Window
+@@ -304,7 +344,6 @@
                  : amFollowing ? $"You're following {account.Username}; stop first."
                  : followingMe ? $"{account.Username} is already following you manually."
                  : followingOther ? $"{account.Username} is already following {account.Following}."
@@ -5681,18 +7518,27 @@ index 5f727fd..39c433f 100644
                  : account.Followers.Count > 0 ? $"{account.Username} has summoned butlers of their own."
                  : account.Parking ? $"{account.Username} is parking; wait until it settles."
 diff --git a/Skua.Plugin.ButlerV5/SyncFile.cs b/Skua.Plugin.ButlerV5/SyncFile.cs
-index e2715dc..7d82e8c 100644
 --- a/Skua.Plugin.ButlerV5/SyncFile.cs
 +++ b/Skua.Plugin.ButlerV5/SyncFile.cs
-@@ -228,10 +228,23 @@ public static class SyncFile
+@@ -119,7 +119,7 @@
+     public const string Suffix = "_butlerv5";
+ 
+     public static string Directory { get; } = Path.Combine(
+-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
++        Environment.GetEnvironmentVariable("VIBESKUFFLE_TEST_DATA_ROOT") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+         "Skua",
+         "character_locations");
+ 
+@@ -228,10 +228,23 @@
      /// wrote it is still running. Guards against Windows PID recycling (e.g. if the client
      /// crashed and an unrelated Windows process inherited the PID).
      /// </summary>
 -    public static bool IsOnline(SyncData data) =>
 -        data.LoggedIn && data.Pid > 0 && IsProcessAlive(data.Pid, data.LastModified > DateTime.MinValue ? data.LastModified : null);
-+    public static bool IsOnline(SyncData data) => OfflineReason(data) == null;
- 
+-
 -    public static bool IsProcessAlive(int pid, DateTime? fileWriteTimeUtc = null)
++    public static bool IsOnline(SyncData data) => OfflineReason(data) == null;
++
 +    /// <summary>Why <paramref name="data"/> doesn't count as online, or null if it does (shown in the roster).</summary>
 +    public static string? OfflineReason(SyncData data)
 +    {
@@ -5711,7 +7557,7 @@ index e2715dc..7d82e8c 100644
      {
          try
          {
-@@ -239,14 +252,25 @@ public static class SyncFile
+@@ -239,14 +252,25 @@
              // OS handle on .HasExited. This runs ~10-20x/sec across the fleet; leaving
              // them for the finalizer piles up handles (a slow handle/memory leak).
              using Process process = Process.GetProcessById(pid);
@@ -5741,7 +7587,7 @@ index e2715dc..7d82e8c 100644
  
              // If the process started after the sync file was written, the PID was recycled to a new process.
              if (fileWriteTimeUtc.HasValue && fileWriteTimeUtc.Value > DateTime.MinValue)
-@@ -254,7 +278,7 @@ public static class SyncFile
+@@ -254,7 +278,7 @@
                  try
                  {
                      if (process.StartTime.ToUniversalTime() > fileWriteTimeUtc.Value.AddMinutes(1))
@@ -5750,7 +7596,7 @@ index e2715dc..7d82e8c 100644
                  }
                  catch
                  {
-@@ -262,15 +286,15 @@ public static class SyncFile
+@@ -262,15 +286,15 @@
                  }
              }
  
@@ -5760,21 +7606,22 @@ index e2715dc..7d82e8c 100644
          catch (ArgumentException)
          {
 -            return false; // no such process
-+            return $"its client (process {pid}) isn't running";
-         }
+-        }
 -        catch
-+        catch (Exception ex)
-         {
+-        {
 -            return false;
++            return $"its client (process {pid}) isn't running";
++        }
++        catch (Exception ex)
++        {
 +            return $"couldn't check process {pid}: {ex.Message}";
          }
      }
  }
 diff --git a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs b/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
-index 3c5ffed..e528020 100644
 --- a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
 +++ b/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
-@@ -12,7 +12,7 @@ namespace Skua.Shared.Avalonia.Controls.Shell;
+@@ -12,7 +12,7 @@
  public partial class WindowTitleBar : UserControl
  {
      public static readonly StyledProperty<string> TitleTextProperty =
@@ -5784,23 +7631,90 @@ index 3c5ffed..e528020 100644
      private static readonly IImage DefaultIconSource = LoadDefaultIconSource();
  
 diff --git a/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs b/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs
-index b2431a4..bfac232 100644
 --- a/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs
 +++ b/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs
-@@ -52,7 +52,7 @@ public class AboutViewModel : BotControlViewModelBase
- 
-     private async Task GetAboutContent()
+@@ -1,71 +1,21 @@
+ using CommunityToolkit.Mvvm.Input;
+-using Avalonia.Threading;
+ using Skua.Core.Interfaces;
+-using Skua.Core.Utils;
+-
+ namespace Skua.Shared.Avalonia.ViewModels;
+-
+ public class AboutViewModel : BotControlViewModelBase
+ {
+-    private string _markDownContent = "Loading content...";
+-
++    private readonly IProcessService _processService;
+     public AboutViewModel(IProcessService processService) : base("About")
      {
+         _processService = processService;
+-        _markDownContent = string.Empty;
+-
+-        Task.Run(async () => await GetAboutContent());
+-
+         NavigateCommand = new RelayCommand<string>(NavigateToUrl);
++        try { BuildInfo = System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "build-info.txt")).Trim(); }
++        catch { BuildInfo = "VibeSkua 2.0.9 · Mugetsu 1.5.1 · Local development build"; }
+     }
+-
+-    private readonly IProcessService _processService;
+-
+-    public string MarkdownDoc
+-    {
+-        get => _markDownContent; set => SetProperty(ref _markDownContent, value);
+-    }
+-
++    public string BuildInfo { get; }
+     public IRelayCommand NavigateCommand { get; }
+-
+     private void NavigateToUrl(string? url)
+     {
+-        if (string.IsNullOrEmpty(url))
+-            return;
+-
+-        try
+-        {
+-            if (url.StartsWith("./"))
+-            {
+-                _processService.OpenLink($"https://github.com/auqw/Skua/blob/master/{url.Substring(2)}");
+-            }
+-            else
+-            {
+-                _processService.OpenLink(url);
+-            }
+-        }
+-        catch
+-        {
+-            /* ignored */
+-        }
+-    }
+-
+-    private async Task GetAboutContent()
+-    {
 -        MarkdownDoc = @"# VibeSkua
-+        MarkdownDoc = @"# VibeSkuffle
- > **Note:** This project is **Vibe Coded**—built entirely through AI-assisted development, and pure momentum.
- 
- A feature-rich, high-performance derivative of auqw/skua, engineered for advanced automation, stability, and streamlined multi-client management.
+-> **Note:** This project is **Vibe Coded**—built entirely through AI-assisted development, and pure momentum.
+-
+-A feature-rich, high-performance derivative of auqw/skua, engineered for advanced automation, stability, and streamlined multi-client management.
+-
+-### Key Features
+-* **Discord Integration:** Native support for automated alerts, rare drops, and live-pings.
+-* **Headless Mode:** Hidden 1x1 pixel viewport for drastically reduced CPU/GPU usage per instance.
+-* **Autonomous Scheduling:** Built-in queue to schedule scripts at specific dates and times.
+-* **Unified UI:** Embedded WPF interface with tabbed, multi-client management.
+-* **Engine Optimizations:** SWF Memory Caching, background connection stability, and automatic memory trimming for long sessions.
+-
+-### Disclaimer
+-**Educational & Personal Use Only.** This project is provided ""as-is"" under the MIT License. Use of this software may violate the Terms of Service of the associated game. By using this tool, you acknowledge that you do so entirely at your own risk.";
+-        await Task.CompletedTask;
++        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == "https" || uri.Scheme == "http"))
++            _processService.OpenLink(uri.AbsoluteUri);
+     }
+ }
 diff --git a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
-index 7d8cd82..39f0903 100644
 --- a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
 +++ b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
-@@ -478,6 +478,6 @@ public partial class ScriptSchedulerViewModel : BotControlViewModelBase
+@@ -509,6 +509,6 @@
                  return servers.CachedUsername!;
          }
          catch { }
@@ -5809,10 +7723,33 @@ index 7d8cd82..39f0903 100644
      }
  }
 diff --git a/Skua.Shared.Avalonia/Views/AboutView.axaml b/Skua.Shared.Avalonia/Views/AboutView.axaml
-index 356a4da..1afe485 100644
 --- a/Skua.Shared.Avalonia/Views/AboutView.axaml
 +++ b/Skua.Shared.Avalonia/Views/AboutView.axaml
-@@ -26,7 +26,7 @@
+@@ -8,6 +8,23 @@
+              x:DataType="vms:AboutViewModel"
+              d:DesignHeight="700" d:DesignWidth="600"
+              mc:Ignorable="d">
++    <UserControl.Styles>
++        <Style Selector="TextBlock, SelectableTextBlock">
++            <Setter Property="Foreground" Value="{DynamicResource SkuaTextBrush}" />
++            <Setter Property="FontSize" Value="13" />
++        </Style>
++        <Style Selector="TextBlock.info-heading">
++            <Setter Property="FontSize" Value="15" />
++            <Setter Property="FontWeight" Value="SemiBold" />
++        </Style>
++        <Style Selector="Button.info-link">
++            <Setter Property="Foreground" Value="{DynamicResource SkuaAccentBrush}" />
++            <Setter Property="Background" Value="Transparent" />
++            <Setter Property="Padding" Value="0,4" />
++            <Setter Property="Margin" Value="0,0,18,0" />
++            <Setter Property="Cursor" Value="Hand" />
++        </Style>
++    </UserControl.Styles>
+     <Grid Margin="12" RowDefinitions="Auto,*">
+         <!-- Header Card -->
+         <Border Grid.Row="0"
+@@ -26,7 +43,7 @@
                      <TextBlock FontSize="16"
                                 FontWeight="Bold"
                                 Foreground="{DynamicResource SkuaTextBrush}"
@@ -5821,11 +7758,75 @@ index 356a4da..1afe485 100644
                  </StackPanel>
                  <materialIcons:MaterialIcon Grid.Column="1"
                                              Kind="Information"
+@@ -43,11 +60,29 @@
+                 CornerRadius="8"
+                 Padding="16">
+             <ScrollViewer VerticalScrollBarVisibility="Auto">
+-                <SelectableTextBlock Text="{Binding MarkdownDoc}"
+-                                     TextWrapping="Wrap"
+-                                     Foreground="{DynamicResource SkuaTextBrush}"
+-                                     FontSize="13"
+-                                     LineHeight="20" />
++                <StackPanel Spacing="16">
++                    <TextBlock Text="VibeSkua’s C#/.NET/Avalonia client with Mugetsu (Ruffle) as its game player." TextWrapping="Wrap" />
++                    <TextBlock Text="This build" Classes="info-heading" />
++                    <SelectableTextBlock Text="{Binding BuildInfo}" TextWrapping="Wrap" />
++                    <TextBlock Text="Features" Classes="info-heading" />
++                    <TextBlock Text="Account recovery with script resumption; ButlerV5 following and saved assignments; reorderable tabs and grid view; per-account script controls; combat-aware AC banking; graphics controls, Headless and Lag Killer; portable client updates." TextWrapping="Wrap" />
++                    <TextBlock Text="Scripts" Classes="info-heading" />
++                    <TextBlock Text="Scripts default to %APPDATA%\Skua\Scripts. Script updates use the script repository independently of client updates." TextWrapping="Wrap" />
++                    <TextBlock Text="Project links" Classes="info-heading" />
++                    <WrapPanel>
++                        <Button Classes="info-link" Content="Releases" Command="{Binding NavigateCommand}" CommandParameter="https://github.com/Aeoniian/VibeSkuffle/releases" />
++                        <Button Classes="info-link" Content="Report an issue" Command="{Binding NavigateCommand}" CommandParameter="https://github.com/Aeoniian/VibeSkuffle/issues" />
++                        <Button Classes="info-link" Content="Suggestions" Command="{Binding NavigateCommand}" CommandParameter="https://github.com/Aeoniian/VibeSkuffle/discussions" />
++                    </WrapPanel>
++                    <TextBlock Text="Credits" Classes="info-heading" />
++                    <TextBlock Text="VibeSkuffle is maintained by Aeoniian and built on these projects:" TextWrapping="Wrap" />
++                    <WrapPanel>
++                        <Button Classes="info-link" Content="Skua" Command="{Binding NavigateCommand}" CommandParameter="https://github.com/auqw/Skua" />
++                        <Button Classes="info-link" Content="VibeSkua" Command="{Binding NavigateCommand}" CommandParameter="https://github.com/NinjaXz/VibeSkua" />
++                        <Button Classes="info-link" Content="Mugetsu" Command="{Binding NavigateCommand}" CommandParameter="https://github.com/mugetsu-aqw/mugetsu" />
++                        <Button Classes="info-link" Content="Ruffle" Command="{Binding NavigateCommand}" CommandParameter="https://ruffle.rs" />
++                    </WrapPanel>
++                </StackPanel>
+             </ScrollViewer>
+         </Border>
+     </Grid>
 diff --git a/package-build.ps1 b/package-build.ps1
-index 3c1bc9e..607b718 100644
 --- a/package-build.ps1
 +++ b/package-build.ps1
-@@ -37,7 +37,7 @@ foreach ($Target in $Targets) {
+@@ -1,5 +1,6 @@
+ param(
+-    [string]$RootDir = $PSScriptRoot
++    [string]$RootDir = $PSScriptRoot,
++    [string]$TargetDirectory = (Join-Path $RootDir "Build")
+ )
+ 
+ $ErrorActionPreference = "Stop"
+@@ -12,13 +13,17 @@
+ $SwfSource = Join-Path $RootDir "Skua.AS3\skua\bin\skua.swf"
+ 
+ $LegacyAnyCPU = Join-Path $RootDir "Build\AnyCPU"
+-if (Test-Path $LegacyAnyCPU) {
++if ($TargetDirectory -eq (Join-Path $RootDir "Build") -and (Test-Path $LegacyAnyCPU)) {
+     Remove-Item $LegacyAnyCPU -Recurse -Force -ErrorAction SilentlyContinue
+ }
+ 
+-$Targets = @(
+-    (Join-Path $RootDir "Build")
+-)
++$targetFull = [IO.Path]::GetFullPath($TargetDirectory).TrimEnd('\')
++$buildRoot = [IO.Path]::GetFullPath((Join-Path $RootDir 'Build')).TrimEnd('\')
++$outputRoot = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $RootDir) 'out')).TrimEnd('\')
++if ($targetFull -ne $buildRoot -and !$targetFull.StartsWith($outputRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
++    throw 'Packaging target must be Build or a folder beneath this project workspace out directory.'
++}
++$Targets = @($targetFull)
+ 
+ foreach ($Target in $Targets) {
+     if (-not (Test-Path $Target)) {
+@@ -37,7 +42,7 @@
  
      # 1. Copy Root Files from AppBin
      $RootAppFiles = @(
@@ -5834,16 +7835,16 @@ index 3c1bc9e..607b718 100644
          "QuestData.json", "AdvancedSkills.json", "ScriptDates.json"
      )
      foreach ($file in $RootAppFiles) {
-@@ -50,7 +50,7 @@ foreach ($Target in $Targets) {
+@@ -50,7 +55,7 @@
      }
  
      # 2. Copy Root Files from ManagerBin
 -    $RootManagerFiles = @("VibeSkua.Manager.exe", "VibeSkua.Manager.dll", "VibeSkua.Manager.runtimeconfig.json", "Velopack.dll")
-+    $RootManagerFiles = @("VibeSkuffle.Manager.exe", "VibeSkuffle.Manager.dll", "VibeSkuffle.Manager.runtimeconfig.json", "Velopack.dll")
++    $RootManagerFiles = @("VibeSkuffle.Manager.exe", "VibeSkuffle.Manager.dll", "VibeSkuffle.Manager.runtimeconfig.json", "Velopack.dll", "client-update.ps1")
      foreach ($file in $RootManagerFiles) {
          $src = Join-Path $ManagerBin $file
          if (Test-Path $src) {
-@@ -66,7 +66,7 @@ foreach ($Target in $Targets) {
+@@ -66,7 +71,7 @@
      }
  
      # 4. Copy all DLLs and XMLs into Assemblies (excluding root DLLs)
@@ -5852,14 +7853,17 @@ index 3c1bc9e..607b718 100644
      $AppDlls = Get-ChildItem -Path $AppBin -Filter "*.dll" -File
      foreach ($dll in $AppDlls) {
          if ($ExcludedDlls -notcontains $dll.Name) {
-@@ -133,8 +133,8 @@ foreach ($Target in $Targets) {
+@@ -140,9 +145,10 @@
  
      # 9. Clean up stray files from target root
      $AllowedRootFiles = @(
 -        "VibeSkua.exe", "VibeSkua.dll", "VibeSkua.runtimeconfig.json", "VibeSkua.deps.json",
 -        "VibeSkua.Manager.exe", "VibeSkua.Manager.dll", "VibeSkua.Manager.runtimeconfig.json", "VibeSkua.Manager.deps.json",
+-        "Velopack.dll", "skua.swf", "AdvancedSkills.json", "QuestData.json", "ScriptDates.json"
 +        "VibeSkuffle.exe", "VibeSkuffle.dll", "VibeSkuffle.runtimeconfig.json", "VibeSkuffle.deps.json",
 +        "VibeSkuffle.Manager.exe", "VibeSkuffle.Manager.dll", "VibeSkuffle.Manager.runtimeconfig.json", "VibeSkuffle.Manager.deps.json",
-         "Velopack.dll", "skua.swf", "AdvancedSkills.json", "QuestData.json", "ScriptDates.json"
++        "Velopack.dll", "skua.swf", "AdvancedSkills.json", "QuestData.json", "ScriptDates.json",
++        "client-update.ps1", "ruffle-options.txt", "alerts.txt", "build-info.txt", "release-version.txt", "use-ruffle.txt", "login-watchdog.log", "host-recovery.log"
      )
  
+     Get-ChildItem -Path $Target -File | Where-Object {

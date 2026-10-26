@@ -2,7 +2,7 @@
 
 **VibeSkua, running on Mugetsu (a faster Ruffle) instead of Flash, built to run a whole army for days without babysitting.**
 
-VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (currently v2.0.7) with the Flash player swapped out for
+VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (currently v2.0.9) with the Flash player swapped out for
 [Mugetsu](https://github.com/mugetsu-aqw/mugetsu), a performance-tuned build of the
 [Ruffle](https://ruffle.rs) Flash emulator. Everything VibeSkua does still works: scripts, the Manager, the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
@@ -22,8 +22,21 @@ goes wrong: stuck logins, crashes, freezes, memory build-up, and a crashed tab w
 3. Run **`VibeSkuffle.Manager.exe`**, add your accounts, tick them, and click **Start All**.
    Or run `VibeSkuffle.exe` for a single client.
 
-Nothing else to install. The game player is in the `ruffle` folder. VibeSkuffle uses the same scripts and
-settings folder as VibeSkua (`%APPDATA%\VibeSkua`), and can run side by side with a normal VibeSkua.
+Nothing else to install. The game player is in the `ruffle` folder. Scripts default to
+`%APPDATA%\Skua\Scripts`; accounts and settings remain in `%APPDATA%\VibeSkua`.
+VibeSkuffle can run side by side with a normal VibeSkua.
+
+### New in Beta9
+
+- **VibeSkua 2.0.9 and Cosmetics**, with upstream quest, scheduler, script-control and shutdown fixes.
+- **Automatic AC banking and non-AC rejection**, combat guards, and two new Current Drops reject buttons.
+- **Drag to reorder tabs and grid cells**, with saved order and visible drag/insertion indicators.
+- **Per-account right-click controls** for scripts, Headless, Lag Killer and restart, plus the current script name.
+- **Persistent ButlerV5 assignments** across interruptions and restarts, without the old 30-minute roster expiry.
+- **VibeSkuffle GitHub client updates**, improved Launcher discovery, and a readable Info tab.
+
+See the [full Beta9 release notes](docs/RELEASE-beta9.md) for changes, validation and remaining beta checks.
+Install Beta9 manually if coming from Beta8 or earlier; its new updater handles compatible future packages.
 
 ### Requirements
 
@@ -101,13 +114,17 @@ scripts start again, so their scripts never see quests as done that aren't. Off 
 applies to every account started afterwards).
 
 ### Drops
+- **Saved automatic options** under Game Options → Drops & Looting: Pickup AC Drops and Send to Bank,
+  and Reject Non-AC Drops. They work without a running script. AC acceptance/banking waits out combat;
+  rejection can run during combat.
+- **Current Drops → Reject All / Reject All Except AC**, plus automatic banking status updates.
 - **Ignore Script Reject Else** (Game Options → Drops & Looting): scripts can no longer throw away drops they
   didn't ask for. They stay in the drop list so you can pick them up. *Reject All Drops* still works.
-- **Current Drops → Pickup AC Only and Send to Bank**: picks up only the AC drops and banks each one right away.
+- **Current Drops → Pickup AC Only and Send to Bank** remains available for manual use and waits until out of combat before accepting/banking.
 
 ### Army and ButlerV5
 
-VibeSkuffle's ButlerV5 is the **VibeSkua/Skua ButlerV5** (VibeSkua 2.0.7's version) with these changes:
+VibeSkuffle's ButlerV5 is the **VibeSkua/Skua ButlerV5** (from the current VibeSkua base) with these changes:
 
 - **Log in all** (next to Summon all): logs in every other open account that's logged out, **on your server**, so
   you can Summon them straight away. It shows its progress in the footer.
@@ -115,7 +132,9 @@ VibeSkuffle's ButlerV5 is the **VibeSkua/Skua ButlerV5** (VibeSkua 2.0.7's versi
 - **Followers stay with their master:**
   - If the master restarts or re-logs, its followers follow it again.
   - If it comes back on another server, they log in there by themselves, at most once every 5 minutes.
-  - A master whose whole client restarted gets its followers list back (within 30 minutes of it being saved).
+  - A master whose whole client restarted gets its saved followers list back without a 30-minute expiration.
+  - Followers save and restore assignments across restarts/logins, keeping explicit releases and declined orders.
+  - A brief offline master no longer causes followers to abandon their assignment.
 - **A more reliable roster:**
   - Clients Windows won't let ButlerV5 inspect (for example ones running as administrator) are no longer hidden.
   - Each account refreshes its status file at least once a minute.
@@ -126,12 +145,10 @@ VibeSkuffle's ButlerV5 is the **VibeSkua/Skua ButlerV5** (VibeSkua 2.0.7's versi
 - Army messages only reach this install's clients, so a normal VibeSkua running alongside isn't affected.
 - "Jump all to map" box: the cursor is already in it; an empty box no longer sends everyone nowhere.
 
-> **Running VibeSkua/Skua and VibeSkuffle together?** ButlerV5 doesn't fully work between them yet. The ButlerV5
-> that comes with VibeSkua and Skua only accepts a client as running if its name contains "skua", and
-> VibeSkuffle's doesn't. So a VibeSkua/Skua account that's summoned by a VibeSkuffle master thinks the master is
-> offline and stays parked ("stuck at summoned").
-> **An update is coming that fixes this**: one ButlerV5 that works in VibeSkua, Skua and VibeSkuffle. Until then,
-> run the accounts that need ButlerV5 together in the same client.
+> **Running VibeSkua/Skua and VibeSkuffle together?** VibeSkuffle loads its bundled ButlerV5 directly
+> and does not overwrite the shared plugin copy. Fork-specific login/server methods now have stock-host
+> guards. Full mixed-client following is still under validation; keep accounts that need to follow together
+> in the same client until your combination is confirmed.
 
 ### Fixes that also apply to VibeSkua
 - The Manager's saved accounts could be wiped: every program sharing the settings file wrote its whole (possibly
@@ -143,6 +160,15 @@ VibeSkuffle's ButlerV5 is the **VibeSkua/Skua ButlerV5** (VibeSkua 2.0.7's versi
 Full list: [CHANGELOG.md](CHANGELOG.md).
 
 ---
+
+## Updates and script locations
+
+**Manager → Updater** checks VibeSkuffle's own GitHub releases, including betas. Packages have a hashed
+application manifest, staging and rollback. Script updates keep their existing repository independently;
+client updates preserve accounts/settings, scripts, graphics preferences, alerts and custom plugins.
+
+Scripts default to `%APPDATA%\Skua\Scripts`. Old absolute VibeSkua script paths resolve there when a
+matching file exists. Explicit custom paths remain supported. Settings stay in `%APPDATA%\VibeSkua`.
 
 ## Settings
 

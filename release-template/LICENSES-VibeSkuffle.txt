@@ -6,4 +6,4 @@ VibeSkuffle bundles:
   ruffle\LICENSE-GPL-3.0.txt, ruffle\LICENSES\ and ruffle\THIRD-PARTY-NOTICES.txt (Ruffle: MIT / Apache-2.0).
 - JPEXS FFDec (FFDec\), GPL-3.0, unchanged: see FFDec\lib\*.license.txt.
 
-Source for the whole package (patches and build scripts): https://github.com/Aeoniian/VibeSkuffle
+Source for the whole package (patches and build scripts): https://github.com/__REPO__

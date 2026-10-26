@@ -91,3 +91,16 @@ webhook itself). Right-click a tab → **Watchdog Summary (last 24 hours)** show
 `alerts.txt` is kept when you rebuild and is never put in a release zip. It's separate from VibeSkua's own
 "Discord Webhook URL" setting (script started/stopped messages). Keep the webhook private: anyone with it can post
 to your channel.
+
+## Beta9: drops, tab order and client updates
+
+Options → Game → Drops & Looting has saved **Pickup AC Drops and Send to Bank** and **Reject Non-AC Drops**
+toggles. These work without a script. Banking waits until out of combat; rejection is allowed during combat.
+The manual AC banking button stays in Current Drops, alongside Reject All and Reject All Except AC.
+
+Drag account tabs to set their order; grid view follows it and the order persists. The active tab fades while
+dragging and an accent edge marks the insertion point. Right-click the game or headless overlay for per-account
+script/display controls and the selected/running script's name.
+
+Scripts default to `%APPDATA%\Skua\Scripts`; settings/accounts remain in `%APPDATA%\VibeSkua`.
+Client updates use VibeSkuffle GitHub releases. Script updates remain independent.

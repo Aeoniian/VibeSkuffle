@@ -6,7 +6,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
 $env:GIT_CONFIG_PARAMETERS = "'core.autocrlf=false'"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-$commit = '8774d1cecdae6c99d3ffa91254db84025f70f8cf'   # VibeSkua version the patch was made against (v2.0.7)
+$commit = 'd71afc903bc75a4d9a429349f18d7c497094bd7a'   # VibeSkua version the patch was made against (v2.0.9 plus current main fixes)
 
 $skua = Join-Path $root 'VibeSkua'
 if (-not (Test-Path (Join-Path $skua '.git'))) {
@@ -17,34 +17,21 @@ if (-not (Test-Path (Join-Path $skua '.git'))) {
     if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
 }
 
-# An existing download at an older VibeSkua version: move it to the version the patch is for.
-$head = (git -C $skua rev-parse HEAD 2>$null | Out-String).Trim()
-if ($head -ne $commit) {
-    Write-Host "== Updating VibeSkua to $commit"
-    git -C $skua checkout -q -- .
-    git -C $skua fetch -q origin
-    if ($LASTEXITCODE -ne 0) { throw "git fetch failed" }
-    git -C $skua checkout -q -f -B ruffle $commit
-    if ($LASTEXITCODE -ne 0) { throw "git checkout failed" }
-}
-
+# A previously applied fork is accepted even if the checkout still records an older base.
+# Refuse to discard source edits when updating a checkout that does not match the saved patch.
 $patch = Join-Path $root 'patches\vibeskua-ruffle.patch'
 git -C $skua apply --reverse --check $patch 2>$null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "== Ruffle patch already applied"
 } else {
-    # An older copy of the patch may be applied: undo local changes to the patched files first.
-    git -C $skua checkout -q -- .
-    git -C $skua clean -q -f -- Skua.App.Avalonia/Flash
-    # Files the patch adds are untracked; remove them so it can add them again.
-    foreach ($m in Select-String -Path $patch -Pattern '^diff --git a/(\S+) b/') {
-        $file = $m.Matches[0].Groups[1].Value
-        git -C $skua ls-files --error-unmatch -- $file 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) { Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $skua $file) }
-    }
-    Write-Host "== Applying Ruffle patch"
+    $dirty = git -C $skua status --porcelain --untracked-files=normal
+    if ($dirty) { throw 'Source differs from the saved fork patch. Preserve or update the patch before rebuilding; no source files were changed.' }
+    git -C $skua fetch -q origin
+    if ($LASTEXITCODE -ne 0) { throw 'git fetch failed' }
+    git -C $skua checkout -q --detach $commit
+    if ($LASTEXITCODE -ne 0) { throw 'git checkout failed' }
     git -C $skua apply --whitespace=nowarn $patch
-    if ($LASTEXITCODE -ne 0) { throw "git apply failed" }
+    if ($LASTEXITCODE -ne 0) { throw 'git apply failed' }
 }
 
 # Which patch this build is made from (compare with the patch you meant to build).

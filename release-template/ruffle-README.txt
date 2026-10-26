@@ -9,4 +9,4 @@ report problems with it to the Mugetsu author.
 Don't replace it with the official Mugetsu: VibeSkuffle can't talk to the official build.
 
 License: GPL-3.0 (LICENSE-GPL-3.0.txt). Source: Mugetsu v1.5.1 plus patches/skua.patch from
-https://github.com/Aeoniian/VibeSkuffle . Ruffle and library licenses are in LICENSES\ and THIRD-PARTY-NOTICES.txt.
+https://github.com/__REPO__ . Ruffle and library licenses are in LICENSES\ and THIRD-PARTY-NOTICES.txt.

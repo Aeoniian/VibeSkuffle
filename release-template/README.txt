@@ -8,14 +8,18 @@ Start
 2. Run VibeSkuffle.Manager.exe, add your accounts, tick them, click Start All.
    (VibeSkuffle.exe on its own starts a single client.)
 
-Uses the same scripts and settings as VibeSkua (%APPDATA%\VibeSkua) and can run next to a normal VibeSkua.
+Settings remain in %APPDATA%\VibeSkua; scripts default to %APPDATA%\Skua\Scripts.
+Runs alongside normal VibeSkua/Skua and loads its own bundled ButlerV5.
+
+Manager -> Updater checks VibeSkuffle GitHub releases. Scripts and settings are preserved.
+Script updates keep their existing source. Install the first updater-enabled build manually.
 
 Settings
 --------
 ruffle-options.txt (this folder): DirectX 12 / Vulkan, memory limit, per-account options.
 login-watchdog.log (this folder): everything the automatic recovery did (no passwords).
 
-More: https://github.com/Aeoniian/VibeSkuffle
+More: https://github.com/__REPO__
 
 Not affiliated with Artix Entertainment, Ruffle, Mugetsu, Skua or VibeSkua.
 Using bots breaks AQW's Terms of Service. Use at your own risk.

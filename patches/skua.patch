@@ -1,8 +1,7 @@
 diff --git a/core/src/avm2/globals/json.rs b/core/src/avm2/globals/json.rs
-index 43e19628..dbfa051c 100644
 --- a/core/src/avm2/globals/json.rs
 +++ b/core/src/avm2/globals/json.rs
-@@ -181,7 +181,20 @@ impl<'gc> AvmSerializer<'gc> {
+@@ -181,7 +181,20 @@
                  }
              }
          } else {
@@ -23,7 +22,7 @@ index 43e19628..dbfa051c 100644
                  let mapped = self.map_value(activation, || name, val)?;
                  if !skip_value(mapped) {
                      js_obj.insert(
-@@ -237,6 +250,11 @@ impl<'gc> AvmSerializer<'gc> {
+@@ -237,6 +250,11 @@
              Value::Null => JsonValue::Null,
              Value::Undefined => JsonValue::Null,
              Value::Integer(i) => JsonValue::from(i),
@@ -36,10 +35,9 @@ index 43e19628..dbfa051c 100644
              Value::Bool(b) => JsonValue::from(b),
              Value::String(s) => JsonValue::from(s.to_utf8_lossy().deref()),
 diff --git a/desktop/Cargo.toml b/desktop/Cargo.toml
-index a011c947..8ecd1baf 100644
 --- a/desktop/Cargo.toml
 +++ b/desktop/Cargo.toml
-@@ -72,7 +72,7 @@ ashpd = { version = "0.13.0", features = ["settings", "game_mode"] }
+@@ -72,7 +72,7 @@
  [target.'cfg(windows)'.dependencies]
  # AQW build: DXGI, to see which graphics chip Mugetsu will use (see `mugetsu::intel_graphics`).
  windows = { version = "0.62", features = ["Win32_Graphics_Dxgi"] }
@@ -49,10 +47,9 @@ index a011c947..8ecd1baf 100644
  [build-dependencies]
  vergen = { version = "10.0.3", features = ["build", "cargo"] }
 diff --git a/desktop/src/app.rs b/desktop/src/app.rs
-index f2687688..33546b53 100644
 --- a/desktop/src/app.rs
 +++ b/desktop/src/app.rs
-@@ -397,13 +397,92 @@ fn timer_parts(before: &[u64; ruffle_render_wgpu::perf_counters::timers::LEN]) -
+@@ -397,13 +397,92 @@
      if parts.is_empty() { "none of the timed work".to_string() } else { parts }
  }
  
@@ -146,7 +143,7 @@ index f2687688..33546b53 100644
                  let started = Instant::now();
                  let timers_before = ruffle_render_wgpu::perf_counters::timers::snapshot();
                  let walk_before = ruffle_core::render_walk_micros();
-@@ -509,7 +588,8 @@ impl MainWindow {
+@@ -509,7 +588,8 @@
                  }
              }
              WindowEvent::Occluded(occluded) => {
@@ -156,7 +153,7 @@ index f2687688..33546b53 100644
                  if !occluded {
                      // Nothing repaints us on its own if the movie is paused.
                      self.gui.window().request_redraw();
-@@ -558,6 +638,13 @@ impl MainWindow {
+@@ -558,6 +638,13 @@
                  self.player.handle_event(PlayerEvent::FocusLost);
              }
              WindowEvent::MouseInput { button, state, .. } => {
@@ -170,7 +167,7 @@ index f2687688..33546b53 100644
                  if self.gui.is_context_menu_visible() {
                      return;
                  }
-@@ -754,7 +841,9 @@ impl MainWindow {
+@@ -754,7 +841,9 @@
  
          // To prevent issues like waiting on resize indefinitely (#11364) or desyncing the window state on Windows,
          // do not resize while window is maximized.
@@ -181,7 +178,7 @@ index f2687688..33546b53 100644
  
          let (viewport_size, state) = if should_resize {
              let movie_width = swf_header.stage_size().width().to_pixels();
-@@ -1128,11 +1217,27 @@ impl ApplicationHandler<RuffleEvent> for App {
+@@ -1128,11 +1217,27 @@
                  }
              }
  
@@ -209,7 +206,7 @@ index f2687688..33546b53 100644
              let max_window_size = get_screen_size(&window);
              window.set_max_inner_size(Some(max_window_size));
              let window = Arc::new(window);
-@@ -1326,6 +1431,22 @@ impl ApplicationHandler<RuffleEvent> for App {
+@@ -1326,6 +1431,22 @@
                  event_loop.exit();
              }
  
@@ -233,10 +230,9 @@ index f2687688..33546b53 100644
          }
      }
 diff --git a/desktop/src/custom_event.rs b/desktop/src/custom_event.rs
-index 13be623d..08e1ac3f 100644
 --- a/desktop/src/custom_event.rs
 +++ b/desktop/src/custom_event.rs
-@@ -51,4 +51,7 @@ pub enum RuffleEvent {
+@@ -51,4 +51,7 @@
  
      /// Export Ruffle Bundle from currently playing content and open save dialog.
      ExportBundle,
@@ -245,10 +241,18 @@ index 13be623d..08e1ac3f 100644
 +    Skua(crate::skua::Request),
  }
 diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
-index 6979814c..a7534873 100644
 --- a/desktop/src/gui/context_menu.rs
 +++ b/desktop/src/gui/context_menu.rs
-@@ -179,64 +179,85 @@ impl ContextMenu {
+@@ -170,7 +170,7 @@
+                                 if !item.enabled {
+                                     continue;
+                                 }
+-                                if action_row(ui, z, &item.caption, item.checked.then_some("✓"))
++                                if action_row(ui, z, &item.caption, item.checked.then_some("âœ“"))
+                                     .clicked()
+                                 {
+                                     send(RuffleEvent::ContextMenuItemClicked(i));
+@@ -179,64 +179,102 @@
                              }
                          }
  
@@ -285,6 +289,23 @@ index 6979814c..a7534873 100644
 +                        // Skua build: inside VibeSkuffle only the graphics API is chosen here (its
 +                        // Graphics menu has the other settings, for every account at once).
 +                        if crate::skua::enabled() {
++                            section(ui, z, "THIS ACCOUNT");
++                            let label = crate::skua::client_script_label();
++                            ui.add_sized(vec2(WIDTH * z, 24.0 * z), egui::Label::new(egui::RichText::new(&label).size(12.5 * z).color(MUTED)).truncate()).on_hover_text(&label);
++                            let running = crate::skua::client_running();
++                            if action_row(ui, z, if running { "Stop Script" } else { "Start Script" }, None).clicked() {
++                                crate::skua::client_action(if running { "stop" } else { "start" });
++                                item_clicked = true;
++                            }
++                            if toggle_row(ui, z, "Headless", "Hide rendering for this account", crate::skua::client_headless()) {
++                                crate::skua::client_action("headless"); item_clicked = true;
++                            }
++                            if toggle_row(ui, z, "Lag Killer", "Hide the game world for this account", crate::skua::client_lagkiller()) {
++                                crate::skua::client_action("lagkiller"); item_clicked = true;
++                            }
++                            if action_row(ui, z, "Restart Client", Some("Keep login/script")).clicked() {
++                                crate::skua::client_action("restart"); item_clicked = true;
++                            }
 +                            section(ui, z, "GRAPHICS API");
 +                            row_title(ui, z, "Graphics API", "Restarts this account's game (login and script kept)");
 +                            const APIS: [&str; 3] = ["vulkan", "dx12", "gl"];
@@ -294,15 +315,37 @@ index 6979814c..a7534873 100644
 -                                .unwrap_or(0);
 -                            if let Some(choice) = segmented(ui, z, "graphics", options, current) {
 -                                send(RuffleEvent::MugetsuSetting(Setting::Graphics(values[choice])));
+-                                item_clicked = true;
+-                            }
+-                        }
+-
+-                        section(ui, z, "DISPLAY");
+-                        if toggle_row(ui, z, "Show FPS", "A small counter in the corner", settings.show_fps)
+-                        {
+-                            send(RuffleEvent::MugetsuSetting(Setting::ShowFps(!settings.show_fps)));
+-                            item_clicked = true;
+-                        }
+-                        if toggle_row(ui, z, "Full screen", "Esc leaves full screen", fullscreen) {
+-                            send(if fullscreen {
+-                                RuffleEvent::ExitFullScreen
+-                            } else {
+-                                RuffleEvent::EnterFullScreen
+-                            });
+-                            item_clicked = true;
+-                        }
+-
+-                        section(ui, z, "HELP");
+-                        if action_row(ui, z, "Open log folder", Some("↗")).clicked() {
+-                            send(RuffleEvent::MugetsuSetting(Setting::OpenLogFolder));
+-                            item_clicked = true;
 +                                .position(|&api| api == crate::skua::graphics())
 +                                .unwrap_or(APIS.len());
 +                            if let Some(choice) =
 +                                segmented(ui, z, "skua_graphics", &["Vulkan", "DirectX 12", "OpenGL"], current)
 +                            {
 +                                crate::skua::choose_graphics(APIS[choice]);
-                                 item_clicked = true;
-                             }
--                        }
++                                item_clicked = true;
++                            }
 +                        } else {
 +                            section(ui, z, "GRAPHICS");
 +                            row_title(ui, z, "Edge smoothing", "Flash-style is lighter on laptops");
@@ -342,21 +385,7 @@ index 6979814c..a7534873 100644
 +                                    item_clicked = true;
 +                                }
 +                            }
- 
--                        section(ui, z, "DISPLAY");
--                        if toggle_row(ui, z, "Show FPS", "A small counter in the corner", settings.show_fps)
--                        {
--                            send(RuffleEvent::MugetsuSetting(Setting::ShowFps(!settings.show_fps)));
--                            item_clicked = true;
--                        }
--                        if toggle_row(ui, z, "Full screen", "Esc leaves full screen", fullscreen) {
--                            send(if fullscreen {
--                                RuffleEvent::ExitFullScreen
--                            } else {
--                                RuffleEvent::EnterFullScreen
--                            });
--                            item_clicked = true;
--                        }
++
 +                            section(ui, z, "DISPLAY");
 +                            if toggle_row(ui, z, "Show FPS", "A small counter in the corner", settings.show_fps)
 +                            {
@@ -374,13 +403,9 @@ index 6979814c..a7534873 100644
 +                                });
 +                                item_clicked = true;
 +                            }
- 
--                        section(ui, z, "HELP");
--                        if action_row(ui, z, "Open log folder", Some("↗")).clicked() {
--                            send(RuffleEvent::MugetsuSetting(Setting::OpenLogFolder));
--                            item_clicked = true;
++
 +                            section(ui, z, "HELP");
-+                            if action_row(ui, z, "Open log folder", Some("↗")).clicked() {
++                            if action_row(ui, z, "Open log folder", Some("â†—")).clicked() {
 +                                send(RuffleEvent::MugetsuSetting(Setting::OpenLogFolder));
 +                                item_clicked = true;
 +                            }
@@ -388,10 +413,9 @@ index 6979814c..a7534873 100644
                      })
              });
 diff --git a/desktop/src/main.rs b/desktop/src/main.rs
-index 91a3223d..1ed095fc 100644
 --- a/desktop/src/main.rs
 +++ b/desktop/src/main.rs
-@@ -15,6 +15,7 @@ mod gui;
+@@ -15,6 +15,7 @@
  mod log;
  mod mugetsu;
  mod player;
@@ -399,7 +423,7 @@ index 91a3223d..1ed095fc 100644
  mod preferences;
  #[cfg(feature = "tracy")]
  mod tracy;
-@@ -151,10 +152,18 @@ fn panic_hook(info: &PanicHookInfo) {
+@@ -151,10 +152,18 @@
      let message = info.payload_as_str().unwrap_or("panic occurred");
  
      // AQW build: keep the crash and where it happened in ruffle.log.
@@ -419,7 +443,7 @@ index 91a3223d..1ed095fc 100644
  
      // AQW build (Mugetsu): no "report to the Ruffle developers" link (this is a modified build;
      // its crashes aren't theirs to triage). Say plainly what happened instead.
-@@ -204,7 +213,11 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
+@@ -204,7 +213,11 @@
      }
      let gui = args.iter().any(|a| is(a, "--gui"));
      args.retain(|a| !is(a, "--gui"));
@@ -432,7 +456,7 @@ index 91a3223d..1ed095fc 100644
      if has_movie {
          // A movie was given (or the arguments don't parse; let clap report that): plain Ruffle.
          return args;
-@@ -257,7 +270,8 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
+@@ -257,7 +270,8 @@
          ("--no-gui", None, None),
          ("--graphics", Some("-g"), Some(graphics)),
      ];
@@ -442,7 +466,7 @@ index 91a3223d..1ed095fc 100644
      for (flag, short, value) in defaults {
          if (*flag == "--no-gui" && gui) || given(flag) || short.is_some_and(given) {
              continue;
-@@ -302,7 +316,8 @@ fn main() -> Result<(), Error> {
+@@ -302,7 +316,8 @@
  
      let logs_path = &preferences.cli.cache_directory.join("log");
      mugetsu::set_log_folder(logs_path.clone());
@@ -452,7 +476,7 @@ index 91a3223d..1ed095fc 100644
      if let Some(parent) = log_path.parent() {
          std::fs::create_dir_all(parent)?;
      }
-@@ -312,7 +327,12 @@ fn main() -> Result<(), Error> {
+@@ -312,7 +327,12 @@
  
      // [NA] `_guard` cannot be `_` or it'll immediately drop
      // https://docs.rs/tracing-appender/latest/tracing_appender/non_blocking/index.html
@@ -467,10 +491,9 @@ index 91a3223d..1ed095fc 100644
  
      // AQW build (Mugetsu): by default the log keeps warnings, crash details and Mugetsu's
 diff --git a/desktop/src/mugetsu.rs b/desktop/src/mugetsu.rs
-index 53eb549e..7d21ad91 100644
 --- a/desktop/src/mugetsu.rs
 +++ b/desktop/src/mugetsu.rs
-@@ -255,7 +255,11 @@ impl MenuSettings {
+@@ -255,7 +255,11 @@
              interpolation: ruffle_core::frame_interpolation::enabled(),
              flash_edges: ruffle_render::tessellator::flash_aa_switch(),
              graphics: saved_graphics(),
@@ -483,7 +506,7 @@ index 53eb549e..7d21ad91 100644
              show_fps: show_fps(),
          }
      }
-@@ -665,7 +669,7 @@ pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power:
+@@ -665,7 +669,7 @@
  /// so and a message (once per version) offers to open the download page. Nothing is
  /// downloaded or installed; a `no-update-check` file next to Mugetsu.exe turns this off.
  pub fn spawn_update_check(window: Arc<Window>) {
@@ -493,10 +516,9 @@ index 53eb549e..7d21ad91 100644
      }
      let _ = std::thread::Builder::new()
 diff --git a/desktop/src/player.rs b/desktop/src/player.rs
-index b37bdd8a..67bd4275 100644
 --- a/desktop/src/player.rs
 +++ b/desktop/src/player.rs
-@@ -276,7 +276,14 @@ impl ActivePlayer {
+@@ -276,7 +276,14 @@
              .expect("Couldn't create wgpu rendering backend");
          RENDER_INFO.with(|i| *i.borrow_mut() = Some(renderer.debug_info().to_string()));
  
@@ -514,10 +536,9 @@ index b37bdd8a..67bd4275 100644
              }));
 diff --git a/desktop/src/skua.rs b/desktop/src/skua.rs
 new file mode 100644
-index 00000000..4b0cf4ef
 --- /dev/null
 +++ b/desktop/src/skua.rs
-@@ -0,0 +1,564 @@
+@@ -0,0 +1,585 @@
 +//! Skua bridge: lets Skua (a C# bot client) drive the game through `ExternalInterface`, the
 +//! same way it drives the Flash ActiveX control, over two pipes:
 +//!
@@ -543,7 +564,7 @@ index 00000000..4b0cf4ef
 +use std::fs::{File, OpenOptions};
 +use std::io::{BufReader, BufWriter, Read, Write};
 +use std::path::PathBuf;
-+use std::sync::OnceLock;
++use std::sync::{OnceLock, Mutex};
 +use std::sync::atomic::{AtomicBool, Ordering};
 +use std::sync::mpsc;
 +use std::time::{Duration, Instant};
@@ -558,6 +579,18 @@ index 00000000..4b0cf4ef
 +
 +static CONFIG: OnceLock<Config> = OnceLock::new();
 +static HEADLESS: AtomicBool = AtomicBool::new(false);
++static CLIENT_SCRIPT_LABEL: Mutex<String> = Mutex::new(String::new());
++static CLIENT_RUNNING: AtomicBool = AtomicBool::new(false);
++static CLIENT_HEADLESS: AtomicBool = AtomicBool::new(false);
++static CLIENT_LAGKILLER: AtomicBool = AtomicBool::new(false);
++pub fn client_script_label() -> String {
++    CLIENT_SCRIPT_LABEL.lock().map(|label| if label.is_empty() { "No script selected".to_string() } else { label.clone() }).unwrap_or_else(|_| "Script unavailable".to_string())
++}
++pub fn client_running() -> bool { CLIENT_RUNNING.load(Ordering::Relaxed) }
++pub fn client_headless() -> bool { CLIENT_HEADLESS.load(Ordering::Relaxed) }
++pub fn client_lagkiller() -> bool { CLIENT_LAGKILLER.load(Ordering::Relaxed) }
++pub fn client_action(action: &str) { send(json!({ "t": "client_action", "v": action })); }
++
 +static OUTBOX: OnceLock<mpsc::Sender<Vec<u8>>> = OnceLock::new();
 +
 +/// A request from Skua, delivered to the event loop as `RuffleEvent::Skua`.
@@ -901,6 +934,15 @@ index 00000000..4b0cf4ef
 +
 +fn parse_request(message: Json) -> Option<Request> {
 +    match message.get("t")?.as_str()? {
++        "client_state" => {
++            if let Ok(mut label) = CLIENT_SCRIPT_LABEL.lock() {
++                *label = message.get("script_label").and_then(Json::as_str).unwrap_or("No script selected").to_string();
++            }
++            CLIENT_RUNNING.store(message.get("running").and_then(Json::as_bool).unwrap_or(false), Ordering::Relaxed);
++            CLIENT_HEADLESS.store(message.get("headless").and_then(Json::as_bool).unwrap_or(false), Ordering::Relaxed);
++            CLIENT_LAGKILLER.store(message.get("lagkiller").and_then(Json::as_bool).unwrap_or(false), Ordering::Relaxed);
++            None
++        },
 +        "call" => Some(Request::Call {
 +            id: message.get("id")?.as_u64()?,
 +            name: message.get("n")?.as_str()?.to_string(),
@@ -1083,10 +1125,9 @@ index 00000000..4b0cf4ef
 +    }
 +}
 diff --git a/desktop/src/windows.rs b/desktop/src/windows.rs
-index a7d1275d..db53e4ec 100644
 --- a/desktop/src/windows.rs
 +++ b/desktop/src/windows.rs
-@@ -132,7 +132,7 @@ unsafe extern "system" fn crash_filter(
+@@ -132,7 +132,7 @@
          },
      );
      let vulkan_starting = crate::mugetsu::vulkan_starting();
@@ -1095,13 +1136,14 @@ index a7d1275d..db53e4ec 100644
          "fatal native crash: exception 0x{code:08X} in {} at offset 0x{:X} (Vulkan starting: \
          {vulkan_starting})\n{}",
          module
-@@ -141,8 +141,13 @@ unsafe extern "system" fn crash_filter(
+@@ -141,8 +141,13 @@
          module.as_ref().map_or(0, |m| m.offset),
          std::backtrace::Backtrace::force_capture()
      );
-+    tracing::error!("{details}");
- 
+-
 -    if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {
++    tracing::error!("{details}");
++
 +    if crate::skua::enabled() {
 +        // Skua mode: no dialog (it waits for a click while the account sits dead). Save the
 +        // details and end; VibeSkuffle starts a new player and logs back in.
@@ -1111,10 +1153,9 @@ index a7d1275d..db53e4ec 100644
              "Mugetsu can't run on this PC: it needs a processor with AVX2 (Intel Core 4th \
              generation from 2013 or newer, AMD Ryzen or newer). Some budget Celeron and Pentium \
 diff --git a/frontend-utils/src/backends/navigator.rs b/frontend-utils/src/backends/navigator.rs
-index 798dfe58..5fae11e3 100644
 --- a/frontend-utils/src/backends/navigator.rs
 +++ b/frontend-utils/src/backends/navigator.rs
-@@ -81,7 +81,13 @@ impl<F: FutureSpawner<Error>, I: NavigatorInterface> ExternalNavigatorBackend<F,
+@@ -81,7 +81,13 @@
          content: Rc<PlayingContent>,
          interface: I,
      ) -> Self {
@@ -1129,10 +1170,9 @@ index 798dfe58..5fae11e3 100644
              .user_agent(concat!(
                  "Ruffle/",
 diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
-index 1c7d14b4..871e6ea3 100644
 --- a/render/wgpu/src/backend.rs
 +++ b/render/wgpu/src/backend.rs
-@@ -1902,7 +1902,19 @@ async fn request_device(
+@@ -1902,7 +1902,19 @@
              // come and go all the time in AQW (layers, cached bitmaps, filters) and left the big
              // blocks mostly empty: 6-10 GB reserved for ~2 GB used after a session.
              // `RUFFLE_GPU_MEMORY_HINTS=performance` restores the old block sizes.

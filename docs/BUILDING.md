@@ -31,3 +31,14 @@ A normal VibeSkua that's running is left alone. Your `ruffle-options.txt` is kep
 - `patches\vibeskua-ruffle.patch`: VibeSkua side, on v2.0.7 (`8774d1c`). Ruffle backend (`RuffleFlashUtil`,
   `RuffleControl`), the rename to VibeSkuffle, login watchdog, crash/freeze/memory recovery, tab window
   recovery, army and ButlerV5 changes.
+
+## Beta9 base and packaging
+
+The C# patch targets VibeSkua 2.0.9 plus main `d71afc903bc75a4d9a429349f18d7c497094bd7a`, pinned in
+`upstream-base.txt` and the build script. Mugetsu remains 1.5.1. Existing source trees that already match the
+saved patch are accepted; other dirty trees stop without discarding local changes.
+
+After building, run `python scripts/package-release.py v1.0.0-beta9`. This copies program files and bundled
+plugins, generates clean defaults and build metadata, and writes the update manifest, ZIP and SHA-256 file
+under `out/releases/`. Accounts, runtime logs, alerts, graphics overrides and custom plugins are excluded.
+The normal build requires the Python runtime for this optional packaging step.
