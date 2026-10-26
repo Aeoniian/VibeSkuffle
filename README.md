@@ -2,14 +2,14 @@
 
 **VibeSkua, running on Mugetsu (a faster Ruffle) instead of Flash, built to run a whole army for days without babysitting.**
 
-VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (currently v2.0.9) with the Flash player swapped out for
+VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (v2.1.0) with the Flash player swapped out for
 [Mugetsu](https://github.com/mugetsu-aqw/mugetsu), a performance-tuned build of the
 [Ruffle](https://ruffle.rs) Flash emulator. Everything VibeSkua does still works: scripts, the Manager, the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
 goes wrong: stuck logins, crashes, freezes, memory build-up, and a crashed tab window.
 
-> **Status: beta.** Long-run (overnight / multi-day) testing is in progress. Use the
-> [latest release](../../releases) and report anything odd in [Issues](../../issues).
+> **Stable release: v1.0.0.** Download the [latest release](../../releases), or update directly through
+> **Manager → Updater**. Report problems in [Issues](../../issues).
 
 ---
 
@@ -25,6 +25,17 @@ goes wrong: stuck logins, crashes, freezes, memory build-up, and a crashed tab w
 Nothing else to install. The game player is in the `ruffle` folder. Scripts default to
 `%APPDATA%\Skua\Scripts`; accounts and settings remain in `%APPDATA%\VibeSkua`.
 VibeSkuffle can run side by side with a normal VibeSkua.
+
+### New in v1.0.0 Stable
+
+- VibeSkua **2.1.0**, including current main through `630c952`, with upstream themes, title-bar artwork and Manager script-options editing.
+- **Options → Watch Dog → Rescue Settings:** shared delay (1–120 minutes) and death threshold (1–100), applied live across updated clients. Defaults remain 15 minutes or 10 deaths. Either threshold requests help; the timed path requires at least two deaths without a kill.
+- Uniform two-column Current Drops actions, retaining AC pickup/banking and both rejection controls.
+- **Search Scripts → Download / Update UltrasLW:** fetches the latest package every click, installs only `Skua/Scripts/UltrasLW`, and refreshes the searchable list. Invalid downloads leave the installed version intact; failed swaps roll back.
+- Army Control → Misc Options shows confirmed **On**, **Off**, **Mixed**, **Pending**, or **Unknown** states and includes **Aggro Monsters**. Actions apply to every account in that tab host.
+
+**Already using Beta9 or Beta9.5? Install v1.0.0 directly through Manager → Updater.** Your scripts, accounts, settings and custom plugins are preserved.
+[Read the full stable release notes](docs/RELEASE-v1.0.0.md).
 
 ### New in Beta9.5
 
@@ -113,13 +124,15 @@ what the watchdog fixed. See [docs/SETTINGS.md](docs/SETTINGS.md#discord-alerts-
 Everything recovery does is written to `login-watchdog.log` next to `VibeSkuffle.exe` (time and account
 name, never passwords). Logs are size-capped so they can't fill your drive.
 
-### Rescue Allies (Game Options → Gameplay & Character)
+### Rescue Allies (Options → Watch Dog)
 
 **Rescue Allies - all accounts** is a live master switch shared with every updated Watch Dog/VibeSkuffle client
 on this PC. **Allow this account to rescue** is a separate saved opt-out for the logged-in account. Excluded
 helpers can still receive help. Defaults: shared master off, account eligibility on.
 
-When a scripted account keeps dying (10 deaths without a kill, or 15 minutes of only deaths), eligible accounts
+The **Rescue Settings** tab adjusts the shared delay (1–120 minutes) and death threshold (1–100).
+Defaults are 15 minutes or 10 deaths; either threshold triggers, and the timed path requires at least two
+deaths without a kill. A kill resets the streak. When a scripted account reaches a threshold, eligible accounts
 on the same server go to help. **Helpers can be idle; no running or loaded script is needed.** They return to
 their original room/cell afterward. Running scripts pause/resume, previously paused scripts remain paused,
 and idle accounts stay idle. Manual stop/logout/new-script actions take precedence. Manual Auto Attack/Hunt
@@ -135,7 +148,7 @@ once. Shared preferences: `%APPDATA%\Skua\WatchDog\rescue-settings.json`.
 - **Current Drops → Reject All / Reject All Except AC**, plus automatic banking status updates.
 - **Ignore Script Reject Else** (Game Options → Drops & Looting): scripts can no longer throw away drops they
   didn't ask for. They stay in the drop list so you can pick them up. *Reject All Drops* still works.
-- **Current Drops → Pickup AC Only and Send to Bank** remains available for manual use and waits until out of combat before accepting/banking.
+- **Current Drops → Pickup AC & Bank** remains available for manual use and waits until out of combat before accepting/banking.
 
 ### Army and ButlerV5
 

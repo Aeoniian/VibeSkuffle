@@ -1,7 +1,20 @@
+diff --git a/Skua.App.Avalonia/App.axaml b/Skua.App.Avalonia/App.axaml
+--- a/Skua.App.Avalonia/App.axaml
++++ b/Skua.App.Avalonia/App.axaml
+@@ -111,6 +111,9 @@
+     <DataTemplate DataType="options:GameOptionsViewModel">
+       <views:GameOptionsView />
+     </DataTemplate>
++    <DataTemplate DataType="options:WatchDogViewModel">
++      <views:WatchDogView />
++    </DataTemplate>
+     <DataTemplate DataType="options:ApplicationOptionsViewModel">
+       <views:ApplicationOptionsView />
+     </DataTemplate>
 diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
 --- a/Skua.App.Avalonia/App.axaml.cs
 +++ b/Skua.App.Avalonia/App.axaml.cs
-@@ -88,7 +88,10 @@
+@@ -92,7 +92,10 @@
          services.AddSingleton(HotKeys.CreateHotKeys);
          services.AddSingleton<IHotKeyService, HotKeyService>();
          services.AddSingleton<ISoundService, SoundService>();
@@ -13,7 +26,7 @@ diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
          services.AddSingleton<IScreenshotService, ScreenshotService>();
          services.AddSingleton<SkuaStartupHandler>();
          Skua.App.Avalonia.AppStartup.Services.AddSkuaMainAppViewModels(services);
-@@ -204,15 +207,21 @@
+@@ -214,15 +217,21 @@
                          try
                          {
                              var parentProcess = System.Diagnostics.Process.GetProcessById(hostPid);
@@ -35,7 +48,7 @@ diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
                          }
                          catch { }
                          try { System.Diagnostics.Process.GetCurrentProcess().Kill(); } catch { }
-@@ -224,7 +233,7 @@
+@@ -234,7 +243,7 @@
                  string[] clientArgs = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Skip(args, 1));
                  string payload = System.Text.Json.JsonSerializer.Serialize(clientArgs);
                  bool createdNew;
@@ -44,7 +57,7 @@ diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
  
                  if (!createdNew)
                  {
-@@ -233,7 +242,7 @@
+@@ -243,7 +252,7 @@
                      {
                          try
                          {
@@ -53,7 +66,7 @@ diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
                              pipeClient.Connect(1000);
                              using System.IO.StreamWriter sw = new(pipeClient);
                              sw.WriteLine(payload);
-@@ -258,7 +267,7 @@
+@@ -268,7 +277,7 @@
                      try
                      {
                          AppMutex?.Dispose();
@@ -62,7 +75,7 @@ diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
                      }
                      catch { }
                  }
-@@ -281,6 +290,8 @@
+@@ -297,6 +306,8 @@
          AppDomain.CurrentDomain.UnhandledException += (_, e) =>
          {
              Exception ex = e.ExceptionObject as Exception ?? new Exception("Unknown unhandled exception.");
@@ -71,7 +84,7 @@ diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
              ShowUnhandledException("AppDomain.CurrentDomain.UnhandledException", ex);
          };
  
-@@ -356,8 +367,20 @@
+@@ -372,8 +383,20 @@
          catch { }
      }
  
@@ -92,12 +105,34 @@ diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
          DisposeTrayIcon();
          try
          {
+diff --git a/Skua.App.Avalonia/AppStartup/MainMenu.cs b/Skua.App.Avalonia/AppStartup/MainMenu.cs
+--- a/Skua.App.Avalonia/AppStartup/MainMenu.cs
++++ b/Skua.App.Avalonia/AppStartup/MainMenu.cs
+@@ -34,6 +34,7 @@
+         windowService.RegisterManagedWindow<LoadoutsViewModel>("Loadouts Manager");
+ 
+         windowService.RegisterManagedWindow<GameOptionsViewModel>("Game");
++        windowService.RegisterManagedWindow<WatchDogViewModel>("Watch Dog");
+         windowService.RegisterManagedWindow<ApplicationOptionsViewModel>("Application");
+         windowService.RegisterManagedWindow<CoreBotsViewModel>("CoreBots");
+         windowService.RegisterManagedWindow<ApplicationThemesViewModel>("Application Themes");
+@@ -76,6 +77,7 @@
+             new("Options", new List<MainMenuItemViewModel>()
+             {
+                 new("Game"),
++                new("Watch Dog"),
+                 new("Application"),
+                 new("CoreBots"),
+                 new("Application Themes"),
 diff --git a/Skua.App.Avalonia/AppStartup/Options.cs b/Skua.App.Avalonia/AppStartup/Options.cs
 --- a/Skua.App.Avalonia/AppStartup/Options.cs
 +++ b/Skua.App.Avalonia/AppStartup/Options.cs
-@@ -32,6 +32,16 @@
+@@ -30,8 +30,18 @@
+ 
+         foreach (PropertyInfo pi in scriptOpt.GetType().GetProperties())
          {
-             if (pi.Name is nameof(IScriptOption.OptionDictionary) or nameof(ObservableRecipient.IsActive) or nameof(IScriptOption.GuildColor) or nameof(IScriptOption.NameColor) or "IsIpcMessageProcessing" or nameof(IScriptOption.ReloginTryDelay) or nameof(IScriptOption.UseFunctionBasedSkills))
+-            if (pi.Name is nameof(IScriptOption.OptionDictionary) or nameof(ObservableRecipient.IsActive) or nameof(IScriptOption.GuildColor) or nameof(IScriptOption.NameColor) or "IsIpcMessageProcessing" or nameof(IScriptOption.ReloginTryDelay) or nameof(IScriptOption.UseFunctionBasedSkills))
++            if (pi.Name is nameof(ScriptOption.RescueDelayMinutes) or nameof(ScriptOption.RescueDeathsBeforeCalling) or nameof(IScriptOption.OptionDictionary) or nameof(ObservableRecipient.IsActive) or nameof(IScriptOption.GuildColor) or nameof(IScriptOption.NameColor) or "IsIpcMessageProcessing" or nameof(IScriptOption.ReloginTryDelay) or nameof(IScriptOption.UseFunctionBasedSkills))
                  continue;
 +            if (pi.Name == nameof(IScriptOption.RescueAllies))
 +            {
@@ -112,6 +147,25 @@ diff --git a/Skua.App.Avalonia/AppStartup/Options.cs b/Skua.App.Avalonia/AppStar
              if (pi.PropertyType == typeof(bool))
                  options.Add(CreateOptionItem<bool>(s, pi.Name, "1", new RelayCommand<bool>(b => pi.SetValue(scriptOpt, b))));
              else if (pi.PropertyType == typeof(string))
+diff --git a/Skua.App.Avalonia/AppStartup/Services.cs b/Skua.App.Avalonia/AppStartup/Services.cs
+--- a/Skua.App.Avalonia/AppStartup/Services.cs
++++ b/Skua.App.Avalonia/AppStartup/Services.cs
+@@ -121,6 +121,7 @@
+             new("Loader", () => s.GetRequiredService<LoaderViewModel>()),
+             new("Grabber", () => s.GetRequiredService<GrabberViewModel>()),
+             new("Game", () => s.GetRequiredService<GameOptionsViewModel>()),
++            new("Watch Dog", () => s.GetRequiredService<WatchDogViewModel>()),
+             new("Application", () => s.GetRequiredService<ApplicationOptionsViewModel>()),
+             new("Console", () => s.GetRequiredService<ConsoleViewModel>()),
+             new("Diagnostics", () => s.GetRequiredService<DiagnosticsViewModel>()),
+@@ -150,6 +151,7 @@
+         services.AddSingleton(LogTabs.CreateViewModels);
+ 
+         services.AddTransient(Options.CreateGameOptions);
++        services.AddTransient(s => new WatchDogViewModel((ScriptOption)s.GetRequiredService<IScriptOption>()));
+         services.AddTransient(Options.CreateAppOptions);
+ 
+         services.AddTransient(PacketLogger.CreateViewModel);
 diff --git a/Skua.App.Avalonia/Flash/ClientQuickControls.cs b/Skua.App.Avalonia/Flash/ClientQuickControls.cs
 new file mode 100644
 --- /dev/null
@@ -2190,8 +2244,8 @@ diff --git a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs b/Skua.App.A
  public sealed partial class MainViewModel : ObservableObject
  {
      [ObservableProperty]
--    private string _title = "VibeSkua V2.0.9";
-+    private string _title = "VibeSkuffle V2.0.9";
+-    private string _title = "VibeSkua V2.1.0";
++    private string _title = "VibeSkuffle V2.1.0";
  
      public MainMenuViewModel MainMenu { get; }
  
@@ -2204,6 +2258,20 @@ diff --git a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs b/Skua.App.A
          discordWebhookService.Initialize();
      }
  
+diff --git a/Skua.App.Avalonia/ViewModels/Options/WatchDogViewModel.cs b/Skua.App.Avalonia/ViewModels/Options/WatchDogViewModel.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.App.Avalonia/ViewModels/Options/WatchDogViewModel.cs
+@@ -0,0 +1,9 @@
++using Skua.Core.Scripts;
++using Skua.Shared.Avalonia.ViewModels;
++
++namespace Skua.App.Avalonia.ViewModels.Options;
++
++public sealed class WatchDogViewModel(ScriptOption options) : BotControlViewModelBase("Watch Dog", 620, 460)
++{
++    public ScriptOption Options { get; } = options;
++}
 diff --git a/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs b/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
 --- a/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
@@ -2250,20 +2318,43 @@ diff --git a/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs 
 diff --git a/Skua.App.Avalonia/Views/CurrentDropsView.axaml b/Skua.App.Avalonia/Views/CurrentDropsView.axaml
 --- a/Skua.App.Avalonia/Views/CurrentDropsView.axaml
 +++ b/Skua.App.Avalonia/Views/CurrentDropsView.axaml
-@@ -128,7 +128,7 @@
+@@ -7,6 +7,13 @@
+              x:Class="Skua.App.Avalonia.Views.CurrentDropsView"
+              x:DataType="vms:CurrentDropsViewModel"
+              mc:Ignorable="d" d:DesignHeight="480" d:DesignWidth="560">
++  <UserControl.Styles>
++    <Style Selector="Button.skua-button">
++      <Setter Property="Padding" Value="8,0" />
++      <Setter Property="FontSize" Value="11" />
++      <Setter Property="FontWeight" Value="SemiBold" />
++    </Style>
++  </UserControl.Styles>
+ 
+   <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+     
+@@ -127,7 +134,7 @@
              BorderThickness="1"
              CornerRadius="8"
              Padding="10">
 -      <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
-+      <Grid ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
-         <Button Grid.Column="0"
++      <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+         <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Grid.Column="0"
                  Classes="skua-button skua-primary"
                  Height="34"
-@@ -158,6 +158,25 @@
+@@ -148,7 +155,7 @@
+           </StackPanel>
+         </Button>
+ 
+-        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Grid.Column="2"
++        <Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Grid.Row="1" Grid.Column="0"
+                 Classes="skua-button"
+                 Height="34"
+                 Command="{Binding PickupACCommand}">
+@@ -157,6 +164,35 @@
              <TextBlock Text="Pickup AC Only" VerticalAlignment="Center" />
            </StackPanel>
          </Button>
-+        <Button Grid.Row="1" Grid.ColumnSpan="3"
++        <Button Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
 +                Classes="skua-button"
 +                Height="34"
 +                IsEnabled="{Binding !Banking}"
@@ -2271,14 +2362,24 @@ diff --git a/Skua.App.Avalonia/Views/CurrentDropsView.axaml b/Skua.App.Avalonia/
 +                Command="{Binding PickupACToBankCommand}">
 +          <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
 +            <materialIcons:MaterialIcon Kind="Bank" Width="14" Height="14" Foreground="#FFD700" />
-+            <TextBlock Text="Pickup AC Only and Send to Bank" VerticalAlignment="Center" />
++            <TextBlock Text="Pickup AC &amp; Bank" VerticalAlignment="Center" />
 +          </StackPanel>
 +        </Button>
-+        <Button Grid.Row="2" Grid.Column="0" Classes="skua-button" Height="34"
-+                Content="Reject All" Command="{Binding RejectAllCommand}" />
-+        <Button Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Classes="skua-button" Height="34"
-+                Content="Reject All Except AC" Command="{Binding RejectNonACCommand}" />
-+        <TextBlock Grid.Row="3" Grid.ColumnSpan="3"
++        <Button Grid.Row="2" Grid.Column="0" Classes="skua-button" Height="34" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
++                Command="{Binding RejectAllCommand}">
++          <StackPanel Orientation="Horizontal" Spacing="6">
++            <materialIcons:MaterialIcon Kind="CloseCircleOutline" Width="14" Height="14" />
++            <TextBlock Text="Reject All" VerticalAlignment="Center" />
++          </StackPanel>
++        </Button>
++        <Button Grid.Row="2" Grid.Column="1" Classes="skua-button" Height="34" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
++                Command="{Binding RejectNonACCommand}">
++          <StackPanel Orientation="Horizontal" Spacing="6">
++            <materialIcons:MaterialIcon Kind="ShieldStarOutline" Width="14" Height="14" />
++            <TextBlock Text="Reject Except AC" VerticalAlignment="Center" />
++          </StackPanel>
++        </Button>
++        <TextBlock Grid.Row="3" Grid.ColumnSpan="2"
 +                   Text="{Binding Status}"
 +                   IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
 +                   TextWrapping="Wrap" FontSize="11" Opacity="0.8" />
@@ -2288,7 +2389,7 @@ diff --git a/Skua.App.Avalonia/Views/CurrentDropsView.axaml b/Skua.App.Avalonia/
 diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
 --- a/Skua.App.Avalonia/Views/MainWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
-@@ -78,6 +78,72 @@
+@@ -78,6 +78,73 @@
      private int _preThrottleFPS = -1;
      private string? _preThrottleQuality = null;
  
@@ -2333,6 +2434,7 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
 +    {
 +        try
 +        {
++            Skua.Core.Services.ArmyOptionFeedback.Publish(Ioc.Default.GetRequiredService<IScriptOption>(), Environment.ProcessId);
 +            var manager = Ioc.Default.GetRequiredService<IScriptManager>();
 +            var player = Ioc.Default.GetRequiredService<IScriptPlayer>();
 +            if (manager.ScriptRunning)
@@ -2361,7 +2463,7 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
      public void HideTitleBar()
      {
          _isTitleBarPermanentlyHidden = true;
-@@ -93,6 +159,21 @@
+@@ -93,6 +160,21 @@
      public MainWindow()
      {
          InitializeComponent();
@@ -2383,7 +2485,7 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
          _mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
          _mainMenuVm = Ioc.Default.GetRequiredService<MainMenuViewModel>();
          _flash = Ioc.Default.GetRequiredService<IFlashUtil>();
-@@ -129,7 +210,93 @@
+@@ -130,7 +212,93 @@
          MainMenuControl.Items.Clear();
          foreach (MainMenuItemViewModel item in _mainMenuVm.MainMenuItems)
              MainMenuControl.Items.Add(CreateMainMenuItem(item, isTopLevel: true));
@@ -2478,7 +2580,15 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
  
      private global::Avalonia.Controls.MenuItem CreateMainMenuItem(IMainMenuItemViewModel viewModel, bool isTopLevel = false)
      {
-@@ -245,6 +412,8 @@
+@@ -192,6 +360,7 @@
+                 "Script Loader" => MaterialIconKind.ScriptOutline,
+                 "Scheduler" => MaterialIconKind.CalendarClock,
+                 "Game" => MaterialIconKind.GamepadVariantOutline,
++                "Watch Dog" => MaterialIconKind.ShieldCheckOutline,
+                 "Application" => MaterialIconKind.ApplicationCogOutline,
+                 "CoreBots" => MaterialIconKind.RobotOutline,
+                 "Application Themes" => MaterialIconKind.PaletteOutline,
+@@ -246,6 +415,8 @@
      private void RegisterMessages()
      {
          WeakReferenceMessenger.Default.Register<MainWindow, FlashChangedMessage<AxShockwaveFlash>>(this, static (r, m) => r.OnFlashControlChanged(m.Flash));
@@ -2487,7 +2597,7 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
      }
      #endif
  
-@@ -263,6 +432,9 @@
+@@ -264,6 +435,9 @@
                      Dispatcher.UIThread.Post(() =>
                      {
                          bool isHeadless = _options.HeadlessMode;
@@ -2497,7 +2607,7 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
                          if (HeadlessOverlay != null) HeadlessOverlay.IsVisible = isHeadless;
                          if (FlashHost != null) FlashHost.IsVisible = !isHeadless && _isFlashLoaded;
                      });
-@@ -297,6 +469,28 @@
+@@ -298,6 +472,28 @@
              }
  #endif
          }
@@ -2526,7 +2636,7 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
  
          _tabTitleSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
          string lastWrittenUsername = "";
-@@ -356,6 +550,9 @@
+@@ -357,6 +553,9 @@
              Dispatcher.UIThread.Post(() =>
              {
                  LoadingBar.IsVisible = false;
@@ -2536,7 +2646,7 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
                  FlashHost.IsVisible = !_options.HeadlessMode;
                  HeadlessOverlay.IsVisible = _options.HeadlessMode;
                  try
-@@ -365,6 +562,56 @@
+@@ -366,6 +565,56 @@
                  }
                  catch { }
              });
@@ -2593,7 +2703,7 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
          }
      }
  
-@@ -417,14 +664,42 @@
+@@ -418,14 +667,42 @@
          }
          else if (uMsg == WM_SKUA_LOGIN)
          {
@@ -2642,7 +2752,31 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
          }
          else if (uMsg == 0x0400 + 448) // WM_SKUA_LOGOUT
          {
-@@ -631,46 +906,8 @@
+@@ -520,6 +797,7 @@
+                 case 7: options.SkipCutscenes = value; break;
+                 case 8: options.UseFunctionBasedSkills = value; break;
+                 case 9: options.StreamerMode = value; break;
++                case 10: options.AggroMonsters = value; break;
+                 case 99:
+                     var sm = Ioc.Default.GetRequiredService<Skua.App.Avalonia.ViewModels.ScriptLoaderViewModel>();
+                     var scheduler = Ioc.Default.GetRequiredService<Skua.Shared.Avalonia.ViewModels.ScriptSchedulerViewModel>();
+@@ -539,6 +817,15 @@
+                             sm.ToggleScriptCommand.Execute(null);
+                     }
+                     break;
++            }
++            try
++            {
++                Skua.Core.Services.ArmyOptionFeedback.ReportAppliedOption(options, optionId, Environment.ProcessId,
++                    () => HotKeys.NotifyArmyOptionStateChanged(hWnd));
++            }
++            catch (Exception ex)
++            {
++                Trace.WriteLine($"Immediate army option report failed: {ex.Message}");
+             }
+             return IntPtr.Zero;
+         }
+@@ -632,46 +919,8 @@
          }
          else if (uMsg == 0x0400 + 452) // WM_SKUA_THROTTLE
          {
@@ -2691,6 +2825,103 @@ diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Vie
              return IntPtr.Zero;
          }
          else if (uMsg == WM_SKUA_OPEN_BANK)
+diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.ArmyOptions.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.ArmyOptions.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.App.Avalonia/Views/TabbedHostWindow.ArmyOptions.cs
+@@ -0,0 +1,92 @@
++using Avalonia.Controls;
++using Avalonia.Interactivity;
++using Avalonia.Media;
++using Avalonia.Threading;
++using Material.Icons.Avalonia;
++using Skua.Core.Services;
++using System;
++using System.Collections.Generic;
++using System.Linq;
++
++namespace Skua.App.Avalonia.Views;
++
++public partial class TabbedHostWindow
++{
++    private readonly Dictionary<string, (bool Target, DateTime Sent)> _pendingArmyOptions = new();
++    private readonly Dictionary<string, DateTime> _failedArmyOptions = new();
++    private DispatcherTimer? _armyOptionsTimer;
++    private bool _armyOptionRefreshQueued;
++
++    private void ArmyOptionStateReported(int processId, IntPtr childHwnd)
++    {
++        if (_isClosing || _armyOptionRefreshQueued || childHwnd == IntPtr.Zero ||
++            !_tabs.Values.Any(t => t.Process is not null && !t.Process.HasExited &&
++                t.Process.Id == processId && t.ChildHwnd == childHwnd)) return;
++        _armyOptionRefreshQueued = true;
++        Dispatcher.UIThread.Post(() =>
++        {
++            _armyOptionRefreshQueued = false;
++            if (!_isClosing) RefreshArmyOptions();
++        }, DispatcherPriority.Background);
++    }
++
++    private void InitializeArmyOptions()
++    {
++        RefreshArmyOptions();
++        _armyOptionsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
++        _armyOptionsTimer.Tick += (_, _) => RefreshArmyOptions();
++        _armyOptionsTimer.Start();
++        Closed += (_, _) => _armyOptionsTimer.Stop();
++    }
++    private List<(TabInfo Tab, ArmyOptionSnapshot? State)> ArmyStates() => _tabs.Values
++        .Where(t => t.Process is not null && !t.Process.HasExited)
++        .Select(t => (t, ArmyOptionFeedback.Read(t.Process.Id))).ToList();
++
++    private void RefreshArmyOptions()
++    {
++        var states = ArmyStates();
++        foreach (var item in MiscOptionsMenu.Items.OfType<MenuItem>())
++        {
++            string name = item.Tag?.ToString() ?? "";
++            if (name.Length == 0) continue;
++            string label = name switch { "LagKiller" => "Lag Killer", "HeadlessMode" => "Headless Mode", "HidePlayers" => "Hide Players",
++                "DisableFX" => "Disable FX", "InfiniteRange" => "Infinite Range", "StreamerMode" => "Streamer Mode", _ => "Aggro Monsters" };
++            var values = states.Select(s => s.State?.Options.TryGetValue(name, out bool value) == true ? (bool?)value : null).ToArray();
++            string status = ArmyOptionFeedback.Summarize(values);
++            if (_pendingArmyOptions.TryGetValue(name, out var pending))
++            {
++                if (states.Count > 0 && states.All(s => s.State is not null && s.State.UpdatedUtc >= pending.Sent &&
++                    s.State.Options.TryGetValue(name, out bool value) && value == pending.Target))
++                { _pendingArmyOptions.Remove(name); _failedArmyOptions.Remove(name); }
++                else if (DateTime.UtcNow - pending.Sent < TimeSpan.FromSeconds(8)) status = "Pending";
++                else { _pendingArmyOptions.Remove(name); _failedArmyOptions[name] = pending.Sent; }
++            }
++            if (_failedArmyOptions.TryGetValue(name, out var failed))
++            {
++                if (states.All(s => s.State is not null && s.State.UpdatedUtc >= failed) && states.Count > 0) _failedArmyOptions.Remove(name);
++                else status = "Unknown";
++            }
++            item.Header = label + " — " + status;
++            item.IsEnabled = states.Count > 0;
++            ToolTip.SetTip(item, "Applies to every open account in this tab host. Mixed or unknown states switch on for all accounts.");
++            if (item.Icon is MaterialIcon icon) icon.Foreground = status switch {
++                "On" => Brush.Parse("#22C55E"), "Off" => Brush.Parse("#EF4444"),
++                "Mixed" or "Pending" => Brush.Parse("#F59E0B"), _ => Brush.Parse("#94A3B8")
++            };
++        }
++    }
++    private void ArmyOption_Click(object? sender, RoutedEventArgs e)
++    {
++        if (sender is not MenuItem item || item.Tag is not string name) return;
++        var states = ArmyStates();
++        if (states.Count == 0) return;
++        bool target = !states.All(s => s.State?.Options.TryGetValue(name, out bool value) == true && value);
++        int command = ArmyOptionFeedback.Options.Single(o => o.Name == name).Command;
++        _pendingArmyOptions[name] = (target, DateTime.UtcNow);
++        _failedArmyOptions.Remove(name);
++        foreach (var (tab, _) in states)
++            if (tab.ChildHwnd != IntPtr.Zero) PostMessage(tab.ChildHwnd, WM_SKUA_SET_OPTION, new IntPtr(command), new IntPtr(target ? 1 : 0));
++        RefreshArmyOptions();
++        e.Handled = true;
++    }
++}
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
@@ -2700,10 +2931,19 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml b/Skua.App.Avalonia/
          Classes="skua"
 -        Title="VibeSkua" Icon="avares://Skua.Shared.Avalonia/Assets/SkuaIcon.ico" Height="700" Width="1100"
 +        Title="VibeSkuffle" Icon="avares://Skua.Shared.Avalonia/Assets/SkuaIcon.ico" Height="700" Width="1100"
-         WindowStartupLocation="CenterScreen" Background="{DynamicResource SkuaPageBrush}">
-     <Grid RowDefinitions="Auto,*">
-         
-@@ -95,6 +95,17 @@
+         WindowStartupLocation="CenterScreen"
+         Background="{DynamicResource SkuaPageBrush}"
+         SystemDecorations="BorderOnly"
+@@ -15,7 +15,7 @@
+         ExtendClientAreaChromeHints="NoChrome"
+         ExtendClientAreaTitleBarHeightHint="32">
+     <Grid RowDefinitions="32,Auto,*">
+-        <sharedShell:WindowTitleBar x:Name="MainTitleBar" Grid.Row="0" TitleText="VibeSkua" />
++        <sharedShell:WindowTitleBar x:Name="MainTitleBar" Grid.Row="0" TitleText="VibeSkuffle" />
+ 
+         <!-- Top Tab Bar & Army Bar -->
+         <Border Grid.Row="1"
+@@ -101,6 +101,17 @@
                                  <Style Selector="TabControl /template/ Rectangle#PART_Separator">
                                      <Setter Property="IsVisible" Value="False" />
                                  </Style>
@@ -2721,6 +2961,50 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml b/Skua.App.Avalonia/
                              </TabControl.Styles>
                              <TabControl.ItemsPanel>
                                  <ItemsPanelTemplate>
+@@ -227,32 +238,37 @@
+                                     <MenuItem.Icon>
+                                         <materialIcons:MaterialIcon Kind="TuneVariant" Width="14" Height="14" />
+                                     </MenuItem.Icon>
+-                                    <MenuItem Header="Lag Killer" ToggleType="CheckBox" StaysOpenOnClick="True" IsChecked="{Binding LagKiller, Mode=TwoWay}">
++                                    <MenuItem Header="Lag Killer" Tag="LagKiller" StaysOpenOnClick="True" Click="ArmyOption_Click">
+                                         <MenuItem.Icon>
+                                             <materialIcons:MaterialIcon Kind="FlashOutline" Width="14" Height="14" />
+                                         </MenuItem.Icon>
+                                     </MenuItem>
+-                                    <MenuItem Header="Headless Mode" ToggleType="CheckBox" StaysOpenOnClick="True" IsChecked="{Binding HeadlessMode, Mode=TwoWay}">
++                                    <MenuItem Header="Headless Mode" Tag="HeadlessMode" StaysOpenOnClick="True" Click="ArmyOption_Click">
+                                         <MenuItem.Icon>
+                                             <materialIcons:MaterialIcon Kind="MonitorOff" Width="14" Height="14" />
+                                         </MenuItem.Icon>
+                                     </MenuItem>
+-                                    <MenuItem Header="Hide Players" ToggleType="CheckBox" StaysOpenOnClick="True" IsChecked="{Binding HidePlayers, Mode=TwoWay}">
++                                    <MenuItem Header="Hide Players" Tag="HidePlayers" StaysOpenOnClick="True" Click="ArmyOption_Click">
+                                         <MenuItem.Icon>
+                                             <materialIcons:MaterialIcon Kind="AccountEyeOutline" Width="14" Height="14" />
+                                         </MenuItem.Icon>
+                                     </MenuItem>
+-                                    <MenuItem Header="Disable FX" ToggleType="CheckBox" StaysOpenOnClick="True" IsChecked="{Binding DisableFX, Mode=TwoWay}">
++                                    <MenuItem Header="Disable FX" Tag="DisableFX" StaysOpenOnClick="True" Click="ArmyOption_Click">
+                                         <MenuItem.Icon>
+                                             <materialIcons:MaterialIcon Kind="AutoFix" Width="14" Height="14" />
+                                         </MenuItem.Icon>
+                                     </MenuItem>
+-                                    <MenuItem Header="Infinite Range" ToggleType="CheckBox" StaysOpenOnClick="True" IsChecked="{Binding InfiniteRange, Mode=TwoWay}">
++                                    <MenuItem Header="Infinite Range" Tag="InfiniteRange" StaysOpenOnClick="True" Click="ArmyOption_Click">
+                                         <MenuItem.Icon>
+                                             <materialIcons:MaterialIcon Kind="ArrowExpandAll" Width="14" Height="14" />
+                                         </MenuItem.Icon>
+                                     </MenuItem>
+-                                    <MenuItem Header="Streamer Mode" ToggleType="CheckBox" StaysOpenOnClick="True" IsChecked="{Binding StreamerMode, Mode=TwoWay}">
++                                    <MenuItem Header="Aggro Monsters" Tag="AggroMonsters" StaysOpenOnClick="True" Click="ArmyOption_Click">
++                                        <MenuItem.Icon>
++                                            <materialIcons:MaterialIcon Kind="SwordCross" Width="14" Height="14" />
++                                        </MenuItem.Icon>
++                                    </MenuItem>
++                                    <MenuItem Header="Streamer Mode" Tag="StreamerMode" StaysOpenOnClick="True" Click="ArmyOption_Click">
+                                         <MenuItem.Icon>
+                                             <materialIcons:MaterialIcon Kind="Broadcast" Width="14" Height="14" />
+                                         </MenuItem.Icon>
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
@@ -2753,10 +3037,20 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
 +        // long as this window's thread does.
 +        try { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED); } catch { }
 +        Title = $"VibeSkuffle V{Skua.Core.Models.ClientFileSources.DisplayVersion}";
+         MainTitleBar.TitleText = Title;
+ 
+         try
+@@ -325,8 +334,7 @@
+         catch { }
  
          var options = Ioc.Default.GetRequiredService<IScriptOption>();
-         MiscOptionsMenu.DataContext = options;
-@@ -345,6 +354,11 @@
+-        MiscOptionsMenu.DataContext = options;
+-        options.PropertyChanged += Options_PropertyChanged;
++        InitializeArmyOptions();
+ 
+         Opened += TabbedHostWindow_Opened;
+         PositionChanged += (s, e) => OnWindowPositionChanged(e.Point);
+@@ -367,6 +375,11 @@
          var titleSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
          titleSyncTimer.Tick += (s, e) => SyncTabTitles();
          titleSyncTimer.Start();
@@ -2768,7 +3062,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
  
          GridViewBorder.PointerEntered += GridViewBorder_PointerEntered;
          GridViewBorder.PointerExited += GridViewBorder_PointerExited;
-@@ -395,7 +409,7 @@
+@@ -417,7 +430,7 @@
  
                          if (tab.Header is StackPanel headerPanel)
                          {
@@ -2777,7 +3071,20 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
                              var editBox = headerPanel.Children.OfType<TextBox>().FirstOrDefault();
                              if (titleBlock != null && (titleBlock.Text.StartsWith("User ") || titleBlock.Text.StartsWith("Skua ") || titleBlock.Text != username))
                              {
-@@ -590,6 +604,8 @@
+@@ -568,6 +581,12 @@
+             }
+         }
+ 
++        if (uMsg == HotKeys.WM_SKUA_ARMY_OPTION_STATE)
++        {
++            ArmyOptionStateReported(wParam.ToInt32(), lParam);
++            return IntPtr.Zero;
++        }
++
+         if (uMsg == WM_SKUA_CHILD_READY)
+         {
+             IntPtr childHwnd = wParam;
+@@ -638,6 +657,8 @@
  
      private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
      {
@@ -2786,7 +3093,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
          _isClosing = true;
          App.DisposeTrayIcon();
          try { _pipeCts.Cancel(); } catch { }
-@@ -646,7 +662,7 @@
+@@ -694,7 +715,7 @@
                  try
                  {
                      pipeServer = new NamedPipeServerStream(
@@ -2795,7 +3102,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
                          PipeDirection.In,
                          NamedPipeServerStream.MaxAllowedServerInstances,
                          PipeTransmissionMode.Byte,
-@@ -1193,7 +1209,8 @@
+@@ -1292,7 +1313,8 @@
              string[] parts = (vm.DialogTextInput ?? "").Split(',');
              string targetMap = parts.Length > 0 ? parts[0].Trim() : "";
              string targetCell = parts.Length > 1 ? parts[1].Trim() : "Enter";
@@ -2805,7 +3112,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
              {
                  _lastJumpMap = targetMap;
                  _lastJumpCell = targetCell;
-@@ -1391,9 +1408,15 @@
+@@ -1517,9 +1539,15 @@
  
              if (WindowState == WindowState.Minimized || !IsVisible)
              {
@@ -2824,7 +3131,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
                  return;
              }
  
-@@ -1643,6 +1666,86 @@
+@@ -1769,6 +1797,86 @@
              InstancesTabControl.SelectedItem = remaining;
      }
  
@@ -2911,7 +3218,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
      public void AddNewInstance(string rawArgs)
      {
          AddNewInstance(ParseRawCommandLine(rawArgs));
-@@ -1656,7 +1759,7 @@
+@@ -1782,7 +1890,7 @@
          var currentTitles = InstancesTabControl.Items.OfType<TabItem>()
              .Select(t => t.Header as StackPanel)
              .Where(p => p != null)
@@ -2920,7 +3227,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
              .Where(t => t != null && (t.StartsWith("User ") || t.StartsWith("Skua ")))
              .Select(t =>
              {
-@@ -1733,27 +1836,29 @@
+@@ -1859,27 +1967,29 @@
              CornerRadius = new CornerRadius(9),
              VerticalAlignment = VerticalAlignment.Center
          };
@@ -2963,7 +3270,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
          Action closeEditMode = () =>
          {
              if (!editTitle.IsVisible) return;
-@@ -1816,6 +1921,7 @@
+@@ -1942,6 +2052,7 @@
          }, DispatcherPriority.Background);
  
          _tabs[newTab] = info;
@@ -2971,7 +3278,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
  
          EnqueueSpawn(() =>
          {
-@@ -1846,6 +1952,17 @@
+@@ -1972,6 +2083,17 @@
                  {
                      if (!_isClosing)
                      {
@@ -2989,7 +3296,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
                          CloseTab(newTab);
                      }
                  });
-@@ -1870,13 +1987,9 @@
+@@ -1996,13 +2118,9 @@
              }
  
              info.Process = p;
@@ -3006,7 +3313,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
              HotKeys.RegisterSkuaPid((uint)p.Id);
  
              int pid = p.Id;
-@@ -1940,6 +2053,26 @@
+@@ -2066,6 +2184,26 @@
          ContextMenu ctx = new ContextMenu();
          MenuItem closeItem = new MenuItem { Header = "Close Tab" };
          closeItem.Click += (s, ev) => CloseTab(newTab);
@@ -3033,7 +3340,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
          MenuItem closeOthersItem = new MenuItem { Header = "Close Other Tabs" };
          closeOthersItem.Click += (s, ev) =>
          {
-@@ -1953,6 +2086,21 @@
+@@ -2079,6 +2217,21 @@
              var toRemove = InstancesTabControl.Items.OfType<TabItem>().Where((t, i) => i > idx && t.Header is StackPanel).ToList();
              foreach (var tab in toRemove) CloseTab(tab);
          };
@@ -3055,7 +3362,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
          ctx.Items.Add(closeItem);
          ctx.Items.Add(closeOthersItem);
          ctx.Items.Add(closeRightItem);
-@@ -1978,7 +2126,16 @@
+@@ -2104,7 +2257,16 @@
          newTab.ContextMenu = ctx;
  
          Point startPoint = new Point();
@@ -3073,7 +3380,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
          {
              var prop = ev.GetCurrentPoint(headerPanel).Properties;
              if (prop.IsRightButtonPressed)
-@@ -1991,21 +2148,7 @@
+@@ -2117,21 +2279,7 @@
                  return;
  
              startPoint = ev.GetPosition(null);
@@ -3096,7 +3403,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
              ev.Handled = true;
          };
  
-@@ -2019,8 +2162,8 @@
+@@ -2145,8 +2293,8 @@
  
          headerPanel.PointerMoved += async (s, ev) =>
          {
@@ -3107,7 +3414,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
              if (ev.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
              {
                  Point mousePos = ev.GetPosition(null);
-@@ -2029,10 +2172,34 @@
+@@ -2155,10 +2303,34 @@
                  {
                      var dragData = new global::Avalonia.Input.DataObject();
                      dragData.Set("TabItem", newTab);
@@ -3143,7 +3450,7 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
  
          newTab.AddHandler(DragDrop.DropEvent, (s, ev) =>
          {
-@@ -2041,15 +2208,69 @@
+@@ -2167,15 +2339,69 @@
                  TabItem? droppedTab = ev.Data.Get("TabItem") as TabItem;
                  if (droppedTab != null && droppedTab != newTab)
                  {
@@ -3216,6 +3523,71 @@ diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalon
      }
  
      #region Group Assignment Helper
+@@ -2335,4 +2561,4 @@
+     #endregion Group Assignment Helper
+ 
+     #endregion Tab Management
+-}
+\ No newline at end of file
++}
+diff --git a/Skua.App.Avalonia/Views/WatchDogView.axaml b/Skua.App.Avalonia/Views/WatchDogView.axaml
+new file mode 100644
+--- /dev/null
++++ b/Skua.App.Avalonia/Views/WatchDogView.axaml
+@@ -0,0 +1,40 @@
++<UserControl xmlns="https://github.com/avaloniaui"
++             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
++             xmlns:vms="clr-namespace:Skua.App.Avalonia.ViewModels.Options"
++             x:Class="Skua.App.Avalonia.Views.WatchDogView" x:DataType="vms:WatchDogViewModel">
++  <Grid Margin="14" RowDefinitions="Auto,*" RowSpacing="12">
++    <StackPanel Spacing="4">
++      <TextBlock Text="Watch Dog" FontSize="20" FontWeight="Bold" />
++      <TextBlock Text="Rescue preferences apply immediately across updated clients on this PC."
++                 TextWrapping="Wrap" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++    </StackPanel>
++    <TabControl Grid.Row="1">
++      <TabItem Header="Rescue Allies">
++        <StackPanel Margin="14" Spacing="16">
++          <CheckBox Content="Rescue Allies — all accounts" IsChecked="{Binding Options.RescueAllies, Mode=TwoWay}" />
++          <CheckBox Content="Allow this account to rescue" IsChecked="{Binding Options.AllowThisAccountToRescue, Mode=TwoWay}" />
++          <TextBlock Text="Account exclusions only prevent helping. Excluded accounts can still request help. Idle accounts can rescue without a loaded script."
++                     TextWrapping="Wrap" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++        </StackPanel>
++      </TabItem>
++      <TabItem Header="Rescue Settings">
++        <StackPanel Margin="14" Spacing="14">
++          <TextBlock Text="Request help when either threshold is reached without a kill. The timer starts at the first death and requires at least two deaths. A kill resets both counters."
++                     TextWrapping="Wrap" />
++          <Grid ColumnDefinitions="*,140" ColumnSpacing="12">
++            <TextBlock Text="Rescue delay (minutes)" VerticalAlignment="Center" />
++            <NumericUpDown Grid.Column="1" Minimum="1" Maximum="120" Increment="1" FormatString="0"
++                           Value="{Binding Options.RescueDelayMinutes, Mode=TwoWay}" />
++          </Grid>
++          <Grid ColumnDefinitions="*,140" ColumnSpacing="12">
++            <TextBlock Text="Deaths before requesting rescue" VerticalAlignment="Center" />
++            <NumericUpDown Grid.Column="1" Minimum="1" Maximum="100" Increment="1" FormatString="0"
++                           Value="{Binding Options.RescueDeathsBeforeCalling, Mode=TwoWay}" />
++          </Grid>
++          <TextBlock Text="Defaults: 15 minutes or 10 deaths. Changes apply to the current streak on the next watchdog check. Existing rescue calls continue until a kill or another normal stop condition."
++                     TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++        </StackPanel>
++      </TabItem>
++    </TabControl>
++  </Grid>
++</UserControl>
+diff --git a/Skua.App.Avalonia/Views/WatchDogView.axaml.cs b/Skua.App.Avalonia/Views/WatchDogView.axaml.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.App.Avalonia/Views/WatchDogView.axaml.cs
+@@ -0,0 +1,8 @@
++using Avalonia.Controls;
++
++namespace Skua.App.Avalonia.Views;
++
++public partial class WatchDogView : UserControl
++{
++    public WatchDogView() => InitializeComponent();
++}
 diff --git a/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs b/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs
 new file mode 100644
 --- /dev/null
@@ -3412,7 +3784,21 @@ diff --git a/Skua.Core.Models/ClientFileSources.cs b/Skua.Core.Models/ClientFile
 diff --git a/Skua.Core/AppStartup/HotKeys.cs b/Skua.Core/AppStartup/HotKeys.cs
 --- a/Skua.Core/AppStartup/HotKeys.cs
 +++ b/Skua.Core/AppStartup/HotKeys.cs
-@@ -287,7 +287,7 @@
+@@ -228,6 +228,13 @@
+     public const int WM_SKUA_RELOAD_HOTKEYS = 0x0400 + 461;
+     public const int WM_SKUA_EXECUTE_HOTKEY = 0x0400 + 462;
+     public const int WM_SKUA_LOAD_SCRIPT_ALL = 0x0400 + 463;
++    public const int WM_SKUA_ARMY_OPTION_STATE = 0x0400 + 464;
++
++    public static void NotifyArmyOptionStateChanged(IntPtr childHwnd)
++    {
++        if (HostHwnd != IntPtr.Zero && !IsHostProcess)
++            PostMessage(HostHwnd, WM_SKUA_ARMY_OPTION_STATE, new IntPtr(Environment.ProcessId), childHwnd);
++    }
+ 
+     private static readonly HashSet<uint> _skuaPids = new() { (uint)Environment.ProcessId };
+ 
+@@ -287,7 +294,7 @@
  
              try
              {
@@ -3421,7 +3807,7 @@ diff --git a/Skua.Core/AppStartup/HotKeys.cs b/Skua.Core/AppStartup/HotKeys.cs
                  foreach (var p in skuaProcesses)
                      pids.Add((uint)p.Id);
              }
-@@ -571,19 +571,122 @@
+@@ -571,19 +578,122 @@
          options.LagKiller = !options.LagKiller;
      }
  
@@ -4637,7 +5023,7 @@ diff --git a/Skua.Core/Scripts/ScriptInterface.Rescue.cs b/Skua.Core/Scripts/Scr
 new file mode 100644
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
-@@ -0,0 +1,377 @@
+@@ -0,0 +1,375 @@
 +using Skua.Core.Interfaces;
 +using WatchDog.Shared;
 +
@@ -4656,8 +5042,6 @@ new file mode 100644
 +/// </remarks>
 +public partial class ScriptInterface
 +{
-+    private const int RescueDeaths = 10;
-+    private const int RescueOnlyDeathsMs = 15 * 60000;
 +    private const int RescueStaleMs = 60000;
 +    private const int RescueGiveUpMs = 20 * 60000;
 +    private const int RescueCooldownMs = 10 * 60000;
@@ -4814,8 +5198,8 @@ new file mode 100644
 +            }
 +            else
 +            {
-+                bool stuck = _rsDeathStreak >= RescueDeaths
-+                    || (_rsDeathStreak >= 2 && _rsStreakSince != 0 && now - _rsStreakSince >= RescueOnlyDeathsMs);
++                bool stuck = SharedRescueSettings.Instance.ShouldRequest(_rsDeathStreak,
++                    _rsStreakSince == 0 ? 0 : unchecked(now - _rsStreakSince));
 +                if (stuck && !_rsCalling)
 +                {
 +                    _rsCalling = true;
@@ -4943,7 +5327,7 @@ new file mode 100644
 +        {
 +            if (Manager is not IScriptManager manager) return;
 +            session = new RescueSession(Player, Map, Combat, Skills, Options, Flash, manager,
-+                () => RescueAllowed && !_disposed, () => Servers.UserLoggedOut);
++                () => RescueAllowed && !_disposed, () => Servers.UserLoggedOut, Send);
 +            _rsSession = session;
 +            if (!await session.BeginAsync()) return;
 +            WdLog($" helping {call.User} in {call.Room}; the original script/idle state will be restored afterward.");
@@ -5244,7 +5628,7 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
      private bool _acceptAllDrops;
  
      public bool AcceptAllDrops
-@@ -111,6 +129,38 @@
+@@ -111,6 +129,50 @@
          }
      }
  
@@ -5267,6 +5651,16 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
 +        get => _rescueSettings?.IsAllowed(_rescueAccount) ?? true;
 +        set { if (!_isInitializing && _rescueAccount.Length > 0) _rescueSettings?.SetAllowed(_rescueAccount, value); }
 +    }
++    public int RescueDelayMinutes
++    {
++        get => _rescueSettings?.DelayMinutes ?? 15;
++        set { if (!_isInitializing) _rescueSettings?.SetDelayMinutes(value); }
++    }
++    public int RescueDeathsBeforeCalling
++    {
++        get => _rescueSettings?.DeathsBeforeRescue ?? 10;
++        set { if (!_isInitializing) _rescueSettings?.SetDeathsBeforeRescue(value); }
++    }
 +    internal void BindRescueAccount(string? account)
 +    {
 +        account = account?.Trim() ?? "";
@@ -5278,12 +5672,14 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
 +    {
 +        OnPropertyChanged(nameof(RescueAllies));
 +        OnPropertyChanged(nameof(AllowThisAccountToRescue));
++        OnPropertyChanged(nameof(RescueDelayMinutes));
++        OnPropertyChanged(nameof(RescueDeathsBeforeCalling));
 +    }
 +
      [ObservableProperty]
      private bool _restPackets;
  
-@@ -129,8 +179,9 @@
+@@ -129,8 +191,9 @@
      [CallBinding("killLag", Get = false, HasSetter = true)]
      private bool _lagKiller;
  
@@ -5294,7 +5690,7 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
  
      [ObjectBinding("ui.mcFPS.visible", HasSetter = true)]
      private bool _showFPS = false;
-@@ -181,7 +232,7 @@
+@@ -181,7 +244,7 @@
              }
              else
              {
@@ -5303,34 +5699,34 @@ diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.
                  _lazyFlash.Value.Call("setGameObject", "stage.quality", "HIGH");
                  _lazyFlash.Value.Call("setGameObject", "world.rootClass.mixer.soundTransform.volume", 1);
              }
-@@ -379,7 +430,7 @@
+@@ -379,7 +442,7 @@
          StringCollection saveOptions = new();
          foreach (PropertyInfo pi in GetType().GetProperties())
          {
 -            if (pi.Name == nameof(OptionDictionary))
-+            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue))
++            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue) or nameof(RescueDelayMinutes) or nameof(RescueDeathsBeforeCalling))
                  continue;
              string key = pi.Name;
              object? value = pi.GetValue(this);
-@@ -398,7 +449,7 @@
+@@ -398,7 +461,7 @@
  
          foreach (PropertyInfo pi in GetType().GetProperties())
          {
 -            if (pi.Name == nameof(OptionDictionary))
-+            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue))
++            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue) or nameof(RescueDelayMinutes) or nameof(RescueDeathsBeforeCalling))
                  continue;
              if (_userOptions.ContainsKey(pi.Name))
              {
-@@ -417,7 +468,7 @@
+@@ -417,7 +480,7 @@
          ScriptOption defaults = new(_lazyFlash);
          foreach (PropertyInfo pi in GetType().GetProperties())
          {
 -            if (pi.Name == nameof(OptionDictionary))
-+            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue))
++            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue) or nameof(RescueDelayMinutes) or nameof(RescueDeathsBeforeCalling))
                  continue;
  
              pi.SetValue(this, pi.GetValue(defaults), null);
-@@ -454,4 +505,4 @@
+@@ -454,4 +517,4 @@
          }
          return dict;
      }
@@ -5537,6 +5933,57 @@ diff --git a/Skua.Core/Scripts/ScriptSkill.cs b/Skua.Core/Scripts/ScriptSkill.cs
                          this.UseSkill(skill);
                      break;
              }
+diff --git a/Skua.Core/Services/ArmyOptionFeedback.cs b/Skua.Core/Services/ArmyOptionFeedback.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.Core/Services/ArmyOptionFeedback.cs
+@@ -0,0 +1,46 @@
++using System.Text.Json;
++using Skua.Core.Interfaces;
++
++namespace Skua.Core.Services;
++
++public sealed record ArmyOptionSnapshot(DateTime UpdatedUtc, Dictionary<string, bool> Options);
++
++public static class ArmyOptionFeedback
++{
++    public static readonly (string Name, int Command)[] Options = [
++        ("LagKiller", 1), ("HeadlessMode", 2), ("HidePlayers", 3), ("DisableFX", 4),
++        ("InfiniteRange", 5), ("StreamerMode", 9), ("AggroMonsters", 10)
++    ];
++    public static string StatePath(int processId) => Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", $"{processId}.army-options.json");
++    public static void ReportAppliedOption(IScriptOption options, int command, int processId, Action notifyHost)
++    {
++        if (!Options.Any(option => option.Command == command)) return;
++        Publish(options, processId);
++        // Notify only after the complete report is available to read.
++        notifyHost();
++    }
++    public static void Publish(IScriptOption options, int processId)
++    {
++        var values = Options.ToDictionary(o => o.Name, o => (bool)(options.GetType().GetProperty(o.Name)?.GetValue(options) ?? false));
++        string file = StatePath(processId), temporary = file + ".tmp";
++        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
++        File.WriteAllText(temporary, JsonSerializer.Serialize(new ArmyOptionSnapshot(DateTime.UtcNow, values)));
++        File.Move(temporary, file, true);
++    }
++    public static ArmyOptionSnapshot? Read(int processId)
++    {
++        try
++        {
++            var snapshot = JsonSerializer.Deserialize<ArmyOptionSnapshot>(File.ReadAllText(StatePath(processId)));
++            return snapshot is not null && snapshot.Options is not null && DateTime.UtcNow - snapshot.UpdatedUtc < TimeSpan.FromSeconds(10)
++                && snapshot.UpdatedUtc <= DateTime.UtcNow.AddSeconds(2) ? snapshot : null;
++        }
++        catch { return null; }
++    }
++    public static string Summarize(IEnumerable<bool?> values)
++    {
++        var states = values.ToArray();
++        if (states.Length == 0 || states.Any(v => v is null)) return "Unknown";
++        return states.All(v => v == true) ? "On" : states.All(v => v == false) ? "Off" : "Mixed";
++    }
++}
 diff --git a/Skua.Core/Services/ClientUpdateService.cs b/Skua.Core/Services/ClientUpdateService.cs
 --- a/Skua.Core/Services/ClientUpdateService.cs
 +++ b/Skua.Core/Services/ClientUpdateService.cs
@@ -5750,7 +6197,7 @@ diff --git a/Skua.Core/Services/RescueShared/RescueSession.cs b/Skua.Core/Servic
 new file mode 100644
 --- /dev/null
 +++ b/Skua.Core/Services/RescueShared/RescueSession.cs
-@@ -0,0 +1,156 @@
+@@ -0,0 +1,171 @@
 +using System.ComponentModel;
 +using Skua.Core.Interfaces;
 +
@@ -5766,6 +6213,8 @@ new file mode 100644
 +    private readonly IScriptOption _options;
 +    private readonly IFlashUtil _flash;
 +    private readonly IScriptManager _manager;
++    private readonly IScriptSend? _send;
++    private readonly bool _returnToOwnHouse;
 +    private readonly Func<bool> _enabled;
 +    private readonly Func<bool> _userCancelled;
 +    private readonly string _account, _script, _server;
@@ -5781,7 +6230,8 @@ new file mode 100644
 +    internal bool WasRunning => _wasRunning;
 +    internal bool WasPaused => _wasPaused;
 +    internal RescueSession(IScriptPlayer player, IScriptMap map, IScriptCombat combat, IScriptSkill skills,
-+        IScriptOption options, IFlashUtil flash, IScriptManager manager, Func<bool> enabled, Func<bool>? userCancelled = null)
++        IScriptOption options, IFlashUtil flash, IScriptManager manager, Func<bool> enabled, Func<bool>? userCancelled = null,
++        IScriptSend? send = null)
 +    {
 +        _player = player; _map = map; _combat = combat; _skills = skills; _options = options;
 +        _flash = flash; _manager = manager; _enabled = enabled; _userCancelled = userCancelled ?? (() => false);
@@ -5790,6 +6240,13 @@ new file mode 100644
 +        _pauseProperty = manager.GetType().GetProperty("ScriptPaused");
 +        _infiniteRange = options.InfiniteRange; _stopAttacking = combat.StopAttacking;
 +        Room = map.FullName; Cell = player.Cell; Pad = player.Pad;
++        _send = send;
++        try
++        {
++            int characterId = flash.GetGameObject<int>("world.myAvatar.objData.CharID");
++            _returnToOwnHouse = characterId > 0 && Room.Equals($"house-{characterId}", StringComparison.OrdinalIgnoreCase);
++        }
++        catch { }
 +        _manager.PropertyChanged += OnManagerChanged;
 +    }
 +    internal static bool IsPaused(IScriptManager manager) => manager.GetType().GetProperty("ScriptPaused")?.GetValue(manager) is true;
@@ -5869,7 +6326,12 @@ new file mode 100644
 +                        for (int attempt = 0; attempt < 3 && !Interrupted && _player.Playing; attempt++)
 +                        {
 +                            if (_flash.IsWorldLoaded && string.Equals(_map.FullName, Room, StringComparison.OrdinalIgnoreCase)) break;
-+                            _map.JoinPacket(Room, string.IsNullOrWhiteSpace(Cell) ? "Enter" : Cell, string.IsNullOrWhiteSpace(Pad) ? "Spawn" : Pad);
++                            // AQW ignores normal tfer packets to house-<CharID>. Use the house command
++                            // only when the captured room is proven to be this account's own house.
++                            if (_returnToOwnHouse && _send is not null)
++                                _send.Packet($"%xt%zm%house%1%{_account}%");
++                            else
++                                _map.JoinPacket(Room, string.IsNullOrWhiteSpace(Cell) ? "Enter" : Cell, string.IsNullOrWhiteSpace(Pad) ? "Spawn" : Pad);
 +                            for (int i = 0; i < 40 && !Interrupted && _player.Playing; i++)
 +                            {
 +                                if (_flash.IsWorldLoaded && string.Equals(_map.FullName, Room, StringComparison.OrdinalIgnoreCase)) break;
@@ -5911,7 +6373,7 @@ diff --git a/Skua.Core/Services/RescueShared/SharedRescueSettings.cs b/Skua.Core
 new file mode 100644
 --- /dev/null
 +++ b/Skua.Core/Services/RescueShared/SharedRescueSettings.cs
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,130 @@
 +using System.Security.Cryptography;
 +using System.Text;
 +using System.Text.Json;
@@ -5921,7 +6383,8 @@ new file mode 100644
 +// Kept byte-identical in Watch Dog and VibeSkuffle. No client-specific dependencies.
 +internal sealed class SharedRescueSettings : IDisposable
 +{
-+    internal sealed record State(bool Enabled, string[] ExcludedAccounts, long Revision);
++    internal sealed record State(bool Enabled, string[] ExcludedAccounts, long Revision,
++        int DelayMinutes = 15, int DeathsBeforeRescue = 10);
 +    private static readonly Lazy<SharedRescueSettings> Default = new(() => new(DefaultPath));
 +    internal static SharedRescueSettings Instance => Default.Value;
 +    internal static string DefaultPath => Path.Combine(
@@ -5951,6 +6414,24 @@ new file mode 100644
 +        _fallback = new Timer(_ => Reload(), null, 500, 500);
 +    }
 +    internal bool Enabled { get { lock (_gate) return _state.Enabled; } }
++    internal int DelayMinutes { get { lock (_gate) return _state.DelayMinutes; } }
++    internal int DeathsBeforeRescue { get { lock (_gate) return _state.DeathsBeforeRescue; } }
++    internal void SetDelayMinutes(int value)
++    {
++        if (value is < 1 or > 120) throw new ArgumentOutOfRangeException(nameof(value), "Use 1 to 120 minutes.");
++        Update(s => s with { DelayMinutes = value });
++    }
++    internal void SetDeathsBeforeRescue(int value)
++    {
++        if (value is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(value), "Use 1 to 100 deaths.");
++        Update(s => s with { DeathsBeforeRescue = value });
++    }
++    // Either threshold requests help. The timed path still requires repeated deaths without a kill.
++    internal bool ShouldRequest(int deaths, int elapsedMilliseconds)
++    {
++        lock (_gate) return deaths >= _state.DeathsBeforeRescue ||
++            (deaths >= 2 && elapsedMilliseconds >= _state.DelayMinutes * 60000);
++    }
 +    internal bool IsAllowed(string? account)
 +    {
 +        if (string.IsNullOrWhiteSpace(account)) return false;
@@ -5970,7 +6451,11 @@ new file mode 100644
 +        if (!File.Exists(_path)) return new(false, [], 0);
 +        using var file = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 +        State state = JsonSerializer.Deserialize<State>(file) ?? throw new InvalidDataException("Invalid rescue settings.");
-+        return state with { ExcludedAccounts = (state.ExcludedAccounts ?? []).Where(a => !string.IsNullOrWhiteSpace(a)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() };
++        return state with {
++            ExcludedAccounts = (state.ExcludedAccounts ?? []).Where(a => !string.IsNullOrWhiteSpace(a)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
++            DelayMinutes = state.DelayMinutes is >= 1 and <= 120 ? state.DelayMinutes : 15,
++            DeathsBeforeRescue = state.DeathsBeforeRescue is >= 1 and <= 100 ? state.DeathsBeforeRescue : 10
++        };
 +    }
 +    private void Update(Func<State, State> change)
 +    {
@@ -5994,6 +6479,7 @@ new file mode 100644
 +        Reload();
 +    }
 +    private static bool Same(State a, State b) => a.Enabled == b.Enabled &&
++        a.DelayMinutes == b.DelayMinutes && a.DeathsBeforeRescue == b.DeathsBeforeRescue &&
 +        a.ExcludedAccounts.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).SequenceEqual(
 +            b.ExcludedAccounts.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
 +    private void OnFileChanged(object sender, FileSystemEventArgs args) => Reload();
@@ -6016,6 +6502,127 @@ new file mode 100644
 +    {
 +        lock (_gate) { if (_disposed) return; _disposed = true; }
 +        _watcher.Dispose(); _fallback.Dispose(); _writer.Dispose(); Changed = null;
++    }
++}
+diff --git a/Skua.Core/Services/UltrasScriptInstaller.cs b/Skua.Core/Services/UltrasScriptInstaller.cs
+new file mode 100644
+--- /dev/null
++++ b/Skua.Core/Services/UltrasScriptInstaller.cs
+@@ -0,0 +1,116 @@
++using System.IO.Compression;
++using System.Net.Http.Headers;
++using System.Security.Cryptography;
++using System.Text;
++using Skua.Core.Models;
++
++namespace Skua.Core.Services;
++
++/// <summary>Installs only UltrasLW, independently of the ordinary Skua script updater.</summary>
++public static class UltrasScriptInstaller
++{
++    public const string DownloadUrl = "https://github.com/l0newolf12/UltrasLW/archive/refs/heads/main.zip";
++    private const long MaximumBytes = 128 * 1024 * 1024;
++    private static readonly HttpClient Client = new() { Timeout = TimeSpan.FromMinutes(5) };
++
++    public static async Task InstallAsync(IProgress<string>? progress = null, CancellationToken cancellationToken = default)
++    {
++        using var request = new HttpRequestMessage(HttpMethod.Get, DownloadUrl);
++        request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
++        progress?.Report("Downloading the latest UltrasLW...");
++        using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
++        response.EnsureSuccessStatusCode();
++        if (response.Content.Headers.ContentLength > MaximumBytes) throw new InvalidDataException("UltrasLW download is too large.");
++        using var archive = new MemoryStream();
++        using var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
++        byte[] buffer = new byte[81920];
++        int read;
++        while ((read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) > 0)
++        {
++            if (archive.Length + read > MaximumBytes) throw new InvalidDataException("UltrasLW download is too large.");
++            await archive.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
++        }
++        archive.Position = 0;
++        // Mutex ownership stays on a single worker thread through extraction and the directory swap.
++        await Task.Run(() => InstallArchive(archive, ClientFileSources.SkuaScriptsDIR, progress, cancellationToken), cancellationToken).ConfigureAwait(false);
++    }
++
++    public static void InstallArchive(Stream stream, string scriptsDirectory, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
++    {
++        string scripts = Path.GetFullPath(scriptsDirectory);
++        Directory.CreateDirectory(scripts);
++        string destination = Path.Combine(scripts, "UltrasLW");
++        string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(destination.ToUpperInvariant())));
++        using var mutex = new Mutex(false, "VibeSkuffle.UltrasLW." + hash);
++        bool held;
++        try { held = mutex.WaitOne(0); } catch (AbandonedMutexException) { held = true; }
++        if (!held) throw new IOException("UltrasLW is already being installed by another client. Try again when it finishes.");
++        string staging = Path.Combine(scripts, ".UltrasLW-install-" + Guid.NewGuid().ToString("N"));
++        string backup = Path.Combine(scripts, ".UltrasLW-backup-" + Guid.NewGuid().ToString("N"));
++        bool moved = false, installed = false;
++        try
++        {
++            cancellationToken.ThrowIfCancellationRequested();
++            if (Directory.Exists(destination) && (File.GetAttributes(destination) & FileAttributes.ReparsePoint) != 0)
++                throw new IOException("UltrasLW is a linked folder. Choose a regular scripts folder before updating.");
++            Directory.CreateDirectory(staging);
++            progress?.Report("Validating and extracting UltrasLW...");
++            using (var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true))
++            {
++                long total = 0;
++                int scriptsFound = 0;
++                var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
++                if (archive.Entries.Count is 0 or > 10000) throw new InvalidDataException("Invalid UltrasLW archive.");
++                foreach (var entry in archive.Entries)
++                {
++                    cancellationToken.ThrowIfCancellationRequested();
++                    string name = entry.FullName.Replace('\\', '/');
++                    if (!name.StartsWith("UltrasLW-main/", StringComparison.Ordinal) ||
++                        name.Split('/').Any(p => p is "." or ".." || p.Contains(':')) ||
++                        ((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000)
++                        throw new InvalidDataException("Unexpected path in UltrasLW archive.");
++                    string relative = name["UltrasLW-main/".Length..];
++                    if (relative.Length == 0 || name.EndsWith('/')) continue;
++                    string target = Path.GetFullPath(Path.Combine(staging, relative));
++                    if (!target.StartsWith(staging + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !paths.Add(target))
++                        throw new InvalidDataException("Invalid or duplicate UltrasLW archive path.");
++                    total = checked(total + entry.Length);
++                    if (total > MaximumBytes) throw new InvalidDataException("UltrasLW expands beyond the size limit.");
++                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
++                    using var source = entry.Open();
++                    using var output = File.Create(target);
++                    byte[] buffer = new byte[81920];
++                    long written = 0;
++                    int read;
++                    while ((read = source.Read(buffer)) > 0)
++                    {
++                        cancellationToken.ThrowIfCancellationRequested();
++                        written += read;
++                        if (written > entry.Length) throw new InvalidDataException("Invalid UltrasLW file length.");
++                        output.Write(buffer, 0, read);
++                    }
++                    if (written != entry.Length) throw new InvalidDataException("Incomplete UltrasLW file.");
++                    if (target.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)) scriptsFound++;
++                }
++                if (scriptsFound == 0) throw new InvalidDataException("The download contains no UltrasLW scripts.");
++            }
++            cancellationToken.ThrowIfCancellationRequested();
++            progress?.Report("Installing UltrasLW...");
++            if (Directory.Exists(destination)) { Directory.Move(destination, backup); moved = true; }
++            try { Directory.Move(staging, destination); installed = true; }
++            catch
++            {
++                if (moved) Directory.Move(backup, destination);
++                throw;
++            }
++            progress?.Report("UltrasLW updated. Open Search Scripts or browse the UltrasLW folder to select a script.");
++        }
++        finally
++        {
++            // All temporary paths are direct children created by this operation.
++            try { if (Directory.Exists(staging)) Directory.Delete(staging, true); } catch { }
++            if (installed && moved) try { Directory.Delete(backup, true); } catch { }
++            mutex.ReleaseMutex();
++        }
 +    }
 +}
 diff --git a/Skua.Core/Services/UnifiedSettingsService.cs b/Skua.Core/Services/UnifiedSettingsService.cs
@@ -7130,116 +7737,6 @@ diff --git a/Skua.Manager.Avalonia/Views/ScriptUpdaterView.axaml b/Skua.Manager.
                         FontSize="26"
                         FontWeight="Light"
                         HorizontalAlignment="Center"
-diff --git a/Skua.Manager.Avalonia/client-update.ps1 b/Skua.Manager.Avalonia/client-update.ps1
-new file mode 100644
---- /dev/null
-+++ b/Skua.Manager.Avalonia/client-update.ps1
-@@ -0,0 +1,105 @@
-+param(
-+    [Parameter(Mandatory=$true)][string]$InstallDirectory,
-+    [Parameter(Mandatory=$true)][string]$JobDirectory,
-+    [int]$ManagerProcessId = 0,
-+    [switch]$SkipProcessManagement,
-+    [switch]$NoRestart,
-+    [int]$TestFailAfterCopy = 0
-+)
-+$ErrorActionPreference = 'Stop'
-+$installRoot = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd('\')
-+$jobRoot = [IO.Path]::GetFullPath($JobDirectory).TrimEnd('\')
-+$stageRoot = Join-Path $jobRoot 'staged'
-+$backupRoot = Join-Path $jobRoot 'rollback'
-+$logFile = Join-Path $jobRoot 'result.txt'
-+$changed = [Collections.Generic.List[object]]::new()
-+$committed = $false
-+function Get-SafeTarget([string]$relative) {
-+    $normal = $relative.Replace('\','/')
-+    if ([IO.Path]::IsPathRooted($normal) -or $normal -match '(^|/)\.{1,2}(/|$)|:|//') { throw "Unsafe update path: $relative" }
-+    $allowed = $normal -match '^(?i:Assemblies)/[^:]+\.(?i:dll|so|dylib)$' -or
-+        $normal -match '^(?i:ruffle)/(?:Mugetsu\.exe|[^:]+\.dll)$' -or
-+        $normal -match '^(?i:plugins)/(?:ButlerV5|DailyTracker|Skua\.Plugin\.DailyTracker|Skua\.Plugin\.Cosmetics)\.dll$' -or
-+        $normal -match '^(?i:VibeSkuffle(?:\.Manager)?\.(?:exe|dll|deps\.json|runtimeconfig\.json)|skua\.swf|use-ruffle\.txt|Velopack\.dll|build-info\.txt|release-version\.txt|client-update\.ps1)$'
-+    if (!$allowed) { throw "Protected update path: $relative" }
-+    $target = [IO.Path]::GetFullPath((Join-Path $installRoot $relative))
-+    if (!$target.StartsWith($installRoot + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Update escaped installation folder.' }
-+    $check = $target
-+    while ($check -and $check.StartsWith($installRoot,[StringComparison]::OrdinalIgnoreCase)) {
-+        if ((Test-Path -LiteralPath $check) -and ((Get-Item -LiteralPath $check -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Linked update destination: $check" }
-+        if ($check -eq $installRoot) { break }
-+        $check = Split-Path -Parent $check
-+    }
-+    return $target
-+}
-+try {
-+    $manifest = Get-Content -LiteralPath (Join-Path $stageRoot 'vibeskuffle-update.json') -Raw | ConvertFrom-Json
-+    $files = @($manifest.Files.PSObject.Properties)
-+    if ($files.Count -eq 0) { throw 'Empty update manifest.' }
-+    $seen = @{}
-+    foreach ($file in $files) {
-+        $target = Get-SafeTarget $file.Name
-+        if ($seen.ContainsKey($target)) { throw 'Duplicate update destination.' }
-+        $seen[$target] = $true
-+        $source = Join-Path $stageRoot $file.Name
-+        if (!(Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing update file: $($file.Name)" }
-+        if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne $file.Value) { throw "Update hash mismatch: $($file.Name)" }
-+    }
-+    if (!$SkipProcessManagement) {
-+        if ($ManagerProcessId -gt 0) {
-+            $manager = Get-Process -Id $ManagerProcessId -ErrorAction SilentlyContinue
-+            if ($manager -and !$manager.WaitForExit(60000)) { throw 'Manager did not close. No files changed.' }
-+        }
-+        $clients = @(Get-Process -Name VibeSkuffle -ErrorAction SilentlyContinue | Where-Object {
-+            try { [IO.Path]::GetDirectoryName($_.MainModule.FileName).Equals($installRoot,[StringComparison]::OrdinalIgnoreCase) } catch { $false }
-+        })
-+        foreach ($client in $clients) { $null = $client.CloseMainWindow() }
-+        foreach ($client in $clients) {
-+            if (!$client.WaitForExit(30000)) { throw 'A client is still running. Close it and retry the update. No files changed.' }
-+        }
-+    }
-+    New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
-+    foreach ($file in $files) {
-+        $target = Get-SafeTarget $file.Name
-+        $backup = Join-Path $backupRoot $file.Name
-+        if (Test-Path -LiteralPath $target) {
-+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $backup) | Out-Null
-+            Copy-Item -LiteralPath $target -Destination $backup
-+        }
-+    }
-+    $copied = 0
-+    foreach ($file in $files) {
-+        $target = Get-SafeTarget $file.Name
-+        $backup = Join-Path $backupRoot $file.Name
-+        $changed.Add(@{Target=$target; Backup=$backup; Existed=(Test-Path -LiteralPath $target)})
-+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
-+        Copy-Item -LiteralPath (Join-Path $stageRoot $file.Name) -Destination $target -Force
-+        $copied++
-+        if ($TestFailAfterCopy -gt 0 -and $copied -ge $TestFailAfterCopy) { throw 'Injected update failure for rollback test.' }
-+    }
-+    $committed = $true
-+    "Update installed: $($manifest.Version). Rollback files: $backupRoot" | Set-Content -LiteralPath $logFile
-+}
-+catch {
-+    $problem = $_.Exception.Message
-+    $rollbackProblems = @()
-+    for ($index=$changed.Count-1; $index -ge 0; $index--) {
-+        $item = $changed[$index]
-+        try {
-+            if ($item.Existed) { Copy-Item -LiteralPath $item.Backup -Destination $item.Target -Force }
-+            elseif (Test-Path -LiteralPath $item.Target) { Remove-Item -LiteralPath $item.Target -Force }
-+        }
-+        catch { $rollbackProblems += $_.Exception.Message }
-+    }
-+    "Update failed: $problem`r`nRollback errors: $($rollbackProblems -join '; ')`r`nBackups: $backupRoot" | Set-Content -LiteralPath $logFile
-+    if (!$NoRestart) {
-+        Add-Type -AssemblyName PresentationFramework
-+        [Windows.MessageBox]::Show("Update failed: $problem`nDetails: $logFile",'VibeSkuffle update') | Out-Null
-+    }
-+}
-+finally {
-+    if (!$NoRestart -and (Test-Path -LiteralPath (Join-Path $installRoot 'VibeSkuffle.Manager.exe'))) {
-+        Start-Process -FilePath (Join-Path $installRoot 'VibeSkuffle.Manager.exe') -WorkingDirectory $installRoot -WindowStyle Hidden
-+    }
-+}
-+if (!$committed) { exit 1 }
 diff --git a/Skua.Plugin.ButlerV5/Broadcaster.cs b/Skua.Plugin.ButlerV5/Broadcaster.cs
 --- a/Skua.Plugin.ButlerV5/Broadcaster.cs
 +++ b/Skua.Plugin.ButlerV5/Broadcaster.cs
@@ -7946,10 +8443,32 @@ diff --git a/Skua.Plugin.ButlerV5/SyncFile.cs b/Skua.Plugin.ButlerV5/SyncFile.cs
          }
      }
  }
+diff --git a/Skua.Shared.Avalonia/Controls/ScriptRepo/ScriptRepoControl.axaml b/Skua.Shared.Avalonia/Controls/ScriptRepo/ScriptRepoControl.axaml
+--- a/Skua.Shared.Avalonia/Controls/ScriptRepo/ScriptRepoControl.axaml
++++ b/Skua.Shared.Avalonia/Controls/ScriptRepo/ScriptRepoControl.axaml
+@@ -76,6 +76,18 @@
+                 </Grid>
+ 
+                 <!-- Actions & Stats Sub-Bar -->
++                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
++                    <Button Classes="skua-button" Height="30" Padding="10,0"
++                            Command="{Binding InstallUltrasCommand}" IsEnabled="{Binding !IsBusy}"
++                            ToolTip.Tip="Download the latest UltrasLW into Skua/Scripts/UltrasLW. Every click downloads it again.">
++                        <StackPanel Orientation="Horizontal" Spacing="6">
++                            <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="14" Height="14" />
++                            <TextBlock Text="Download / Update UltrasLW" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
++                        </StackPanel>
++                    </Button>
++                    <TextBlock Grid.Column="1" Text="Fresh download every time. Your other scripts stay in place."
++                               VerticalAlignment="Center" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++                </Grid>
+                 <Border Height="1" Background="{DynamicResource SkuaBorderBrush}" />
+ 
+                 <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
 diff --git a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs b/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
 --- a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
 +++ b/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
-@@ -12,7 +12,7 @@
+@@ -15,7 +15,7 @@
  public partial class WindowTitleBar : UserControl
  {
      public static readonly StyledProperty<string> TitleTextProperty =
@@ -7957,7 +8476,7 @@ diff --git a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs b/Skua.
 +        AvaloniaProperty.Register<WindowTitleBar, string>(nameof(TitleText), "VibeSkuffle");
  
      private static readonly IImage DefaultIconSource = LoadDefaultIconSource();
- 
+     private static string? _artworkPath;
 diff --git a/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs b/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs
 --- a/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs
 +++ b/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs
@@ -7983,7 +8502,7 @@ diff --git a/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs b/Skua.Shared.Ava
 -
          NavigateCommand = new RelayCommand<string>(NavigateToUrl);
 +        try { BuildInfo = System.IO.File.ReadAllText(System.IO.Path.Combine(AppContext.BaseDirectory, "build-info.txt")).Trim(); }
-+        catch { BuildInfo = "VibeSkua 2.0.9 · Mugetsu 1.5.1 · Local development build"; }
++        catch { BuildInfo = "VibeSkua 2.1.0 · Mugetsu 1.5.1 · Local development build"; }
      }
 -
 -    private readonly IProcessService _processService;
@@ -8039,6 +8558,89 @@ diff --git a/Skua.Shared.Avalonia/ViewModels/AboutViewModel.cs b/Skua.Shared.Ava
 +            _processService.OpenLink(uri.AbsoluteUri);
      }
  }
+diff --git a/Skua.Shared.Avalonia/ViewModels/ScriptRepo/ScriptRepoViewModel.cs b/Skua.Shared.Avalonia/ViewModels/ScriptRepo/ScriptRepoViewModel.cs
+--- a/Skua.Shared.Avalonia/ViewModels/ScriptRepo/ScriptRepoViewModel.cs
++++ b/Skua.Shared.Avalonia/ViewModels/ScriptRepo/ScriptRepoViewModel.cs
+@@ -9,6 +9,7 @@
+ using Skua.Core.Models.GitHub;
+ using Skua.Core.Models.Scripts;
+ using Skua.Core.Utils;
++using Skua.Core.Services;
+ using System;
+ using System.Collections.Generic;
+ using System.Collections.ObjectModel;
+@@ -374,7 +375,7 @@
+                UpdateDatesCommand.IsRunning ||
+                RefreshScriptsCommand.IsRunning ||
+                DownloadAllCommand.IsRunning ||
+-               UpdateAllCommand.IsRunning;
++               UpdateAllCommand.IsRunning || InstallUltrasCommand.IsRunning;
+     }
+ 
+     [RelayCommand]
+@@ -595,6 +596,26 @@
+                     catch { }
+                 }
+ 
++                // Independently installed UltrasLW scripts are not in Skua's central catalog.
++                string ultrasFolder = Path.Combine(ClientFileSources.SkuaScriptsDIR, "UltrasLW");
++                if ((isAllFilter || isLocalFilter || isPinnedFilter) && Directory.Exists(ultrasFolder))
++                {
++                    var seen = new HashSet<string>(viewModels.Select(v => v.LocalFile), StringComparer.OrdinalIgnoreCase);
++                    foreach (string path in Directory.EnumerateFiles(ultrasFolder, "*.cs", SearchOption.AllDirectories))
++                    {
++                        bool pinned = pinnedSet.Contains(Path.GetFullPath(path).Replace('\\', '/').Trim());
++                        if (!seen.Add(path) || (isPinnedFilter && !pinned)) continue;
++                        var file = new FileInfo(path);
++                        var info = new ScriptInfo {
++                            Name = Path.GetFileNameWithoutExtension(path), FileName = file.Name, FilePath = path,
++                            Description = "UltrasLW / " + Path.GetRelativePath(ultrasFolder, path),
++                            Tags = ["Local", "UltrasLW"], Size = (int)file.Length, CreationDate = file.CreationTime,
++                            CachedDownloaded = true, CachedLocalSize = (int)file.Length
++                        };
++                        viewModels.Add(new ScriptInfoViewModel(info, path, isCustom: true, isDownloaded: true, localSize: (int)file.Length, isPinned: pinned));
++                    }
++                }
++
+                 // 3. Fast in-place sorting
+                 viewModels.Sort((a, b) =>
+                 {
+@@ -729,6 +750,22 @@
+     }
+ 
+     [RelayCommand]
++    private async Task InstallUltras(CancellationToken token)
++    {
++        if (IsBusy) return;
++        IsBusy = true;
++        try
++        {
++            await UltrasScriptInstaller.InstallAsync(new Progress<string>(ProgressHandler), token);
++            await RefreshScriptsList();
++            ProgressReportMessage = "UltrasLW updated successfully. Search for UltrasLW to find its scripts.";
++        }
++        catch (OperationCanceledException) { ProgressReportMessage = "UltrasLW download cancelled; the installed version was kept."; }
++        catch (Exception ex) { ProgressReportMessage = "UltrasLW update failed: " + ex.Message; }
++        finally { IsBusy = false; }
++    }
++
++    [RelayCommand]
+     private async Task Download(ScriptInfoViewModel? script = null, CancellationToken token = default)
+     {
+         ScriptInfoViewModel? target = script ?? SelectedItem;
+@@ -826,6 +863,12 @@
+     public void CancelTask()
+     {
+         bool wasRunning = false;
++        if (InstallUltrasCommand.IsRunning)
++        {
++            InstallUltrasCommand.Cancel();
++            ProgressReportMessage = "Cancelling UltrasLW update...";
++            return; // Keep other operations disabled until the installer finishes cleanup.
++        }
+ 
+         if (_updateDatesCts != null)
+         {
 diff --git a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
 --- a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
 +++ b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
@@ -8168,7 +8770,7 @@ diff --git a/package-build.ps1 b/package-build.ps1
  
      # 2. Copy Root Files from ManagerBin
 -    $RootManagerFiles = @("VibeSkua.Manager.exe", "VibeSkua.Manager.dll", "VibeSkua.Manager.runtimeconfig.json", "Velopack.dll")
-+    $RootManagerFiles = @("VibeSkuffle.Manager.exe", "VibeSkuffle.Manager.dll", "VibeSkuffle.Manager.runtimeconfig.json", "Velopack.dll", "client-update.ps1")
++    $RootManagerFiles = @("VibeSkuffle.Manager.exe", "VibeSkuffle.Manager.dll", "VibeSkuffle.Manager.runtimeconfig.json", "VibeSkuffle.Manager.deps.json", "Velopack.dll", "client-update.ps1")
      foreach ($file in $RootManagerFiles) {
          $src = Join-Path $ManagerBin $file
          if (Test-Path $src) {

@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.0.0 (2026-10-26) — Stable
+
+- Army option changes publish their confirmed state immediately and notify the tab host to refresh without waiting for either polling interval. Periodic reporting/refresh remains as a fallback; account confirmations are still required before Pending clears.
+
+- Fixed Options → Watch Dog showing only a title: registered WatchDogViewModel with its view in the application's templates and added the missing shield menu icon. Regression coverage now opens it through the actual menu command and WindowService.
+
+- Updated the upstream base to VibeSkua 2.1.0 plus main through `630c952`, retaining Ruffle, tab/grid order, per-account controls, AC banking, script-folder defaults, Butler isolation and the independent Manager updater.
+- Added Options → Watch Dog with Rescue Allies and Rescue Settings tabs. Shared rescue delay and death count are adjustable, defaulting to 15 minutes or 10 deaths. Existing settings migrate without changing switches or exclusions.
+- Reorganized Current Drops into six equal-size buttons in three paired rows, with consistent icons and spacing.
+- Added Download / Update UltrasLW in Search Scripts: fresh GitHub download every click, archive validation, folder-only replacement, rollback, concurrent-install protection and searchable installed scripts.
+- Added actual account-state feedback to Army Control → Misc Options: green On, red Off, amber Mixed/Pending, gray Unknown; added Aggro Monsters. Changes target all accounts in the host.
+- Packaging includes the Manager dependency manifest and the new upstream animation dependency.
+
+- Fixed rescue returns to the helper's own house using AQW's house command; normal map transfers cannot enter house rooms.
+
+Validation: 68 rescue checks, 19 installer/army-feedback checks, 33 updater/drop/Butler/context-label regression checks, and 4 immediate-report checks pass. The actual Options menu/WindowService path resolves the Watch Dog view correctly. Actual rendered client views verify uniform drop buttons at 420/620 px, the built-in settings tab, and a two-tab native Avalonia plugin window with bidirectional settings synchronization. Saved-account private-room idle rescue, real combat, return to its starting house and remaining idle pass. The clean reconstructed upstream client builds. Full native WPF interaction, multiple real-account Army commands and overnight runs remain manual checks.
+
+
 ## v1.0.0-beta9.5 (2026-10-25) - shared Rescue Allies and idle helpers
 
 - Shared Rescue Allies master switch across updated Watch Dog and VibeSkuffle clients, with live control updates.

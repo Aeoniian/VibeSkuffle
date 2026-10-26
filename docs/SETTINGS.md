@@ -1,5 +1,26 @@
 # Settings: `ruffle-options.txt`
 
+## v1.0.0: rescue settings, Army feedback and UltrasLW
+
+Open **Options → Watch Dog → Rescue Settings** to set rescue delay (1–120 minutes) and deaths before
+requesting rescue (1–100). Both values are shared immediately across updated clients on this PC.
+Defaults are 15 minutes or 10 deaths. Either threshold triggers; the timer starts at the first death and
+requires two deaths without a kill. A kill resets both counters. Edits affect the current streak on the
+next watchdog check, while existing calls continue until a kill or another normal stop condition.
+The existing master and per-account eligibility controls remain available under Game Options too.
+
+**Army Control → Misc Options** acts on every open account in that tab host. Green On and red Off
+require matching reports from all accounts. Amber Mixed means disagreement, Pending means a command
+is awaiting confirmation, and gray Unknown means a report is missing or stale. Mixed and Unknown
+clicks enable the option for all accounts. Aggro Monsters follows the same rules.
+Accounts report immediately after an Army option command, and notify the host to refresh immediately.
+Periodic account reports and host polling remain active as a fallback.
+
+**Search Scripts → Download / Update UltrasLW** downloads the current main branch from
+`l0newolf12/UltrasLW` on each click and replaces only `%APPDATA%/Skua/Scripts/UltrasLW`.
+The normal Skua script updater remains independent. Invalid downloads and failed installs preserve
+the installed version. Close running UltrasLW scripts before updating their files.
+
 This file sits next to `VibeSkuffle.exe` and controls the game windows (the `Mugetsu.exe` processes).
 Each window reads it when it starts, so restart the clients after editing it. Rebuilding keeps your copy.
 
@@ -64,12 +85,13 @@ Discord alert if alerts are on). To go back to the setting for everyone, delete 
 
 ## Game Options added by VibeSkuffle
 
-Set them in **Options → Game Options** and click **Save Options** (saved per settings file, so every account
-started afterwards uses them; a script can also set `Bot.Options.RescueAllies` / `Bot.Options.IgnoreScriptRejectElse`).
+Set ordinary options in **Options → Game** and click **Save Options**. Rescue preferences and the AC banking/
+non-AC rejection toggles save immediately through their own stores. Scripts can also set
+`Bot.Options.RescueAllies` / `Bot.Options.IgnoreScriptRejectElse`.
 
 | Option | What it does |
 |---|---|
-| Rescue Allies | While this account runs a script, it goes to help another account on the same server that keeps dying (10 deaths without a kill, or 15 minutes of only deaths), then comes back and starts its script again. |
+| Rescue Allies | Shared master switch. Eligible idle or scripted accounts help a caller on the same server, then restore their previous state. Default trigger: 10 deaths without a kill, or 15 minutes with repeated deaths; adjustable in Options → Watch Dog → Rescue Settings. |
 | Ignore Script Reject Else | A script's "Reject Else" no longer throws away drops it didn't ask for. |
 
 ## Discord alerts and the daily summary (`alerts.txt`)

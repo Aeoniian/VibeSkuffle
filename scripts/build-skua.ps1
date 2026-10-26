@@ -6,7 +6,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
 $env:GIT_CONFIG_PARAMETERS = "'core.autocrlf=false'"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-$commit = 'd71afc903bc75a4d9a429349f18d7c497094bd7a'   # VibeSkua version the patch was made against (v2.0.9 plus current main fixes)
+$commit = '630c952f0328a5515c41aa18f4d84db62d7b24b1'   # VibeSkua version the patch was made against (v2.1.0 plus current main fixes)
 
 $skua = Join-Path $root 'VibeSkua'
 if (-not (Test-Path (Join-Path $skua '.git'))) {
