@@ -8,8 +8,13 @@ VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (v2.1.0) with the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
 goes wrong: stuck logins, crashes, freezes, memory build-up, and a crashed tab window.
 
-> **Stable release: v1.0.0.** Download the [latest release](../../releases), or update directly through
+> **Stable release: v1.0.1.** Download the [latest release](../../releases), or update directly through
 > **Manager → Updater**. Report problems in [Issues](../../issues).
+
+v1.0.1 fixes Flash/Ruffle item-name encoding that could make scripts miss owned pets such as
+Crag &amp; Bamboozle. It also improves headless scheduling and GPU handling, with optional
+resource tuning and diagnostics. See the [release notes](docs/RELEASE-v1.0.1.md) and
+[renderer testing details](docs/RENDERER-PERFORMANCE.md).
 
 ---
 

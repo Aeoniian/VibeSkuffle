@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.1 (2026-10-26) - Script compatibility hotfix and renderer improvements
+
+- Restored Flash-compatible XML text escaping for Ruffle callback string results. Inventory/bank checks can recognize encoded item names such as `Crag &amp; Bamboozle`, fixing a cause of Leery Exchange selecting the birthday-pet fallback instead of the Crag route. Outgoing arguments and event values remain raw; script files are unchanged.
+- Headless mode suppresses redraw/interpolation wake-ups and restores a fresh picture when shown. GPU admission runs before bitmap-cache updates, with completion-aware tracking and paced retries during loading and gameplay. Synchronous offscreen work retains its backpressure; memory cleanup uses a bounded GPU wait.
+- Added optional headless spare-texture budgets, command-segment thresholds, and p95/p99 diagnostics. Worker/visible-memory defaults remain unchanged. Fixed the serial-tessellation switch for rescaled shapes.
+- Validation: 27 script-text checks, seven renderer policy/queue checks, native 1/4/9-window comparisons, bridge tests and private-room combat/headless smoke tests. Package integrity is verified by the actual updater. Full Leery gameplay requires pet-owner confirmation; an early unexplained nine-window test exit and pre-existing DXGI shutdown reports remain documented. No overnight/cross-hardware guarantee. See [release notes](docs/RELEASE-v1.0.1.md) and [renderer measurements](docs/RENDERER-PERFORMANCE.md).
+
 ## v1.0.0 (2026-10-26) — Stable
 
 - Army option changes publish their confirmed state immediately and notify the tab host to refresh without waiting for either polling interval. Periodic reporting/refresh remains as a fallback; account confirmations are still required before Pending clears.

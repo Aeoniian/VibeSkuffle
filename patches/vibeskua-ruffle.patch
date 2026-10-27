@@ -715,7 +715,7 @@ diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flas
 new file mode 100644
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
-@@ -0,0 +1,1044 @@
+@@ -0,0 +1,1045 @@
 +using Skua.Core.Interfaces;
 +using System;
 +using System.Xml.Linq;
@@ -1617,8 +1617,9 @@ new file mode 100644
 +    /// <summary>
 +    /// The text <see cref="FlashUtil"/> would have read from Flash's XML answer (the first node of the
 +    /// value element), or <see langword="null"/> where it got none (booleans, null, undefined).
-+    /// One difference: strings come back exactly as the game has them, where the XML path returned
-+    /// them XML-escaped (an item named "A &amp; B" came back as "A &amp;amp; B").
++    /// Preserve the XML text escaping used by FlashUtil.Call: existing scripts compare item
++    /// names against that representation (for example, "Crag &amp;amp; Bamboozle").
++    /// The pipe protocol and FlashCall event arguments continue to carry raw values.
 +    /// </summary>
 +    private static string? ReturnText(JToken? token)
 +    {
@@ -1628,7 +1629,7 @@ new file mode 100644
 +        {
 +            case JTokenType.String:
 +                string s = token.Value<string>()!;
-+                return s.Length == 0 ? null : s;
++                return s.Length == 0 ? null : new XText(s).ToString();
 +            case JTokenType.Integer:
 +                return token.Value<long>().ToString(CultureInfo.CurrentCulture);
 +            case JTokenType.Float:

@@ -1,5 +1,9 @@
 # Settings: `ruffle-options.txt`
 
+## v1.0.1: optional renderer tuning
+
+See [renderer performance settings](RENDERER-PERFORMANCE.md#optional-tuning) for per-account worker limits, headless spare-texture budgets, command-segment thresholds and diagnostics. These controls are optional; existing worker and visible-cache defaults are retained.
+
 ## v1.0.0: rescue settings, Army feedback and UltrasLW
 
 Open **Options → Watch Dog → Rescue Settings** to set rescue delay (1–120 minutes) and deaths before

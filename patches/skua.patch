@@ -49,7 +49,53 @@ diff --git a/desktop/Cargo.toml b/desktop/Cargo.toml
 diff --git a/desktop/src/app.rs b/desktop/src/app.rs
 --- a/desktop/src/app.rs
 +++ b/desktop/src/app.rs
-@@ -397,13 +397,92 @@
+@@ -57,6 +57,7 @@
+     last_redraw: Instant,
+     /// With frame interpolation on: when the next in-between draw is due (see `pace_interpolation`).
+     next_draw_time: Option<Instant>,
++    gpu_retry_at: Option<Instant>,
+     /// When the last draw started.
+     draw_started: Instant,
+     /// Recent averages of a draw's and a SWF frame's time on the main thread (ms).
+@@ -84,6 +85,9 @@
+     windows_logged: u32,
+     /// Highest orphaned-avatar threshold a retention report was logged for.
+     retention_reports_at: usize,
++    gpu_deferred: u32,
++    frame_samples: crate::render_policy::FrameSamples,
++    render_samples: crate::render_policy::FrameSamples,
+     frame_ms_sum: f64,
+     frame_ms_max: f64,
+     gap_ms_max: f64,
+@@ -119,12 +123,14 @@
+         self.last_frame = Some(now);
+         self.frames += 1;
+         self.game_frames += game_frames;
++        self.frame_samples.record(frame_ms);
+         self.frame_ms_sum += frame_ms;
+         self.frame_ms_max = self.frame_ms_max.max(frame_ms);
+     }
+ 
+     fn render(&mut self, render_ms: f64) {
+         self.renders += 1;
++        self.render_samples.record(render_ms);
+         self.render_ms_sum += render_ms;
+         self.render_ms_max = self.render_ms_max.max(render_ms);
+     }
+@@ -237,6 +243,12 @@
+             avg(self.render_ms_sum, self.renders),
+             self.render_ms_max,
+         );
++        if crate::render_policy::details_enabled() {
++            tracing::info!(target: "ruffle_aqw_perf",
++                "frame percentiles p95 {:.2}ms p99 {:.2}ms; render p95 {:.2}ms p99 {:.2}ms; GPU deferred {}",
++                self.frame_samples.percentile(95), self.frame_samples.percentile(99),
++                self.render_samples.percentile(95), self.render_samples.percentile(99), self.gpu_deferred);
++        }
+         let counts = ruffle_render_wgpu::perf_counters::take();
+         let per_render = ruffle_render_wgpu::perf_counters::NAMES
+             .iter()
+@@ -397,17 +409,120 @@
      if parts.is_empty() { "none of the timed work".to_string() } else { parts }
  }
  
@@ -76,6 +122,18 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
 +            }
 +            Request::Headless(on) => {
 +                crate::skua::set_headless(on);
++                self.next_draw_time = None;
++                self.picture_due = Instant::now();
++                if on {
++                    if let Some(bytes) = crate::render_policy::headless_budget()
++                        && let Some(mut player) = self.player.get()
++                        && let Some(renderer) = <dyn std::any::Any>::downcast_mut::<
++                            ruffle_render_wgpu::backend::WgpuRenderBackend<crate::gui::MovieView>,
++                        >(player.renderer_mut())
++                    {
++                        renderer.aqw_trim_idle_to_budget(bytes);
++                    }
++                }
 +                if !on {
 +                    self.frame_since_render = true;
 +                    self.gui.window().request_redraw();
@@ -143,7 +201,23 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
                  let started = Instant::now();
                  let timers_before = ruffle_render_wgpu::perf_counters::timers::snapshot();
                  let walk_before = ruffle_core::render_walk_micros();
-@@ -509,7 +588,8 @@
+                 let mut player = self.player.get();
++                if let Some(ref mut player) = player
++                    && let Some(renderer) = <dyn std::any::Any>::downcast_mut::<
++                        ruffle_render_wgpu::backend::WgpuRenderBackend<crate::gui::MovieView>,
++                    >(player.renderer_mut())
++                    && !renderer.aqw_ready_to_render()
++                {
++                    self.perf.gpu_deferred += 1;
++                    self.gpu_retry_at = Some(Instant::now() + Duration::from_millis(4));
++                    self.next_draw_time = self.gpu_retry_at;
++                    return;
++                }
++                self.gpu_retry_at = None;
+                 let frame_budget_ms = player
+                     .as_ref()
+                     .map_or(1000.0 / 24.0, |player| 1000.0 / player.frame_rate());
+@@ -509,7 +624,8 @@
                  }
              }
              WindowEvent::Occluded(occluded) => {
@@ -153,7 +227,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
                  if !occluded {
                      // Nothing repaints us on its own if the movie is paused.
                      self.gui.window().request_redraw();
-@@ -558,6 +638,13 @@
+@@ -558,6 +674,13 @@
                  self.player.handle_event(PlayerEvent::FocusLost);
              }
              WindowEvent::MouseInput { button, state, .. } => {
@@ -167,7 +241,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
                  if self.gui.is_context_menu_visible() {
                      return;
                  }
-@@ -754,7 +841,9 @@
+@@ -754,7 +877,9 @@
  
          // To prevent issues like waiting on resize indefinitely (#11364) or desyncing the window state on Windows,
          // do not resize while window is maximized.
@@ -178,7 +252,59 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
  
          let (viewport_size, state) = if should_resize {
              let movie_width = swf_header.stage_size().width().to_pixels();
-@@ -1128,11 +1217,27 @@
+@@ -912,8 +1037,10 @@
+                 });
+                 self.check_redraw();
+             }
+-            self.pace_interpolation();
+-        }
++        }
++        // GPU retries must also be paced while a movie is still loading.
++        // Otherwise a deferred startup redraw can leave an expired wake deadline.
++        self.pace_interpolation();
+     }
+ 
+     /// AQW build: with frame interpolation on (title-bar menu), sends a picture on every refresh
+@@ -924,10 +1051,22 @@
+     /// frame, else it draws once per frame as without interpolation.
+     fn pace_interpolation(&mut self) {
+         self.next_draw_time = None;
+-        if !ruffle_core::frame_interpolation::enabled() || self.minimized || self.occluded {
++        if !crate::render_policy::should_draw(
++            self.minimized, self.occluded, crate::skua::headless(),
++        ) {
+             return;
+         }
+         let now = Instant::now();
++        if let Some(retry) = self.gpu_retry_at {
++            if now < retry {
++                self.next_draw_time = Some(retry);
++                return;
++            }
++            self.gui.window().request_redraw();
++        }
++        if !ruffle_core::frame_interpolation::enabled() {
++            return;
++        }
+         if self
+             .refresh_checked
+             .is_none_or(|checked| now.duration_since(checked) > Duration::from_secs(2))
+@@ -1012,6 +1151,14 @@
+     }
+ 
+     fn check_redraw(&self) {
++        if self.gpu_retry_at.is_some_and(|retry| Instant::now() < retry) {
++            return;
++        }
++        if !crate::render_policy::should_draw(
++            self.minimized, self.occluded, crate::skua::headless(),
++        ) {
++            return;
++        }
+         let player = self.player.get();
+         // AQW build: like Flash Player's normal pacing, only draw once a new SWF frame has run.
+         // AQW calls `updateAfterEvent()` from timers and hovers change between frames, which
+@@ -1128,11 +1275,27 @@
                  }
              }
  
@@ -206,7 +332,15 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
              let max_window_size = get_screen_size(&window);
              window.set_max_inner_size(Some(max_window_size));
              let window = Arc::new(window);
-@@ -1326,6 +1431,22 @@
+@@ -1203,6 +1366,7 @@
+                 frame_since_render: true,
+                 last_redraw: Instant::now(),
+                 next_draw_time: None,
++                gpu_retry_at: None,
+                 draw_started: Instant::now(),
+                 draw_cost_ms: 2.0,
+                 frame_cost_ms: 3.0,
+@@ -1326,6 +1490,22 @@
                  event_loop.exit();
              }
  
@@ -415,15 +549,16 @@ diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
 diff --git a/desktop/src/main.rs b/desktop/src/main.rs
 --- a/desktop/src/main.rs
 +++ b/desktop/src/main.rs
-@@ -15,6 +15,7 @@
+@@ -15,6 +15,8 @@
  mod log;
  mod mugetsu;
  mod player;
 +mod skua;
++mod render_policy;
  mod preferences;
  #[cfg(feature = "tracy")]
  mod tracy;
-@@ -151,10 +152,18 @@
+@@ -151,10 +153,18 @@
      let message = info.payload_as_str().unwrap_or("panic occurred");
  
      // AQW build: keep the crash and where it happened in ruffle.log.
@@ -443,7 +578,7 @@ diff --git a/desktop/src/main.rs b/desktop/src/main.rs
  
      // AQW build (Mugetsu): no "report to the Ruffle developers" link (this is a modified build;
      // its crashes aren't theirs to triage). Say plainly what happened instead.
-@@ -204,7 +213,11 @@
+@@ -204,7 +214,11 @@
      }
      let gui = args.iter().any(|a| is(a, "--gui"));
      args.retain(|a| !is(a, "--gui"));
@@ -456,7 +591,7 @@ diff --git a/desktop/src/main.rs b/desktop/src/main.rs
      if has_movie {
          // A movie was given (or the arguments don't parse; let clap report that): plain Ruffle.
          return args;
-@@ -257,7 +270,8 @@
+@@ -257,7 +271,8 @@
          ("--no-gui", None, None),
          ("--graphics", Some("-g"), Some(graphics)),
      ];
@@ -466,7 +601,7 @@ diff --git a/desktop/src/main.rs b/desktop/src/main.rs
      for (flag, short, value) in defaults {
          if (*flag == "--no-gui" && gui) || given(flag) || short.is_some_and(given) {
              continue;
-@@ -302,7 +316,8 @@
+@@ -302,7 +317,8 @@
  
      let logs_path = &preferences.cli.cache_directory.join("log");
      mugetsu::set_log_folder(logs_path.clone());
@@ -476,7 +611,7 @@ diff --git a/desktop/src/main.rs b/desktop/src/main.rs
      if let Some(parent) = log_path.parent() {
          std::fs::create_dir_all(parent)?;
      }
-@@ -312,7 +327,12 @@
+@@ -312,7 +328,12 @@
  
      // [NA] `_guard` cannot be `_` or it'll immediately drop
      // https://docs.rs/tracing-appender/latest/tracing_appender/non_blocking/index.html
@@ -534,6 +669,70 @@ diff --git a/desktop/src/player.rs b/desktop/src/player.rs
              builder = builder.with_external_interface(Box::new(DesktopExternalInterfaceProvider {
                  spoof_url: opt.player.spoof_url.clone(),
              }));
+diff --git a/desktop/src/render_policy.rs b/desktop/src/render_policy.rs
+new file mode 100644
+--- /dev/null
++++ b/desktop/src/render_policy.rs
+@@ -0,0 +1,59 @@
++//! Small policies kept independent of the window and GPU for deterministic checks.
++use std::sync::OnceLock;
++
++pub fn should_draw(minimized: bool, occluded: bool, headless: bool) -> bool {
++    !minimized && !occluded && !headless
++}
++
++pub fn headless_budget() -> Option<u64> {
++    std::env::var("SKUA_HEADLESS_POOL_IDLE_MB").ok()
++        .and_then(|v| v.parse::<u64>().ok())
++        .filter(|&mb| mb <= 4096).map(|mb| mb << 20)
++}
++
++pub fn details_enabled() -> bool {
++    static DETAILS: OnceLock<bool> = OnceLock::new();
++    *DETAILS.get_or_init(|| std::env::var("SKUA_PERF_DETAILS").as_deref() == Ok("1"))
++}
++
++#[derive(Default)]
++pub struct FrameSamples(Vec<f64>);
++impl FrameSamples {
++    pub fn record(&mut self, ms: f64) {
++        if details_enabled() { self.record_sample(ms); }
++    }
++    fn record_sample(&mut self, ms: f64) {
++        if self.0.len() < 4096 && ms.is_finite() && ms >= 0.0 { self.0.push(ms); }
++    }
++    pub fn percentile(&mut self, percent: usize) -> f64 {
++        if self.0.is_empty() { return 0.0; }
++        self.0.sort_unstable_by(f64::total_cmp);
++        let rank = (self.0.len() * percent.clamp(1, 100)).div_ceil(100);
++        self.0[rank - 1]
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn headless_never_requests_draws_and_restore_does() {
++        for minimized in [false, true] { for occluded in [false, true] {
++            assert!(!should_draw(minimized, occluded, true));
++        }}
++        assert!(should_draw(false, false, false));
++        assert!(!should_draw(true, false, false));
++        assert!(!should_draw(false, true, false));
++    }
++    #[test]
++    fn samples_are_bounded_and_percentiles_retain_slow_frames() {
++        let mut samples=FrameSamples::default();
++        for i in 1..=100 { samples.record_sample(i as f64); }
++        samples.record_sample(f64::NAN);
++        assert_eq!(samples.percentile(95),95.0);
++        assert_eq!(samples.percentile(99),99.0);
++        for _ in 0..10000 { samples.record_sample(1.0); }
++        assert_eq!(samples.0.len(),4096);
++        assert_eq!(FrameSamples::default().percentile(99),0.0);
++    }
++}
 diff --git a/desktop/src/skua.rs b/desktop/src/skua.rs
 new file mode 100644
 --- /dev/null
@@ -1172,7 +1371,60 @@ diff --git a/frontend-utils/src/backends/navigator.rs b/frontend-utils/src/backe
 diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
 --- a/render/wgpu/src/backend.rs
 +++ b/render/wgpu/src/backend.rs
-@@ -1902,7 +1902,19 @@
+@@ -424,6 +424,24 @@
+             active_frame,
+             profiler,
+         })
++    }
++
++    /// VibeSkuffle: test admission BEFORE Player::render, which commits bitmap caches.
++    /// Dropping a completed command list afterwards could leave those caches stale.
++    pub fn aqw_ready_to_render(&mut self) -> bool {
++        if let Err(error) = self.descriptors.device.poll(wgpu::PollType::Poll) {
++            tracing::warn!(target: "ruffle_aqw_perf", "GPU readiness poll failed: {error}");
++            return false;
++        }
++        self.active_frame.in_flight.ready()
++    }
++
++    /// Optional headless budget: trim idle textures without waiting for GPU completion.
++    /// Active resources stay alive until their GPU submissions finish.
++    pub fn aqw_trim_idle_to_budget(&mut self, bytes: u64) {
++        self.texture_pool.trim_idle_to_bytes(bytes, false);
++        self.offscreen_texture_pool.trim_idle_to_bytes(bytes, false);
++        let _ = self.descriptors.device.poll(wgpu::PollType::Poll);
+     }
+ 
+     /// AQW build: frees every spare pooled texture and lets the GPU release the memory, for
+@@ -1088,7 +1106,9 @@
+         jobs: &[(&swf::Shape, f32, Stretch, &dyn BitmapSource)],
+     ) -> Vec<ShapeHandle> {
+         use rayon::prelude::*;
+-        if jobs.len() < 2 {
++        static SERIAL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++        let serial = *SERIAL.get_or_init(|| std::env::var_os("RUFFLE_SERIAL_TESSELLATION").is_some());
++        if serial || jobs.len() < 2 {
+             return jobs
+                 .iter()
+                 .map(|(shape, scale, stretch, source)| {
+@@ -1305,7 +1325,7 @@
+         self.active_frame.staging_belt.finish();
+ 
+         self.active_frame
+-            .submit_for_target(&self.descriptors, &self.target, frame_output);
++            .submit_for_target(&self.descriptors, &self.target, frame_output, false);
+         // AQW build: this pool (cacheAsBitmap and their filters) used to be thrown away every
+         // frame, recreating ~150 textures per frame in crowded AQW rooms. Besides the CPU cost,
+         // the graphics driver leaked host memory on that churn (10-90 MB/s). Keep it across
+@@ -1728,6 +1748,7 @@
+             &self.descriptors,
+             &texture_target,
+             frame_output,
++            true,
+         ));
+ 
+         let sync_handle = self.make_queue_sync_handle(
+@@ -1902,7 +1923,19 @@
              // come and go all the time in AQW (layers, cached bitmaps, filters) and left the big
              // blocks mostly empty: 6-10 GB reserved for ~2 GB used after a session.
              // `RUFFLE_GPU_MEMORY_HINTS=performance` restores the old block sizes.
@@ -1193,3 +1445,241 @@ diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
                  .is_ok_and(|v| v.eq_ignore_ascii_case("performance"))
              {
                  wgpu::MemoryHints::Performance
+@@ -1947,7 +1980,7 @@
+     pub command_encoder: wgpu::CommandEncoder,
+     draws_since_flush: u32,
+     /// AQW build: frames submitted to the GPU and possibly not finished yet.
+-    in_flight: std::collections::VecDeque<SubmissionIndex>,
++    in_flight: crate::frame_queue::FrameQueue<SubmissionIndex>,
+ }
+ 
+ impl ActiveFrame {
+@@ -1969,6 +2002,7 @@
+         descriptors: &Descriptors,
+         target: &T,
+         frame: T::Frame,
++        wait_for_budget: bool,
+     ) -> SubmissionIndex {
+         self.draws_since_flush = 0;
+         self.staging_belt.finish();
+@@ -1987,26 +2021,31 @@
+         });
+         self.staging_belt.recall();
+ 
+-        // AQW build: when the GPU is the bottleneck (2000+ passes of full-screen layers),
+-        // nothing made the CPU wait for it, so submitted frames queued up without limit, and
+-        // so did everything they hold (process memory grew ~90 MB/s). Keep at most
+-        // MAX_FRAMES_IN_FLIGHT frames queued, like games do; this never delays a frame the
+-        // GPU keeps up with, and shortens the queue (latency) when it doesn't.
+-        const MAX_FRAMES_IN_FLIGHT: usize = 2;
+-        self.in_flight.push_back(index.clone());
+-        while self.in_flight.len() > MAX_FRAMES_IN_FLIGHT {
+-            let oldest = self.in_flight.pop_front().expect("queue is not empty");
+-            let start = std::time::Instant::now();
+-            timers::time(timers::GPU_WAIT, || {
+-                let _ = descriptors.device.poll(wgpu::PollType::Wait {
++        // VibeSkuffle: admission is checked by the frontend before the next render.
++        // Completion callbacks retain unfinished work, including after a slow GPU frame.
++        // No two-second wait on the thread servicing game logic and bridge requests.
++        let completed = self.in_flight.submitted(index.clone());
++        descriptors.queue.on_submitted_work_done(move || {
++            completed.store(true, std::sync::atomic::Ordering::Release);
++        });
++        // Offscreen BitmapData work cannot be skipped: its pixels may affect ActionScript.
++        // Preserve its existing backpressure, but never forget an index after a timeout.
++        // Visible movie frames instead use the frontend's nonblocking admission check.
++        if wait_for_budget {
++            while self.in_flight.over_limit() {
++                let oldest = self.in_flight.oldest().cloned().expect("pending submission");
++                let start = std::time::Instant::now();
++                let result = descriptors.device.poll(wgpu::PollType::Wait {
+                     submission_index: Some(oldest),
+                     timeout: Some(std::time::Duration::from_secs(2)),
+                 });
+-            });
+-            crate::perf_counters::add(
+-                crate::perf_counters::GPU_WAIT_MS,
+-                start.elapsed().as_millis() as u32,
+-            );
++                crate::perf_counters::add(crate::perf_counters::GPU_WAIT_MS,
++                    start.elapsed().as_millis() as u32);
++                if let Err(error) = result {
++                    tracing::warn!(target: "ruffle_aqw_perf", "Offscreen GPU wait incomplete; retaining submission: {error}");
++                    break;
++                }
++            }
+         }
+         index
+     }
+diff --git a/render/wgpu/src/buffer_pool.rs b/render/wgpu/src/buffer_pool.rs
+--- a/render/wgpu/src/buffer_pool.rs
++++ b/render/wgpu/src/buffer_pool.rs
+@@ -207,6 +207,12 @@
+         if limit == 0 {
+             return;
+         }
++        self.trim_idle_to_bytes(limit, true);
++    }
++
++    /// VibeSkuffle: reuse the normal LRU eviction for an explicitly requested idle budget.
++    /// Visible rendering protects recent reuse; headless transition may release all idle sizes.
++    pub(crate) fn trim_idle_to_bytes(&mut self, limit: u64, protect_recent: bool) {
+         let mut sizes: Vec<(u64, TextureKey, u64)> = self
+             .pools
+             .iter()
+@@ -222,7 +228,7 @@
+         // textures every frame); only leftovers that aren't being reused are freed.
+         let keep_from = self.frame.saturating_sub(1);
+         for (last_used, key, bytes) in sizes {
+-            if total <= limit || last_used >= keep_from {
++            if total <= limit || (protect_recent && last_used >= keep_from) {
+                 break;
+             }
+             if bytes > 0 {
+diff --git a/render/wgpu/src/frame_queue.rs b/render/wgpu/src/frame_queue.rs
+new file mode 100644
+--- /dev/null
++++ b/render/wgpu/src/frame_queue.rs
+@@ -0,0 +1,92 @@
++//! Frontends must check admission before rendering commits cacheAsBitmap updates.
++//! Only a completion callback can retire a submission; a timeout never does.
++use std::collections::VecDeque;
++use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
++
++pub(crate) struct FrameQueue<T> {
++    pending: VecDeque<(T, Arc<AtomicBool>)>,
++}
++
++impl<T> Default for FrameQueue<T> {
++    fn default() -> Self { Self { pending: VecDeque::new() } }
++}
++
++impl<T> FrameQueue<T> {
++    pub fn submitted(&mut self, index: T) -> Arc<AtomicBool> {
++        self.reap();
++        let done = Arc::new(AtomicBool::new(false));
++        self.pending.push_back((index, done.clone()));
++        done
++    }
++
++    fn reap(&mut self) {
++        while self.pending.front().is_some_and(|(_, done)| done.load(Ordering::Acquire)) {
++            self.pending.pop_front();
++        }
++    }
++    pub fn ready(&mut self) -> bool { self.reap(); self.pending.len() < 2 }
++    pub fn over_limit(&mut self) -> bool { self.reap(); self.pending.len() > 2 }
++    pub fn oldest(&self) -> Option<&T> { self.pending.front().map(|(index, _)| index) }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    #[test]
++    fn slow_gpu_never_loses_outstanding_work() {
++        let mut queue = FrameQueue::default();
++        let a = queue.submitted(0u32); let b = queue.submitted(0u32);
++        for _ in 0..1000 { assert!(!queue.ready()); }
++        assert_eq!(queue.pending.len(), 2);
++        a.store(true, Ordering::Release);
++        assert!(queue.ready());
++        let c = queue.submitted(0u32);
++        assert!(!queue.ready());
++        b.store(true, Ordering::Release); c.store(true, Ordering::Release);
++        assert!(queue.ready()); assert!(queue.pending.is_empty());
++    }
++    #[test]
++    fn later_callback_does_not_retire_earlier_work() {
++        let mut queue = FrameQueue::default();
++        let a = queue.submitted(0u32); let b = queue.submitted(0u32);
++        b.store(true, Ordering::Release);
++        assert!(!queue.ready());
++        a.store(true, Ordering::Release); assert!(queue.ready());
++    }
++    #[test]
++    fn completion_across_threads_restores_admission() {
++        let mut queue = FrameQueue::default();
++        let a = queue.submitted(0u32); let b = queue.submitted(0u32);
++        std::thread::spawn(move || {
++            a.store(true, Ordering::Release); b.store(true, Ordering::Release);
++        }).join().unwrap();
++        assert!(queue.ready());
++    }
++    #[test]
++    fn offscreen_timeout_keeps_oldest_index_until_completion() {
++        let mut queue = FrameQueue::default();
++        let a=queue.submitted(11u32);
++        let b=queue.submitted(12u32);
++        let c=queue.submitted(13u32);
++        for _ in 0..1000 {
++            assert!(queue.over_limit());
++            assert_eq!(queue.oldest(),Some(&11));
++        }
++        a.store(true,Ordering::Release);
++        assert!(!queue.over_limit());
++        assert_eq!(queue.oldest(),Some(&12));
++        b.store(true,Ordering::Release);c.store(true,Ordering::Release);
++        assert!(queue.ready());
++    }
++    #[test]
++    fn serial_offscreen_work_does_not_accumulate_completed_tickets() {
++        let mut queue=FrameQueue::default();
++        for id in 0..10000 {
++            let done=queue.submitted(id);
++            done.store(true,Ordering::Release);
++        }
++        assert_eq!(queue.pending.len(),1);
++        assert!(queue.ready());
++        assert!(queue.pending.is_empty());
++    }
++}
+diff --git a/render/wgpu/src/lib.rs b/render/wgpu/src/lib.rs
+--- a/render/wgpu/src/lib.rs
++++ b/render/wgpu/src/lib.rs
+@@ -29,6 +29,7 @@
+ #[macro_use]
+ pub mod utils;
+ mod segments;
++mod frame_queue;
+ mod arena;
+ 
+ mod bitmaps;
+@@ -674,11 +675,18 @@
+ /// their memory is really released (including resources only kept alive by finished command
+ /// buffers waiting on wgpu's background drop thread).
+ pub(crate) fn release_gpu_memory(descriptors: &descriptors::Descriptors) {
+-    let _ = descriptors
+-        .device
+-        .poll(wgpu::PollType::wait_indefinitely());
+-    #[cfg(not(target_family = "wasm"))]
+-    wgpu_core::aqw_flush_encoder_drops();
++    // VibeSkuffle: a slow or unresponsive GPU must not hold the game thread forever.
++    // On timeout resources remain owned by wgpu and are released on later completion.
++    match descriptors.device.poll(wgpu::PollType::Wait {
++        submission_index: None,
++        timeout: Some(std::time::Duration::from_millis(50)),
++    }) {
++        Ok(_) => {
++            #[cfg(not(target_family = "wasm"))]
++            wgpu_core::aqw_flush_encoder_drops();
++        }
++        Err(error) => tracing::warn!(target: "ruffle_aqw_perf", "GPU cleanup deferred: {error}"),
++    }
+ }
+ 
+ /// AQW build: running out of GPU memory is not fatal.
+diff --git a/render/wgpu/src/segments.rs b/render/wgpu/src/segments.rs
+--- a/render/wgpu/src/segments.rs
++++ b/render/wgpu/src/segments.rs
+@@ -102,7 +102,10 @@
+     let mut encoders = SEGMENTS.with(|s| std::mem::take(&mut *s.borrow_mut()));
+     set_cut(cut_points());
+     encoders.push(tail);
+-    if encoders.len() == 1 {
++    static MIN: OnceLock<usize> = OnceLock::new();
++    let min = *MIN.get_or_init(|| std::env::var("SKUA_PARALLEL_MIN_SEGMENTS")
++        .ok().and_then(|v| v.parse().ok()).filter(|&v| v >= 2).unwrap_or(2));
++    if encoders.len() < min {
+         return encoders.into_iter().map(|e| e.finish()).collect();
+     }
+     encoders.into_par_iter().map(|e| e.finish()).collect()
