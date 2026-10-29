@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.0.2 (2026-10-28) - Quality of life, VibeSkua 2.1.1 and Mugetsu 1.6.0
+
+- Watch Dog shows live requester and helper status, death and timer progress, and per-requester cooldowns; the built-in and standalone native UI use the same format.
+- Watch Dog restarts a script that VibeSkua's own re-login left stopped, with a grace period, no restart after a manual stop, the existing restart limits, and a log line naming the path used.
+- Minimizing no longer leaves a "pillar" of the clients on the desktop (child windows are hidden on minimize).
+- *Reject Non AC Drops* and *Pickup AC Drops And Send To Bank* moved to Drops & Looting. Saved settings are unchanged.
+- ButlerV5 gets a **Release everyone** button that releases every butler of every account (two clicks to confirm).
+- Script Loader's loaded-script card has a right-click menu to open the folder or copy a sanitized path and the script's SHA256. Army Misc Options tooltips show per-account On/Off/missing-report counts.
+- Manager -> Updater -> Preview Support Report: a reviewable, allowlisted summary you can copy or save. Nothing is uploaded.
+- Client updates default to stable releases; *Include preview releases* is an explicit saved choice and never downgrades.
+- Launches have saved 0-60 second spacing and a Cancel Remaining Launches button; Army Queue keeps its own delay.
+- Updated to VibeSkua 2.1.1 (`a3c8cac`) and Mugetsu 1.6.0. See the [release notes](docs/RELEASE-v1.0.2.md).
+
 ## v1.0.1 (2026-10-26) - Script compatibility hotfix and renderer improvements
 
 - Restored Flash-compatible XML text escaping for Ruffle callback string results. Inventory/bank checks can recognize encoded item names such as `Crag &amp; Bamboozle`, fixing a cause of Leery Exchange selecting the birthday-pet fallback instead of the Crag route. Outgoing arguments and event values remain raw; script files are unchanged.

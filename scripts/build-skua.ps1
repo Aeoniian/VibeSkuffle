@@ -1,4 +1,4 @@
-# Builds VibeSkua with the Ruffle backend (patches\vibeskua-ruffle.patch) and copies the Ruffle
+﻿# Builds VibeSkua with the Ruffle backend (patches\vibeskua-ruffle.patch) and copies the Ruffle
 # player in, so VibeSkua\Build\ is ready to run.
 # Native tools (git) write progress to stderr, which 'Stop' would treat as failure; exit codes are checked instead.
 $ErrorActionPreference = 'Continue'
@@ -6,7 +6,7 @@ $root = Split-Path $PSScriptRoot -Parent
 $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
 $env:GIT_CONFIG_PARAMETERS = "'core.autocrlf=false'"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
-$commit = '630c952f0328a5515c41aa18f4d84db62d7b24b1'   # VibeSkua version the patch was made against (v2.1.0 plus current main fixes)
+$commit = 'a3c8cac340583ecd8b939725e4674f855dd6d1a3'   # VibeSkua version the sources were merged against (v2.1.1 plus current main)
 
 $skua = Join-Path $root 'VibeSkua'
 if (-not (Test-Path (Join-Path $skua '.git'))) {

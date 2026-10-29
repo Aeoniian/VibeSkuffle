@@ -2,19 +2,20 @@
 
 **VibeSkua, running on Mugetsu (a faster Ruffle) instead of Flash, built to run a whole army for days without babysitting.**
 
-VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (v2.1.0) with the Flash player swapped out for
+VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (v2.1.1) with the Flash player swapped out for
 [Mugetsu](https://github.com/mugetsu-aqw/mugetsu), a performance-tuned build of the
 [Ruffle](https://ruffle.rs) Flash emulator. Everything VibeSkua does still works: scripts, the Manager, the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
 goes wrong: stuck logins, crashes, freezes, memory build-up, and a crashed tab window.
 
-> **Stable release: v1.0.1.** Download the [latest release](../../releases), or update directly through
+> **Stable release: v1.0.2.** Download the [latest release](../../releases), or update directly through
 > **Manager → Updater**. Report problems in [Issues](../../issues).
 
-v1.0.1 fixes Flash/Ruffle item-name encoding that could make scripts miss owned pets such as
-Crag &amp; Bamboozle. It also improves headless scheduling and GPU handling, with optional
-resource tuning and diagnostics. See the [release notes](docs/RELEASE-v1.0.1.md) and
-[renderer testing details](docs/RENDERER-PERFORMANCE.md).
+v1.0.2 updates to VibeSkua 2.1.1 and Mugetsu 1.6.0, makes Watch Dog restart scripts after a VibeSkua
+re-login, fixes minimize leaving residue on the desktop, and adds launch spacing, a support report,
+update channels and ButlerV5 "Release everyone". See the [release notes](docs/RELEASE-v1.0.2.md);
+the previous [v1.0.1 notes](docs/RELEASE-v1.0.1.md) and
+[renderer testing details](docs/RENDERER-PERFORMANCE.md) are still available.
 
 ---
 
@@ -268,7 +269,7 @@ Lucas Correa.
 If you contributed to any of these and are missing or want your entry changed, open an [issue](../../issues).
 
 The game player shipped here is a **modified** Mugetsu (it adds the bridge VibeSkuffle talks to). Its source is
-Mugetsu v1.5.1 plus [`patches/skua.patch`](patches/skua.patch). This repository is licensed under
+Mugetsu v1.6.0 plus [`patches/skua.patch`](patches/skua.patch). This repository is licensed under
 **GPL-3.0** (see [LICENSE](LICENSE)); see [NOTICE.md](NOTICE.md) for details.
 
 Not affiliated with, endorsed by, or supported by Artix Entertainment, the Ruffle project, Mugetsu, Skua or

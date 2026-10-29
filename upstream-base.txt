@@ -1,3 +1,3 @@
-VibeSkua 2.1.0
-630c952f0328a5515c41aa18f4d84db62d7b24b1
-https://github.com/NinjaXz/VibeSkua/commit/630c952f0328a5515c41aa18f4d84db62d7b24b1
+VibeSkua 2.1.1
+a3c8cac340583ecd8b939725e4674f855dd6d1a3
+https://github.com/NinjaXz/VibeSkua/commit/a3c8cac340583ecd8b939725e4674f855dd6d1a3

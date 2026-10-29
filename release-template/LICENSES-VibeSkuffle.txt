@@ -2,7 +2,7 @@ VibeSkuffle bundles:
 
 - VibeSkua by NinjaXz (https://github.com/NinjaXz/VibeSkua), derived from Skua (https://github.com/auqw/skua);
   MIT License as stated in VibeSkua's README. Modified for VibeSkuffle.
-- A modified Mugetsu v1.5.1 (https://github.com/mugetsu-aqw/mugetsu), GPL-3.0: see ruffle\README.txt,
+- A modified Mugetsu v1.6.0 (https://github.com/mugetsu-aqw/mugetsu), GPL-3.0: see ruffle\README.txt,
   ruffle\LICENSE-GPL-3.0.txt, ruffle\LICENSES\ and ruffle\THIRD-PARTY-NOTICES.txt (Ruffle: MIT / Apache-2.0).
 - JPEXS FFDec (FFDec\), GPL-3.0, unchanged: see FFDec\lib\*.license.txt.
 

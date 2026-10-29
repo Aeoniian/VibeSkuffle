@@ -7,11 +7,11 @@ $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [En
 $env:GIT_CONFIG_PARAMETERS = "'core.autocrlf=false'"
 $env:RUSTUP_TOOLCHAIN = '1.99.0'
 
-$version = '1.5.1'   # Mugetsu release the build uses (the Windows build script, build.ps1)
+$version = '1.6.0'   # Mugetsu release the build uses (the Windows build script, build-windows.ps1)
 $mugetsu = Join-Path $root 'mugetsu'
 if (-not (Test-Path (Join-Path $mugetsu '.git'))) {
     Write-Host "== Downloading Mugetsu $version source"
-    git clone -q --depth 1 --branch "v$version" https://github.com/mugetsu-aqw/mugetsu.git $mugetsu
+    git -c advice.detachedHead=false clone -q --depth 1 --branch "v$version" https://github.com/mugetsu-aqw/mugetsu.git $mugetsu
     if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
 } else {
     $have = try { git -C $mugetsu describe --tags --exact-match 2>$null } catch { "" }
@@ -28,9 +28,9 @@ $source = Join-Path $mugetsu 'source'
 Copy-Item -Force (Join-Path $root 'patches\skua.patch') (Join-Path $source 'patches\skua.patch')
 
 # Mugetsu's build script, with one more step: apply skua.patch after Mugetsu's own patch.
-$script = Get-Content -Raw (Join-Path $source 'build.ps1')
+$script = Get-Content -Raw (Join-Path $source 'build-windows.ps1')
 $anchor = "Run git @('-C', `$ruffle, 'apply', '--whitespace=nowarn', (Join-Path `$root 'patches\ruffle.patch'))"
-if (-not $script.Contains($anchor)) { throw "build.ps1 changed; can't find where to add skua.patch" }
+if (-not $script.Contains($anchor)) { throw "build-windows.ps1 changed; can't find where to add skua.patch" }
 $script = $script.Replace($anchor, $anchor + "`r`nRun git @('-C', `$ruffle, 'apply', '--whitespace=nowarn', (Join-Path `$root 'patches\skua.patch'))")
 $patched = Join-Path $source 'build-skua.ps1'
 Set-Content -Path $patched -Value $script -Encoding UTF8

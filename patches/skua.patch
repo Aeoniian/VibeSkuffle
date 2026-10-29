@@ -1,7 +1,8 @@
 diff --git a/core/src/avm2/globals/json.rs b/core/src/avm2/globals/json.rs
+index 43e19628..dbfa051c 100644
 --- a/core/src/avm2/globals/json.rs
 +++ b/core/src/avm2/globals/json.rs
-@@ -181,7 +181,20 @@
+@@ -181,7 +181,20 @@ impl<'gc> AvmSerializer<'gc> {
                  }
              }
          } else {
@@ -22,7 +23,7 @@ diff --git a/core/src/avm2/globals/json.rs b/core/src/avm2/globals/json.rs
                  let mapped = self.map_value(activation, || name, val)?;
                  if !skip_value(mapped) {
                      js_obj.insert(
-@@ -237,6 +250,11 @@
+@@ -237,6 +250,11 @@ impl<'gc> AvmSerializer<'gc> {
              Value::Null => JsonValue::Null,
              Value::Undefined => JsonValue::Null,
              Value::Integer(i) => JsonValue::from(i),
@@ -35,9 +36,10 @@ diff --git a/core/src/avm2/globals/json.rs b/core/src/avm2/globals/json.rs
              Value::Bool(b) => JsonValue::from(b),
              Value::String(s) => JsonValue::from(s.to_utf8_lossy().deref()),
 diff --git a/desktop/Cargo.toml b/desktop/Cargo.toml
+index b36589f7..f047fc1a 100644
 --- a/desktop/Cargo.toml
 +++ b/desktop/Cargo.toml
-@@ -72,7 +72,7 @@
+@@ -74,7 +74,7 @@ ashpd = { version = "0.13.0", features = ["settings", "game_mode"] }
  [target.'cfg(windows)'.dependencies]
  # AQW build: DXGI, to see which graphics chip Mugetsu will use (see `mugetsu::intel_graphics`).
  windows = { version = "0.62", features = ["Win32_Graphics_Dxgi"] }
@@ -47,9 +49,10 @@ diff --git a/desktop/Cargo.toml b/desktop/Cargo.toml
  [build-dependencies]
  vergen = { version = "10.0.3", features = ["build", "cargo"] }
 diff --git a/desktop/src/app.rs b/desktop/src/app.rs
+index a5f7bc25..16ab3282 100644
 --- a/desktop/src/app.rs
 +++ b/desktop/src/app.rs
-@@ -57,6 +57,7 @@
+@@ -57,6 +57,7 @@ struct MainWindow {
      last_redraw: Instant,
      /// With frame interpolation on: when the next in-between draw is due (see `pace_interpolation`).
      next_draw_time: Option<Instant>,
@@ -57,7 +60,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
      /// When the last draw started.
      draw_started: Instant,
      /// Recent averages of a draw's and a SWF frame's time on the main thread (ms).
-@@ -84,6 +85,9 @@
+@@ -84,6 +85,9 @@ struct PerfStats {
      windows_logged: u32,
      /// Highest orphaned-avatar threshold a retention report was logged for.
      retention_reports_at: usize,
@@ -67,7 +70,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
      frame_ms_sum: f64,
      frame_ms_max: f64,
      gap_ms_max: f64,
-@@ -119,12 +123,14 @@
+@@ -119,12 +123,14 @@ impl PerfStats {
          self.last_frame = Some(now);
          self.frames += 1;
          self.game_frames += game_frames;
@@ -82,7 +85,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
          self.render_ms_sum += render_ms;
          self.render_ms_max = self.render_ms_max.max(render_ms);
      }
-@@ -237,6 +243,12 @@
+@@ -238,6 +244,12 @@ impl PerfStats {
              avg(self.render_ms_sum, self.renders),
              self.render_ms_max,
          );
@@ -95,7 +98,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
          let counts = ruffle_render_wgpu::perf_counters::take();
          let per_render = ruffle_render_wgpu::perf_counters::NAMES
              .iter()
-@@ -397,17 +409,120 @@
+@@ -420,17 +432,120 @@ fn timer_parts(before: &[u64; ruffle_render_wgpu::perf_counters::timers::LEN]) -
      if parts.is_empty() { "none of the timed work".to_string() } else { parts }
  }
  
@@ -217,7 +220,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
                  let frame_budget_ms = player
                      .as_ref()
                      .map_or(1000.0 / 24.0, |player| 1000.0 / player.frame_rate());
-@@ -509,7 +624,8 @@
+@@ -532,7 +647,8 @@ impl MainWindow {
                  }
              }
              WindowEvent::Occluded(occluded) => {
@@ -227,7 +230,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
                  if !occluded {
                      // Nothing repaints us on its own if the movie is paused.
                      self.gui.window().request_redraw();
-@@ -558,6 +674,13 @@
+@@ -581,6 +697,13 @@ impl MainWindow {
                  self.player.handle_event(PlayerEvent::FocusLost);
              }
              WindowEvent::MouseInput { button, state, .. } => {
@@ -241,7 +244,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
                  if self.gui.is_context_menu_visible() {
                      return;
                  }
-@@ -754,7 +877,9 @@
+@@ -777,7 +900,9 @@ impl MainWindow {
  
          // To prevent issues like waiting on resize indefinitely (#11364) or desyncing the window state on Windows,
          // do not resize while window is maximized.
@@ -252,20 +255,19 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
  
          let (viewport_size, state) = if should_resize {
              let movie_width = swf_header.stage_size().width().to_pixels();
-@@ -912,8 +1037,10 @@
+@@ -939,8 +1064,10 @@ impl MainWindow {
                  });
                  self.check_redraw();
              }
 -            self.pace_interpolation();
--        }
-+        }
+         }
 +        // GPU retries must also be paced while a movie is still loading.
 +        // Otherwise a deferred startup redraw can leave an expired wake deadline.
 +        self.pace_interpolation();
      }
  
      /// AQW build: with frame interpolation on (title-bar menu), sends a picture on every refresh
-@@ -924,10 +1051,22 @@
+@@ -951,10 +1078,22 @@ impl MainWindow {
      /// frame, else it draws once per frame as without interpolation.
      fn pace_interpolation(&mut self) {
          self.next_draw_time = None;
@@ -289,7 +291,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
          if self
              .refresh_checked
              .is_none_or(|checked| now.duration_since(checked) > Duration::from_secs(2))
-@@ -1012,6 +1151,14 @@
+@@ -1044,6 +1183,14 @@ impl MainWindow {
      }
  
      fn check_redraw(&self) {
@@ -304,7 +306,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
          let player = self.player.get();
          // AQW build: like Flash Player's normal pacing, only draw once a new SWF frame has run.
          // AQW calls `updateAfterEvent()` from timers and hovers change between frames, which
-@@ -1128,11 +1275,27 @@
+@@ -1160,11 +1307,27 @@ impl ApplicationHandler<RuffleEvent> for App {
                  }
              }
  
@@ -332,7 +334,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
              let max_window_size = get_screen_size(&window);
              window.set_max_inner_size(Some(max_window_size));
              let window = Arc::new(window);
-@@ -1203,6 +1366,7 @@
+@@ -1235,6 +1398,7 @@ impl ApplicationHandler<RuffleEvent> for App {
                  frame_since_render: true,
                  last_redraw: Instant::now(),
                  next_draw_time: None,
@@ -340,7 +342,7 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
                  draw_started: Instant::now(),
                  draw_cost_ms: 2.0,
                  frame_cost_ms: 3.0,
-@@ -1326,6 +1490,22 @@
+@@ -1358,6 +1522,22 @@ impl ApplicationHandler<RuffleEvent> for App {
                  event_loop.exit();
              }
  
@@ -364,9 +366,10 @@ diff --git a/desktop/src/app.rs b/desktop/src/app.rs
          }
      }
 diff --git a/desktop/src/custom_event.rs b/desktop/src/custom_event.rs
+index 13be623d..08e1ac3f 100644
 --- a/desktop/src/custom_event.rs
 +++ b/desktop/src/custom_event.rs
-@@ -51,4 +51,7 @@
+@@ -51,4 +51,7 @@ pub enum RuffleEvent {
  
      /// Export Ruffle Bundle from currently playing content and open save dialog.
      ExportBundle,
@@ -375,9 +378,10 @@ diff --git a/desktop/src/custom_event.rs b/desktop/src/custom_event.rs
 +    Skua(crate::skua::Request),
  }
 diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
+index 5708e9ec..b08a2528 100644
 --- a/desktop/src/gui/context_menu.rs
 +++ b/desktop/src/gui/context_menu.rs
-@@ -170,7 +170,7 @@
+@@ -170,7 +170,7 @@ impl ContextMenu {
                                  if !item.enabled {
                                      continue;
                                  }
@@ -386,7 +390,7 @@ diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
                                      .clicked()
                                  {
                                      send(RuffleEvent::ContextMenuItemClicked(i));
-@@ -179,64 +179,102 @@
+@@ -179,64 +179,102 @@ impl ContextMenu {
                              }
                          }
  
@@ -449,37 +453,15 @@ diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
 -                                .unwrap_or(0);
 -                            if let Some(choice) = segmented(ui, z, "graphics", options, current) {
 -                                send(RuffleEvent::MugetsuSetting(Setting::Graphics(values[choice])));
--                                item_clicked = true;
--                            }
--                        }
--
--                        section(ui, z, "DISPLAY");
--                        if toggle_row(ui, z, "Show FPS", "A small counter in the corner", settings.show_fps)
--                        {
--                            send(RuffleEvent::MugetsuSetting(Setting::ShowFps(!settings.show_fps)));
--                            item_clicked = true;
--                        }
--                        if toggle_row(ui, z, "Full screen", "Esc leaves full screen", fullscreen) {
--                            send(if fullscreen {
--                                RuffleEvent::ExitFullScreen
--                            } else {
--                                RuffleEvent::EnterFullScreen
--                            });
--                            item_clicked = true;
--                        }
--
--                        section(ui, z, "HELP");
--                        if action_row(ui, z, "Open log folder", Some("↗")).clicked() {
--                            send(RuffleEvent::MugetsuSetting(Setting::OpenLogFolder));
--                            item_clicked = true;
 +                                .position(|&api| api == crate::skua::graphics())
 +                                .unwrap_or(APIS.len());
 +                            if let Some(choice) =
 +                                segmented(ui, z, "skua_graphics", &["Vulkan", "DirectX 12", "OpenGL"], current)
 +                            {
 +                                crate::skua::choose_graphics(APIS[choice]);
-+                                item_clicked = true;
-+                            }
+                                 item_clicked = true;
+                             }
+-                        }
 +                        } else {
 +                            section(ui, z, "GRAPHICS");
 +                            row_title(ui, z, "Edge smoothing", "Flash-style is lighter on laptops");
@@ -519,7 +501,21 @@ diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
 +                                    item_clicked = true;
 +                                }
 +                            }
-+
+ 
+-                        section(ui, z, "DISPLAY");
+-                        if toggle_row(ui, z, "Show FPS", "A small counter in the corner", settings.show_fps)
+-                        {
+-                            send(RuffleEvent::MugetsuSetting(Setting::ShowFps(!settings.show_fps)));
+-                            item_clicked = true;
+-                        }
+-                        if toggle_row(ui, z, "Full screen", "Esc leaves full screen", fullscreen) {
+-                            send(if fullscreen {
+-                                RuffleEvent::ExitFullScreen
+-                            } else {
+-                                RuffleEvent::EnterFullScreen
+-                            });
+-                            item_clicked = true;
+-                        }
 +                            section(ui, z, "DISPLAY");
 +                            if toggle_row(ui, z, "Show FPS", "A small counter in the corner", settings.show_fps)
 +                            {
@@ -537,7 +533,11 @@ diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
 +                                });
 +                                item_clicked = true;
 +                            }
-+
+ 
+-                        section(ui, z, "HELP");
+-                        if action_row(ui, z, "Open log folder", Some("↗")).clicked() {
+-                            send(RuffleEvent::MugetsuSetting(Setting::OpenLogFolder));
+-                            item_clicked = true;
 +                            section(ui, z, "HELP");
 +                            if action_row(ui, z, "Open log folder", Some("â†—")).clicked() {
 +                                send(RuffleEvent::MugetsuSetting(Setting::OpenLogFolder));
@@ -547,9 +547,10 @@ diff --git a/desktop/src/gui/context_menu.rs b/desktop/src/gui/context_menu.rs
                      })
              });
 diff --git a/desktop/src/main.rs b/desktop/src/main.rs
+index 0c50b93f..63a363b5 100644
 --- a/desktop/src/main.rs
 +++ b/desktop/src/main.rs
-@@ -15,6 +15,8 @@
+@@ -16,6 +16,8 @@ mod heap_census;
  mod log;
  mod mugetsu;
  mod player;
@@ -558,7 +559,7 @@ diff --git a/desktop/src/main.rs b/desktop/src/main.rs
  mod preferences;
  #[cfg(feature = "tracy")]
  mod tracy;
-@@ -151,10 +153,18 @@
+@@ -159,10 +161,18 @@ fn panic_hook(info: &PanicHookInfo) {
      let message = info.payload_as_str().unwrap_or("panic occurred");
  
      // AQW build: keep the crash and where it happened in ruffle.log.
@@ -578,7 +579,7 @@ diff --git a/desktop/src/main.rs b/desktop/src/main.rs
  
      // AQW build (Mugetsu): no "report to the Ruffle developers" link (this is a modified build;
      // its crashes aren't theirs to triage). Say plainly what happened instead.
-@@ -204,7 +214,11 @@
+@@ -212,7 +222,11 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
      }
      let gui = args.iter().any(|a| is(a, "--gui"));
      args.retain(|a| !is(a, "--gui"));
@@ -591,17 +592,17 @@ diff --git a/desktop/src/main.rs b/desktop/src/main.rs
      if has_movie {
          // A movie was given (or the arguments don't parse; let clap report that): plain Ruffle.
          return args;
-@@ -257,7 +271,8 @@
+@@ -280,7 +294,8 @@ fn mugetsu_args() -> Vec<std::ffi::OsString> {
          ("--no-gui", None, None),
          ("--graphics", Some("-g"), Some(graphics)),
-     ];
+     ]);
 -    let mut full = vec![args[0].clone(), AQW_LOADER_URL.into()];
 +    let movie = skua_movie.unwrap_or_else(|| AQW_LOADER_URL.into());
 +    let mut full = vec![args[0].clone(), movie];
      for (flag, short, value) in defaults {
-         if (*flag == "--no-gui" && gui) || given(flag) || short.is_some_and(given) {
+         if (flag == "--no-gui" && gui) || given(flag) || short.is_some_and(given) {
              continue;
-@@ -302,7 +317,8 @@
+@@ -325,7 +340,8 @@ fn main() -> Result<(), Error> {
  
      let logs_path = &preferences.cli.cache_directory.join("log");
      mugetsu::set_log_folder(logs_path.clone());
@@ -611,7 +612,7 @@ diff --git a/desktop/src/main.rs b/desktop/src/main.rs
      if let Some(parent) = log_path.parent() {
          std::fs::create_dir_all(parent)?;
      }
-@@ -312,7 +328,12 @@
+@@ -335,7 +351,12 @@ fn main() -> Result<(), Error> {
  
      // [NA] `_guard` cannot be `_` or it'll immediately drop
      // https://docs.rs/tracing-appender/latest/tracing_appender/non_blocking/index.html
@@ -626,9 +627,10 @@ diff --git a/desktop/src/main.rs b/desktop/src/main.rs
  
      // AQW build (Mugetsu): by default the log keeps warnings, crash details and Mugetsu's
 diff --git a/desktop/src/mugetsu.rs b/desktop/src/mugetsu.rs
+index 0876301a..1f4ca31b 100644
 --- a/desktop/src/mugetsu.rs
 +++ b/desktop/src/mugetsu.rs
-@@ -255,7 +255,11 @@
+@@ -292,7 +292,11 @@ impl MenuSettings {
              interpolation: ruffle_core::frame_interpolation::enabled(),
              flash_edges: ruffle_render::tessellator::flash_aa_switch(),
              graphics: saved_graphics(),
@@ -641,7 +643,7 @@ diff --git a/desktop/src/mugetsu.rs b/desktop/src/mugetsu.rs
              show_fps: show_fps(),
          }
      }
-@@ -665,7 +669,7 @@
+@@ -747,7 +751,7 @@ pub fn check_gpu_choice(window: Arc<Window>, chosen: &wgpu::AdapterInfo, power:
  /// so and a message (once per version) offers to open the download page. Nothing is
  /// downloaded or installed; a `no-update-check` file next to Mugetsu.exe turns this off.
  pub fn spawn_update_check(window: Arc<Window>) {
@@ -651,9 +653,10 @@ diff --git a/desktop/src/mugetsu.rs b/desktop/src/mugetsu.rs
      }
      let _ = std::thread::Builder::new()
 diff --git a/desktop/src/player.rs b/desktop/src/player.rs
+index b37bdd8a..67bd4275 100644
 --- a/desktop/src/player.rs
 +++ b/desktop/src/player.rs
-@@ -276,7 +276,14 @@
+@@ -276,7 +276,14 @@ impl ActivePlayer {
              .expect("Couldn't create wgpu rendering backend");
          RENDER_INFO.with(|i| *i.borrow_mut() = Some(renderer.debug_info().to_string()));
  
@@ -671,6 +674,7 @@ diff --git a/desktop/src/player.rs b/desktop/src/player.rs
              }));
 diff --git a/desktop/src/render_policy.rs b/desktop/src/render_policy.rs
 new file mode 100644
+index 00000000..d8586647
 --- /dev/null
 +++ b/desktop/src/render_policy.rs
 @@ -0,0 +1,59 @@
@@ -735,6 +739,7 @@ new file mode 100644
 +}
 diff --git a/desktop/src/skua.rs b/desktop/src/skua.rs
 new file mode 100644
+index 00000000..bea366f7
 --- /dev/null
 +++ b/desktop/src/skua.rs
 @@ -0,0 +1,585 @@
@@ -1324,9 +1329,10 @@ new file mode 100644
 +    }
 +}
 diff --git a/desktop/src/windows.rs b/desktop/src/windows.rs
+index a7d1275d..db53e4ec 100644
 --- a/desktop/src/windows.rs
 +++ b/desktop/src/windows.rs
-@@ -132,7 +132,7 @@
+@@ -132,7 +132,7 @@ unsafe extern "system" fn crash_filter(
          },
      );
      let vulkan_starting = crate::mugetsu::vulkan_starting();
@@ -1335,14 +1341,13 @@ diff --git a/desktop/src/windows.rs b/desktop/src/windows.rs
          "fatal native crash: exception 0x{code:08X} in {} at offset 0x{:X} (Vulkan starting: \
          {vulkan_starting})\n{}",
          module
-@@ -141,8 +141,13 @@
+@@ -141,8 +141,13 @@ unsafe extern "system" fn crash_filter(
          module.as_ref().map_or(0, |m| m.offset),
          std::backtrace::Backtrace::force_capture()
      );
--
--    if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {
 +    tracing::error!("{details}");
-+
+ 
+-    if code == EXCEPTION_ILLEGAL_INSTRUCTION && in_mugetsu {
 +    if crate::skua::enabled() {
 +        // Skua mode: no dialog (it waits for a click while the account sits dead). Save the
 +        // details and end; VibeSkuffle starts a new player and logs back in.
@@ -1352,9 +1357,10 @@ diff --git a/desktop/src/windows.rs b/desktop/src/windows.rs
              "Mugetsu can't run on this PC: it needs a processor with AVX2 (Intel Core 4th \
              generation from 2013 or newer, AMD Ryzen or newer). Some budget Celeron and Pentium \
 diff --git a/frontend-utils/src/backends/navigator.rs b/frontend-utils/src/backends/navigator.rs
+index f97721b0..28e46629 100644
 --- a/frontend-utils/src/backends/navigator.rs
 +++ b/frontend-utils/src/backends/navigator.rs
-@@ -81,7 +81,13 @@
+@@ -81,7 +81,13 @@ impl<F: FutureSpawner<Error>, I: NavigatorInterface> ExternalNavigatorBackend<F,
          content: Rc<PlayingContent>,
          interface: I,
      ) -> Self {
@@ -1369,14 +1375,13 @@ diff --git a/frontend-utils/src/backends/navigator.rs b/frontend-utils/src/backe
              .user_agent(concat!(
                  "Ruffle/",
 diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
+index b51a8007..bfc24732 100644
 --- a/render/wgpu/src/backend.rs
 +++ b/render/wgpu/src/backend.rs
-@@ -424,6 +424,24 @@
-             active_frame,
-             profiler,
+@@ -455,6 +455,24 @@ impl<T: RenderTarget> WgpuRenderBackend<T> {
          })
-+    }
-+
+     }
+ 
 +    /// VibeSkuffle: test admission BEFORE Player::render, which commits bitmap caches.
 +    /// Dropping a completed command list afterwards could leave those caches stale.
 +    pub fn aqw_ready_to_render(&mut self) -> bool {
@@ -1393,10 +1398,12 @@ diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
 +        self.texture_pool.trim_idle_to_bytes(bytes, false);
 +        self.offscreen_texture_pool.trim_idle_to_bytes(bytes, false);
 +        let _ = self.descriptors.device.poll(wgpu::PollType::Poll);
-     }
- 
++    }
++
      /// AQW build: frees every spare pooled texture and lets the GPU release the memory, for
-@@ -1088,7 +1106,9 @@
+     /// when the GPU's memory is nearly full (see Mugetsu's memory watch).
+     pub fn aqw_trim_memory(&mut self) {
+@@ -1116,7 +1134,9 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
          jobs: &[(&swf::Shape, f32, Stretch, &dyn BitmapSource)],
      ) -> Vec<ShapeHandle> {
          use rayon::prelude::*;
@@ -1407,7 +1414,7 @@ diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
              return jobs
                  .iter()
                  .map(|(shape, scale, stretch, source)| {
-@@ -1305,7 +1325,7 @@
+@@ -1433,7 +1453,7 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
          self.active_frame.staging_belt.finish();
  
          self.active_frame
@@ -1416,7 +1423,7 @@ diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
          // AQW build: this pool (cacheAsBitmap and their filters) used to be thrown away every
          // frame, recreating ~150 textures per frame in crowded AQW rooms. Besides the CPU cost,
          // the graphics driver leaked host memory on that churn (10-90 MB/s). Keep it across
-@@ -1728,6 +1748,7 @@
+@@ -1856,6 +1876,7 @@ impl<T: RenderTarget + 'static> RenderBackend for WgpuRenderBackend<T> {
              &self.descriptors,
              &texture_target,
              frame_output,
@@ -1424,7 +1431,7 @@ diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
          ));
  
          let sync_handle = self.make_queue_sync_handle(
-@@ -1902,7 +1923,19 @@
+@@ -2030,7 +2051,19 @@ async fn request_device(
              // come and go all the time in AQW (layers, cached bitmaps, filters) and left the big
              // blocks mostly empty: 6-10 GB reserved for ~2 GB used after a session.
              // `RUFFLE_GPU_MEMORY_HINTS=performance` restores the old block sizes.
@@ -1445,7 +1452,7 @@ diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
                  .is_ok_and(|v| v.eq_ignore_ascii_case("performance"))
              {
                  wgpu::MemoryHints::Performance
-@@ -1947,7 +1980,7 @@
+@@ -2075,7 +2108,7 @@ pub struct ActiveFrame {
      pub command_encoder: wgpu::CommandEncoder,
      draws_since_flush: u32,
      /// AQW build: frames submitted to the GPU and possibly not finished yet.
@@ -1454,7 +1461,7 @@ diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
  }
  
  impl ActiveFrame {
-@@ -1969,6 +2002,7 @@
+@@ -2097,6 +2130,7 @@ impl ActiveFrame {
          descriptors: &Descriptors,
          target: &T,
          frame: T::Frame,
@@ -1462,7 +1469,7 @@ diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
      ) -> SubmissionIndex {
          self.draws_since_flush = 0;
          self.staging_belt.finish();
-@@ -1987,26 +2021,31 @@
+@@ -2115,26 +2149,31 @@ impl ActiveFrame {
          });
          self.staging_belt.recall();
  
@@ -1512,32 +1519,49 @@ diff --git a/render/wgpu/src/backend.rs b/render/wgpu/src/backend.rs
          index
      }
 diff --git a/render/wgpu/src/buffer_pool.rs b/render/wgpu/src/buffer_pool.rs
+index 01f4e5e7..14527cfe 100644
 --- a/render/wgpu/src/buffer_pool.rs
 +++ b/render/wgpu/src/buffer_pool.rs
-@@ -207,6 +207,12 @@
-         if limit == 0 {
-             return;
+@@ -303,6 +303,36 @@ impl TexturePool {
+             }
          }
-+        self.trim_idle_to_bytes(limit, true);
-+    }
+     }
 +
 +    /// VibeSkuffle: reuse the normal LRU eviction for an explicitly requested idle budget.
 +    /// Visible rendering protects recent reuse; headless transition may release all idle sizes.
 +    pub(crate) fn trim_idle_to_bytes(&mut self, limit: u64, protect_recent: bool) {
-         let mut sizes: Vec<(u64, TextureKey, u64)> = self
-             .pools
-             .iter()
-@@ -222,7 +228,7 @@
-         // textures every frame); only leftovers that aren't being reused are freed.
-         let keep_from = self.frame.saturating_sub(1);
-         for (last_used, key, bytes) in sizes {
--            if total <= limit || last_used >= keep_from {
-+            if total <= limit || (protect_recent && last_used >= keep_from) {
-                 break;
-             }
-             if bytes > 0 {
++        let mut sizes: Vec<(u64, TextureKey, u64)> = self
++            .pools
++            .iter()
++            .map(|(key, (pool, last_used))| (*last_used, *key, idle_bytes(key, pool)))
++            .collect();
++        let mut total: u64 = sizes.iter().map(|(_, _, bytes)| bytes).sum();
++        if total > limit {
++            sizes.sort_unstable_by_key(|(last_used, _, _)| *last_used);
++            let keep_from = self.frame.saturating_sub(1);
++            for (last_used, key, bytes) in sizes {
++                if total <= limit || (protect_recent && last_used >= keep_from) {
++                    break;
++                }
++                if bytes > 0 {
++                    self.pools.remove(&key);
++                    total -= bytes;
++                }
++            }
++        }
++        if let Ok(mut idle) = POOL_IDLE.lock() {
++            match idle.iter_mut().find(|(id, _)| *id == self.id) {
++                Some(entry) => entry.1 = total,
++                None => idle.push((self.id, total)),
++            }
++        }
++    }
+ }
+ 
+ /// AQW build: set while the GPU's memory is nearly full (see `set_memory_pressure`).
 diff --git a/render/wgpu/src/frame_queue.rs b/render/wgpu/src/frame_queue.rs
 new file mode 100644
+index 00000000..70f7572b
 --- /dev/null
 +++ b/render/wgpu/src/frame_queue.rs
 @@ -0,0 +1,92 @@
@@ -1634,9 +1658,10 @@ new file mode 100644
 +    }
 +}
 diff --git a/render/wgpu/src/lib.rs b/render/wgpu/src/lib.rs
+index 87b1f621..ab2bc13d 100644
 --- a/render/wgpu/src/lib.rs
 +++ b/render/wgpu/src/lib.rs
-@@ -29,6 +29,7 @@
+@@ -29,6 +29,7 @@ type Error = Box<dyn std::error::Error>;
  #[macro_use]
  pub mod utils;
  mod segments;
@@ -1644,7 +1669,7 @@ diff --git a/render/wgpu/src/lib.rs b/render/wgpu/src/lib.rs
  mod arena;
  
  mod bitmaps;
-@@ -674,11 +675,18 @@
+@@ -678,11 +679,18 @@ pub(crate) fn catch_out_of_memory<R>(device: &wgpu::Device, f: impl FnOnce() ->
  /// their memory is really released (including resources only kept alive by finished command
  /// buffers waiting on wgpu's background drop thread).
  pub(crate) fn release_gpu_memory(descriptors: &descriptors::Descriptors) {
@@ -1669,9 +1694,10 @@ diff --git a/render/wgpu/src/lib.rs b/render/wgpu/src/lib.rs
  
  /// AQW build: running out of GPU memory is not fatal.
 diff --git a/render/wgpu/src/segments.rs b/render/wgpu/src/segments.rs
+index 2176e6b2..ffa22f27 100644
 --- a/render/wgpu/src/segments.rs
 +++ b/render/wgpu/src/segments.rs
-@@ -102,7 +102,10 @@
+@@ -102,7 +102,10 @@ pub fn finish_all(
      let mut encoders = SEGMENTS.with(|s| std::mem::take(&mut *s.borrow_mut()));
      set_cut(cut_points());
      encoders.push(tail);

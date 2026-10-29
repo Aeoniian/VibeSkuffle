@@ -25,4 +25,4 @@ Not affiliated with Artix Entertainment, Ruffle, Mugetsu, Skua or VibeSkua.
 Using bots breaks AQW's Terms of Service. Use at your own risk.
 
 Licenses: see LICENSES-VibeSkuffle.txt. The player in ruffle\ is a modified Mugetsu (GPL-3.0); its source
-is Mugetsu v1.5.1 plus patches/skua.patch at the link above.
+is Mugetsu v1.6.0 plus patches/skua.patch at the link above.
