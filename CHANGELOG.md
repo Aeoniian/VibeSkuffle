@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.0.3 (2026-10-30) - Grid View start option, toasts, Auto Headless and account switcher
+
+- New Manager option **Open Grid View when starting 2 or more accounts** (off by default); Start All, Start Selected, groups and the "in new window" starts open the client window in Grid View when they launch two or more accounts.
+- Manager toasts: short messages that need no answer slide in at the bottom right instead of an OK dialog; failures stay longer with a red bar. Long or multi-line messages stay dialogs.
+- Game options get a **Headless** tab with Auto Headless (background tabs, Grid View counts as showing, minimized window, showing a tab ends headless) and an account drop-down with Save/Cancel for per-account options.
+- `Ctrl+K` command palette, `F11` borderless full screen (also a hotkey action), Grid View tiles keep the game's proportions, Login All skips clients already in game.
+- Watch Dog notices band under the tab strip with amber and red tab icons; Army Control shows whether every client has the same script loaded; Army Queue squads can be reordered by dragging.
+- Server list shows coloured ping and a loading placeholder; Reset Scripts renames the Scripts folder instead of deleting it.
+- Window titles and the updater use VibeSkuffle's own version number; scripts still see the upstream VibeSkua version.
+- Fixed a garbled dash in the Rescue Allies "Live rescue status unavailable" text. See the [release notes](docs/RELEASE-v1.0.3.md).
+
 ## v1.0.2 (2026-10-28) - Quality of life, VibeSkua 2.1.1 and Mugetsu 1.6.0
 
 - Watch Dog shows live requester and helper status, death and timer progress, and per-requester cooldowns; the built-in and standalone native UI use the same format.

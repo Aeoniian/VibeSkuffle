@@ -8,13 +8,13 @@ VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (v2.1.1) with the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
 goes wrong: stuck logins, crashes, freezes, memory build-up, and a crashed tab window.
 
-> **Stable release: v1.0.2.** Download the [latest release](../../releases), or update directly through
+> **Stable release: v1.0.3.** Download the [latest release](../../releases), or update directly through
 > **Manager → Updater**. Report problems in [Issues](../../issues).
 
-v1.0.2 updates to VibeSkua 2.1.1 and Mugetsu 1.6.0, makes Watch Dog restart scripts after a VibeSkua
-re-login, fixes minimize leaving residue on the desktop, and adds launch spacing, a support report,
-update channels and ButlerV5 "Release everyone". See the [release notes](docs/RELEASE-v1.0.2.md);
-the previous [v1.0.1 notes](docs/RELEASE-v1.0.1.md) and
+v1.0.3 adds an option to open Grid View when starting two or more accounts, sliding toast messages in the
+Manager, Auto Headless and an account switcher in Game options, a `Ctrl+K` command palette, `F11` full screen
+and a Watch Dog notices band. VibeSkuffle now shows its own version number. See the
+[release notes](docs/RELEASE-v1.0.3.md); the previous [v1.0.2 notes](docs/RELEASE-v1.0.2.md) and
 [renderer testing details](docs/RENDERER-PERFORMANCE.md) are still available.
 
 ---
