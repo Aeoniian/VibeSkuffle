@@ -2,20 +2,19 @@
 
 **VibeSkua, running on Mugetsu (a faster Ruffle) instead of Flash, built to run a whole army for days without babysitting.**
 
-VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (v2.1.1) with the Flash player swapped out for
+VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (v2.1.2) with the Flash player swapped out for
 [Mugetsu](https://github.com/mugetsu-aqw/mugetsu), a performance-tuned build of the
 [Ruffle](https://ruffle.rs) Flash emulator. Everything VibeSkua does still works: scripts, the Manager, the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
 goes wrong: stuck logins, crashes, freezes, memory build-up, and a crashed tab window.
 
-> **Stable release: v1.0.3.** Download the [latest release](../../releases), or update directly through
+> **Stable release: v1.0.4.** Download the [latest release](../../releases), or update directly through
 > **Manager → Updater**. Report problems in [Issues](../../issues).
 
-v1.0.3 adds an option to open Grid View when starting two or more accounts, sliding toast messages in the
-Manager, Auto Headless and an account switcher in Game options, a `Ctrl+K` command palette, `F11` full screen
-and a Watch Dog notices band. VibeSkuffle now shows its own version number. See the
-[release notes](docs/RELEASE-v1.0.3.md); the previous [v1.0.2 notes](docs/RELEASE-v1.0.2.md) and
-[renderer testing details](docs/RENDERER-PERFORMANCE.md) are still available.
+v1.0.4 updates to VibeSkua 2.1.2 and adds a Calendar window, a Game Size button, a Grid View layout button,
+follow groups in the tab strip and Account drop-downs in the Script Loader and CoreBots options. The game window
+now restarts at 1650 MB of memory. See the [release notes](docs/RELEASE-v1.0.4.md); the previous
+[v1.0.3 notes](docs/RELEASE-v1.0.3.md) and [renderer testing details](docs/RENDERER-PERFORMANCE.md) are still available.
 
 ---
 

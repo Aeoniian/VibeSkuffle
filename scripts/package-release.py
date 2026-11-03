@@ -56,7 +56,7 @@ def main():
     upstream_version=base_info[0]
     base=base_info[1]
     patch_hash=hashlib.sha256((root/'patches/vibeskua-ruffle.patch').read_bytes()).hexdigest()
-    (stage/'build-info.txt').write_text(f'VibeSkuffle {args.version}\n{upstream_version} · upstream {base}\nMugetsu 1.5.1 with VibeSkuffle bridge\nFork patch SHA256 {patch_hash}\n',encoding='utf-8')
+    (stage/'build-info.txt').write_text(f'VibeSkuffle {args.version}\n{upstream_version} · upstream {base}\nMugetsu 1.6.0 with VibeSkuffle bridge\nFork patch SHA256 {patch_hash}\n',encoding='utf-8')
     subprocess.run([sys.executable,str(root/'scripts/make-update-manifest.py'),str(stage),args.version],check=True)
     manifest=json.loads((stage/'vibeskuffle-update.json').read_text())
     for required in ['VibeSkuffle.exe','VibeSkuffle.Manager.exe','ruffle/Mugetsu.exe','plugins/ButlerV5.dll','plugins/Skua.Plugin.DailyTracker.dll','plugins/Skua.Plugin.Cosmetics.dll','client-update.ps1']:

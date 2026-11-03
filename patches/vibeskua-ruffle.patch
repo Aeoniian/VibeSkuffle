@@ -1,8 +1,31 @@
+diff --git a/Skua.AS3/Build.bat b/Skua.AS3/Build.bat
+index d259bbc..df68212 100644
+--- a/Skua.AS3/Build.bat
++++ b/Skua.AS3/Build.bat
+@@ -1,4 +1,4 @@
+-@echo off
+-cd /d "%~dp0"
+-pwsh -ExecutionPolicy Bypass -File "%~dp0compile-as3.ps1"
+-exit /b %errorlevel%
++@echo off
++cd /d "%~dp0"
++pwsh -ExecutionPolicy Bypass -File "%~dp0compile-as3.ps1"
++exit /b %errorlevel%
 diff --git a/Skua.App.Avalonia/App.axaml b/Skua.App.Avalonia/App.axaml
-index 13ad83e..c1cf1aa 100644
+index 13ad83e..b024e1e 100644
 --- a/Skua.App.Avalonia/App.axaml
 +++ b/Skua.App.Avalonia/App.axaml
-@@ -111,6 +111,9 @@
+@@ -81,6 +81,9 @@
+     <DataTemplate DataType="fastTravel:FastTravelViewModel">
+       <views:FastTravelView />
+     </DataTemplate>
++    <DataTemplate DataType="vms:CalendarViewModel">
++      <views:CalendarView />
++    </DataTemplate>
+     <DataTemplate DataType="vms:CurrentDropsViewModel">
+       <views:CurrentDropsView />
+     </DataTemplate>
+@@ -111,6 +114,9 @@
      <DataTemplate DataType="options:GameOptionsViewModel">
        <views:GameOptionsView />
      </DataTemplate>
@@ -13,7 +36,7 @@ index 13ad83e..c1cf1aa 100644
        <views:ApplicationOptionsView />
      </DataTemplate>
 diff --git a/Skua.App.Avalonia/App.axaml.cs b/Skua.App.Avalonia/App.axaml.cs
-index 342a3eb..a0d87b7 100644
+index 2d39906..e93a261 100644
 --- a/Skua.App.Avalonia/App.axaml.cs
 +++ b/Skua.App.Avalonia/App.axaml.cs
 @@ -74,8 +74,9 @@ public partial class App : Application
@@ -80,7 +103,7 @@ index 342a3eb..a0d87b7 100644
              ShowUnhandledException("AppDomain.CurrentDomain.UnhandledException", ex);
          };
  
-@@ -397,8 +407,20 @@ public partial class App : Application
+@@ -414,8 +424,20 @@ public partial class App : Application
          catch { }
      }
  
@@ -102,7 +125,7 @@ index 342a3eb..a0d87b7 100644
          try
          {
 diff --git a/Skua.App.Avalonia/AppStartup/MainMenu.cs b/Skua.App.Avalonia/AppStartup/MainMenu.cs
-index 56cc563..f35cd8f 100644
+index 56cc563..3710119 100644
 --- a/Skua.App.Avalonia/AppStartup/MainMenu.cs
 +++ b/Skua.App.Avalonia/AppStartup/MainMenu.cs
 @@ -34,6 +34,7 @@ internal class MainMenu
@@ -113,7 +136,15 @@ index 56cc563..f35cd8f 100644
          windowService.RegisterManagedWindow<ApplicationOptionsViewModel>("Application");
          windowService.RegisterManagedWindow<CoreBotsViewModel>("CoreBots");
          windowService.RegisterManagedWindow<ApplicationThemesViewModel>("Application Themes");
-@@ -76,6 +77,7 @@ internal class MainMenu
+@@ -44,6 +45,7 @@ internal class MainMenu
+         windowService.RegisterManagedWindow<FastTravelViewModel>("Fast Travel");
+         windowService.RegisterManagedWindow<CurrentDropsViewModel>("Current Drops");
+         windowService.RegisterManagedWindow<JunkItemsViewModel>("Junk Items");
++        windowService.RegisterManagedWindow<CalendarViewModel>("Calendar");
+ 
+         windowService.RegisterManagedWindow<LoaderViewModel>("Loader");
+         windowService.RegisterManagedWindow<GrabberViewModel>("Grabber");
+@@ -76,6 +78,7 @@ internal class MainMenu
              new("Options", new List<MainMenuItemViewModel>()
              {
                  new("Game"),
@@ -121,8 +152,18 @@ index 56cc563..f35cd8f 100644
                  new("Application"),
                  new("CoreBots"),
                  new("Application Themes"),
+@@ -88,7 +91,8 @@ internal class MainMenu
+                 new("Loader"),
+                 new("Grabber"),
+                 new("Current Drops"),
+-                new("Junk Items")
++                new("Junk Items"),
++                new("Calendar")
+             }),
+             new("Combat", new List<MainMenuItemViewModel>()
+             {
 diff --git a/Skua.App.Avalonia/AppStartup/Options.cs b/Skua.App.Avalonia/AppStartup/Options.cs
-index 6fdc0aa..00d5e64 100644
+index db31d80..b3c3bef 100644
 --- a/Skua.App.Avalonia/AppStartup/Options.cs
 +++ b/Skua.App.Avalonia/AppStartup/Options.cs
 @@ -17,51 +17,77 @@ namespace Skua.App.Avalonia.AppStartup;
@@ -231,10 +272,15 @@ index 6fdc0aa..00d5e64 100644
  
      internal static ApplicationOptionsViewModel CreateAppOptions(IServiceProvider s)
 diff --git a/Skua.App.Avalonia/AppStartup/Services.cs b/Skua.App.Avalonia/AppStartup/Services.cs
-index bf607e8..80b39a5 100644
+index bf607e8..44f6b22 100644
 --- a/Skua.App.Avalonia/AppStartup/Services.cs
 +++ b/Skua.App.Avalonia/AppStartup/Services.cs
-@@ -121,6 +121,7 @@ public static class Services
+@@ -117,10 +117,12 @@ public static class Services
+             new("Fast Travel", () => s.GetRequiredService<FastTravelViewModel>()),
+             new("Current Drops", () => s.GetRequiredService<CurrentDropsViewModel>()),
+             new("Junk Items", () => s.GetRequiredService<JunkItemsViewModel>()),
++            new("Calendar", () => s.GetRequiredService<CalendarViewModel>()),
+             new("Runtime", () => s.GetRequiredService<RuntimeHelpersViewModel>()),
              new("Loader", () => s.GetRequiredService<LoaderViewModel>()),
              new("Grabber", () => s.GetRequiredService<GrabberViewModel>()),
              new("Game", () => s.GetRequiredService<GameOptionsViewModel>()),
@@ -242,7 +288,7 @@ index bf607e8..80b39a5 100644
              new("Application", () => s.GetRequiredService<ApplicationOptionsViewModel>()),
              new("Console", () => s.GetRequiredService<ConsoleViewModel>()),
              new("Diagnostics", () => s.GetRequiredService<DiagnosticsViewModel>()),
-@@ -150,6 +151,7 @@ public static class Services
+@@ -150,6 +152,7 @@ public static class Services
          services.AddSingleton(LogTabs.CreateViewModels);
  
          services.AddTransient(Options.CreateGameOptions);
@@ -250,6 +296,14 @@ index bf607e8..80b39a5 100644
          services.AddTransient(Options.CreateAppOptions);
  
          services.AddTransient(PacketLogger.CreateViewModel);
+@@ -178,6 +181,7 @@ public static class Services
+         services.AddTransient<RegisteredQuestsViewModel>();
+         services.AddTransient<CurrentDropsViewModel>();
+         services.AddTransient<JunkItemsViewModel>();
++        services.AddTransient<CalendarViewModel>();
+ 
+         services.AddThemeViewModels();
+ 
 diff --git a/Skua.App.Avalonia/Flash/ClientQuickControls.cs b/Skua.App.Avalonia/Flash/ClientQuickControls.cs
 new file mode 100644
 index 0000000..0ced43c
@@ -812,7 +866,7 @@ index 0000000..adcef23
 +#endif
 diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 new file mode 100644
-index 0000000..a106ea6
+index 0000000..f63f7d1
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 @@ -0,0 +1,1045 @@
@@ -946,7 +1000,7 @@ index 0000000..a106ea6
 +        ApplyRuffleOptions(startInfo);
 +        // Read again at every start, so editing ruffle-options.txt takes effect with the next restart.
 +        _memoryLimitMb = startInfo.Environment.TryGetValue("SKUA_MEMORY_LIMIT_MB", out string? limit)
-+            && long.TryParse(limit, out long limitMb) && limitMb > 0 ? limitMb : 6000;
++            && long.TryParse(limit, out long limitMb) && limitMb > 0 ? limitMb : 1650;
 +        StartHealthTimer();
 +
 +        try
@@ -1120,7 +1174,7 @@ index 0000000..a106ea6
 +    // ---- Health check (week-long runs) ----------------------------------------------------------------
 +    // Every 30 s: a quick call to the game. Three unanswered in a row (about a minute and a half
 +    // frozen) and the game window is restarted; the login watchdog then logs back in and restarts the
-+    // script. Also a memory safety net: past SKUA_MEMORY_LIMIT_MB (ruffle-options.txt, default 6000)
++    // script. Also a memory safety net: past SKUA_MEMORY_LIMIT_MB (ruffle-options.txt, default 1650)
 +    // the window is restarted once the account is out of combat (or after 10 minutes regardless).
 +
 +    private System.Threading.Timer? _healthTimer;
@@ -1129,7 +1183,7 @@ index 0000000..a106ea6
 +    private DateTime _overLimitSince = DateTime.MinValue;
 +    private DateTime _lastMemoryRestart = DateTime.MinValue;
 +    private bool _loggedTooSoon;
-+    private static long _memoryLimitMb = 6000;
++    private static long _memoryLimitMb = 1650;
 +
 +    private void StartHealthTimer()
 +    {
@@ -2282,19 +2336,610 @@ index ebfa084..bb43167 100644
      <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
          <Reference Include="AxInterop.ShockwaveFlashObjects">
              <HintPath>Assemblies\AxInterop.ShockwaveFlashObjects.dll</HintPath>
+diff --git a/Skua.App.Avalonia/ViewModels/CalendarViewModel.cs b/Skua.App.Avalonia/ViewModels/CalendarViewModel.cs
+new file mode 100644
+index 0000000..9904d55
+--- /dev/null
++++ b/Skua.App.Avalonia/ViewModels/CalendarViewModel.cs
+@@ -0,0 +1,391 @@
++using CommunityToolkit.Mvvm.ComponentModel;
++using CommunityToolkit.Mvvm.Input;
++using Skua.Shared.Avalonia.ViewModels;
++using System;
++using System.Collections.Generic;
++using System.Collections.ObjectModel;
++using System.Globalization;
++using System.Linq;
++using System.Net.Http;
++using System.Text.RegularExpressions;
++using System.Threading.Tasks;
++using Avalonia.Threading;
++
++namespace Skua.App.Avalonia.ViewModels;
++
++/// <summary>
++/// Calendar: the daily and weekly reset countdowns and the AQW boost list.
++/// Dailies reset at 12 AM server time; weeklies at 12 AM server time when Thursday turns into Friday. AQW's server time is US Eastern
++/// (with daylight saving). The game's own "server time" chat line is the PC's clock, so time is the PC clock corrected by the
++/// <c>Date</c> header of the artix.com answer. The boosts are read from the script array of https://www.artix.com/calendar/.
++/// </summary>
++public partial class CalendarViewModel : BotControlViewModelBase
++{
++    private const string CalendarUrl = "https://www.artix.com/calendar/";
++    private static readonly TimeSpan RefreshAfter = TimeSpan.FromMinutes(30);
++    // artix.com answers 403 to a request without a User-Agent.
++    private static readonly HttpClient Http = CreateHttp();
++
++    private static HttpClient CreateHttp()
++    {
++        HttpClient http = new() { Timeout = TimeSpan.FromSeconds(12) };
++        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) VibeSkuffle");
++        return http;
++    }
++    private static readonly TimeZoneInfo Eastern = FindEastern();
++
++    private static TimeZoneInfo FindEastern()
++    {
++        foreach (string id in new[] { "Eastern Standard Time", "America/New_York" })
++        {
++            try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
++            catch (TimeZoneNotFoundException) { }
++            catch (InvalidTimeZoneException) { }
++        }
++        return TimeZoneInfo.CreateCustomTimeZone("US Eastern", TimeSpan.FromHours(-5), "US Eastern", "US Eastern");
++    }
++
++    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(1) };
++    private readonly List<CalendarBoost> _rows = new();
++    private TimeSpan _skew = TimeSpan.Zero;
++    private DateTime _fetched = DateTime.MinValue;
++    private string _signature = string.Empty;
++
++    public CalendarViewModel() : base("Calendar", 520, 640, canResize: true)
++    {
++        _timer.Tick += (_, _) => Tick();
++        ActiveBoosts = new ObservableCollection<CalendarBoost>();
++        UpcomingBoosts = new ObservableCollection<CalendarBoost>();
++        Tick();
++    }
++
++    public ObservableCollection<CalendarBoost> ActiveBoosts { get; }
++    public ObservableCollection<CalendarBoost> UpcomingBoosts { get; }
++
++    [ObservableProperty]
++    private string _dailyText = string.Empty;
++
++    [ObservableProperty]
++    private string _weeklyText = string.Empty;
++
++    [ObservableProperty]
++    private double _dailyProgress;
++
++    [ObservableProperty]
++    private double _weeklyProgress;
++
++    [ObservableProperty]
++    private bool _dailyUrgent;
++
++    [ObservableProperty]
++    private bool _weeklyUrgent;
++
++    [ObservableProperty]
++    private string _serverTime = string.Empty;
++
++    [ObservableProperty]
++    private string _updatedText = string.Empty;
++
++    [ObservableProperty]
++    private string _note = string.Empty;
++
++    [ObservableProperty]
++    [NotifyCanExecuteChangedFor(nameof(RefreshCommand))]
++    private bool _isLoading;
++
++    [ObservableProperty]
++    private bool _hasNoBoosts;
++
++    public bool HasNote => !string.IsNullOrEmpty(Note);
++    public bool HasActive => ActiveBoosts.Count > 0;
++    public bool HasUpcoming => UpcomingBoosts.Count > 0;
++
++    partial void OnNoteChanged(string value) => OnPropertyChanged(nameof(HasNote));
++
++    protected override void OnActivated()
++    {
++        _timer.Start();
++        Tick();
++        if (DateTime.UtcNow - _fetched >= RefreshAfter)
++            _ = LoadAsync();
++    }
++
++    protected override void OnDeactivated()
++    {
++        _timer.Stop();
++    }
++
++    private bool CanRefresh() => !IsLoading;
++
++    [RelayCommand(CanExecute = nameof(CanRefresh))]
++    private Task Refresh() => LoadAsync();
++
++    // ------------------------------------------------------------------------------------------------ time
++
++    private DateTimeOffset ServerUtc => DateTimeOffset.UtcNow + _skew;
++
++    private static DateTimeOffset ToUtc(DateTime easternLocalMidnight) =>
++        new(TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(easternLocalMidnight, DateTimeKind.Unspecified), Eastern), TimeSpan.Zero);
++
++    private static DateTime EasternDate(DateTimeOffset utc) => TimeZoneInfo.ConvertTime(utc, Eastern).Date;
++
++    /// <summary>The next daily reset (server midnight) after <paramref name="utc"/>.</summary>
++    public static DateTimeOffset NextDaily(DateTimeOffset utc) => ToUtc(EasternDate(utc).AddDays(1));
++
++    /// <summary>The daily reset that last happened.</summary>
++    public static DateTimeOffset PrevDaily(DateTimeOffset utc) => ToUtc(EasternDate(utc));
++
++    /// <summary>The next weekly reset (server midnight at the start of Friday) after <paramref name="utc"/>.</summary>
++    public static DateTimeOffset NextWeekly(DateTimeOffset utc)
++    {
++        DateTime day = EasternDate(utc).AddDays(1);
++        while (day.DayOfWeek != DayOfWeek.Friday)
++            day = day.AddDays(1);
++        return ToUtc(day);
++    }
++
++    /// <summary>The weekly reset that last happened.</summary>
++    public static DateTimeOffset PrevWeekly(DateTimeOffset utc)
++    {
++        DateTime day = EasternDate(utc);
++        while (day.DayOfWeek != DayOfWeek.Friday)
++            day = day.AddDays(-1);
++        return ToUtc(day);
++    }
++
++    /// <summary>"6d 3h 12m", "3h 12m 05s", "12m 05s", "5s".</summary>
++    public static string FormatSpan(TimeSpan span)
++    {
++        long s = Math.Max(0, (long)span.TotalSeconds);
++        long d = s / 86400, h = s / 3600 % 24, m = s / 60 % 60, sec = s % 60;
++        if (d > 0) return $"{d}d {h}h {m:00}m";
++        if (h > 0) return $"{h}h {m:00}m {sec:00}s";
++        if (m > 0) return $"{m}m {sec:00}s";
++        return $"{sec}s";
++    }
++
++    /// <summary>The same without seconds.</summary>
++    public static string FormatShort(TimeSpan span)
++    {
++        long s = Math.Max(0, (long)span.TotalSeconds);
++        long d = s / 86400, h = s / 3600 % 24, m = s / 60 % 60;
++        if (d > 0) return $"{d}d {h}h";
++        if (h > 0) return $"{h}h {m:00}m";
++        return $"{m}m";
++    }
++
++    private void Tick()
++    {
++        DateTimeOffset now = ServerUtc;
++        DateTimeOffset nextDaily = NextDaily(now), nextWeekly = NextWeekly(now);
++        DailyText = FormatSpan(nextDaily - now);
++        WeeklyText = FormatSpan(nextWeekly - now);
++        DailyProgress = Fraction(PrevDaily(now), nextDaily, now);
++        WeeklyProgress = Fraction(PrevWeekly(now), nextWeekly, now);
++        DailyUrgent = nextDaily - now < TimeSpan.FromHours(1);
++        WeeklyUrgent = nextWeekly - now < TimeSpan.FromHours(1);
++        ServerTime = TimeZoneInfo.ConvertTime(now, Eastern).ToString("ddd d MMM HH:mm:ss", CultureInfo.InvariantCulture);
++        UpdatedText = IsLoading ? "Reading the calendar..." : _fetched == DateTime.MinValue ? string.Empty : $"Read {(int)(DateTime.UtcNow - _fetched).TotalMinutes} min ago from artix.com/calendar";
++        RefreshRows(now);
++    }
++
++    private static double Fraction(DateTimeOffset prev, DateTimeOffset next, DateTimeOffset now) =>
++        Math.Clamp((now - prev).TotalSeconds / Math.Max(1, (next - prev).TotalSeconds), 0, 1);
++
++    // ------------------------------------------------------------------------------------------------ boosts
++
++    private void RefreshRows(DateTimeOffset now)
++    {
++        List<CalendarBoost> live = new();
++        foreach (CalendarBoost row in _rows)
++        {
++            DateTimeOffset start = ToUtc(row.Day);
++            DateTimeOffset end = start + TimeSpan.FromHours(row.Hours ?? 24);
++            if (now >= end)
++                continue;
++            bool active = now >= start;
++            row.Active = active;
++            row.Status = active ? $"{FormatShort(end - now)} left" : $"in {FormatShort(start - now)}";
++            row.Progress = active ? Math.Clamp((now - start).TotalSeconds / Math.Max(1, (end - start).TotalSeconds), 0, 1) : 0;
++            row.EndingSoon = active && end - now < TimeSpan.FromHours(12);
++            live.Add(row);
++        }
++        string signature = string.Join('|', live.Select(r => $"{r.Title}{r.Day:yyyyMMdd}{r.Active}"));
++        if (signature == _signature)
++            return;
++        _signature = signature;
++        ActiveBoosts.Clear();
++        UpcomingBoosts.Clear();
++        foreach (CalendarBoost row in live.Where(r => r.Active))
++            ActiveBoosts.Add(row);
++        foreach (CalendarBoost row in live.Where(r => !r.Active).Take(14))
++            UpcomingBoosts.Add(row);
++        OnPropertyChanged(nameof(HasActive));
++        OnPropertyChanged(nameof(HasUpcoming));
++        HasNoBoosts = live.Count == 0;
++    }
++
++    private async Task LoadAsync()
++    {
++        if (IsLoading)
++            return;
++        IsLoading = true;
++        try
++        {
++            (List<CalendarBoost> rows, TimeSpan skew) = await Task.Run(FetchAsync);
++            _skew = skew;
++            _rows.Clear();
++            _rows.AddRange(rows);
++            _signature = string.Empty;
++            Note = string.Empty;
++        }
++        catch (Exception ex)
++        {
++            Note = _rows.Count == 0 ? ex.Message : $"{ex.Message}; showing the last list";
++        }
++        finally
++        {
++            _fetched = DateTime.UtcNow;
++            IsLoading = false;
++            Tick();
++        }
++    }
++
++    private static async Task<(List<CalendarBoost> Rows, TimeSpan Skew)> FetchAsync()
++    {
++        TimeSpan skew = TimeSpan.Zero;
++        string html;
++        try
++        {
++            using HttpResponseMessage response = await Http.GetAsync(CalendarUrl);
++            response.EnsureSuccessStatusCode();
++            if (response.Headers.Date is DateTimeOffset date)
++                skew = date - DateTimeOffset.UtcNow;
++            html = await response.Content.ReadAsStringAsync();
++        }
++        catch (Exception ex)
++        {
++            throw new InvalidOperationException($"Could not reach artix.com ({ex.Message})");
++        }
++        List<CalendarBoost> rows = ParseBoosts(html);
++        if (rows.Count == 0)
++            throw new InvalidOperationException("The calendar page had no boosts (its layout may have changed)");
++        // The pages of boosts that began in the last ten days (or begin today) say how long they run and which game they are for.
++        DateTime today = EasternDate(DateTimeOffset.UtcNow + skew);
++        foreach (CalendarBoost row in rows.Where(r => r.Day <= today.AddDays(1) && r.Day >= today.AddDays(-10)))
++        {
++            try
++            {
++                string page = await Http.GetStringAsync(row.Url);
++                Match meta = DescriptionRegex.Match(page);
++                if (!meta.Success)
++                    continue;
++                string text = System.Net.WebUtility.HtmlDecode(meta.Groups[1].Value);
++                if (IsOtherGame(text))
++                    row.Hours = 0;
++                else if (HoursFromDescription(text) is int hours)
++                    row.Hours = hours;
++            }
++            catch (Exception)
++            {
++                // The default length stays.
++            }
++        }
++        rows.RemoveAll(r => r.Hours == 0);
++        return (rows, skew);
++    }
++
++    private static readonly Regex EventRegex = new(@"\{title: '(?<t>[^']*)',\s*url: '(?<u>[^']*)'(?:\s*\+\s*'[^']*')?\s*,\s*start: '(?<s>\d{4}-\d{2}-\d{2})'", RegexOptions.Compiled);
++    private static readonly Regex DescriptionRegex = new("name=\"description\"[^>]*?content=\"([^\"]*)\"", RegexOptions.Compiled | RegexOptions.IgnoreCase);
++    private static readonly Regex TrailingDate = new(@"\s\d+\.\d+\.\d+$", RegexOptions.Compiled);
++
++    /// <summary>The boosts of the calendar page: every entry whose title says Boost.</summary>
++    public static List<CalendarBoost> ParseBoosts(string html)
++    {
++        List<CalendarBoost> rows = new();
++        foreach (Match m in EventRegex.Matches(html))
++        {
++            string title = Regex.Unescape(m.Groups["t"].Value);
++            if (!title.Contains("boost", StringComparison.OrdinalIgnoreCase))
++                continue;
++            if (!DateTime.TryParseExact(m.Groups["s"].Value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime day))
++                continue;
++            if (rows.Any(r => r.Title == title && r.Day == day))
++                continue;
++            rows.Add(new CalendarBoost(title, m.Groups["u"].Value, day, DefaultHours(title)));
++        }
++        rows.Sort((a, b) => a.Day.CompareTo(b.Day));
++        return rows;
++    }
++
++    /// <summary>How long a boost runs when the page does not say: Double ALL is posted for 72 hours, the other Double boosts for 48.</summary>
++    public static int? DefaultHours(string title)
++    {
++        if (title.StartsWith("double all", StringComparison.OrdinalIgnoreCase)) return 72;
++        if (title.StartsWith("double ", StringComparison.OrdinalIgnoreCase)) return 48;
++        return null;
++    }
++
++    /// <summary>Reads "72 hour" or "available for a week" out of an event page's description.</summary>
++    public static int? HoursFromDescription(string text)
++    {
++        Match m = Regex.Match(text, @"(\d+)\s*hour", RegexOptions.IgnoreCase);
++        if (m.Success && int.TryParse(m.Groups[1].Value, out int hours))
++            return hours;
++        if (text.Contains("available for a week", StringComparison.OrdinalIgnoreCase) || text.Contains("for one week", StringComparison.OrdinalIgnoreCase))
++            return 168;
++        return null;
++    }
++
++    /// <summary>A description that names another Artix game: that boost is not an AQW one.</summary>
++    public static bool IsOtherGame(string text)
++    {
++        bool Has(string s) => text.Contains(s, StringComparison.OrdinalIgnoreCase);
++        return !Has("aqworlds") && !Has("adventurequest worlds") && !Has("artix entertainment develops")
++            && new[] { "adventurequest 3d", "aq3d", "dragonfable", "mechquest", "epic", "battleon" }.Any(Has);
++    }
++
++    /// <summary>The title without the date the site puts at its end ("Double ALL Boost 10.30.26" becomes "Double ALL Boost").</summary>
++    public static string PlainTitle(string title) => TrailingDate.Replace(title, "");
++}
++
++/// <summary>One boost of the list.</summary>
++public sealed partial class CalendarBoost : ObservableObject
++{
++    public CalendarBoost(string title, string url, DateTime day, int? hours)
++    {
++        Title = title;
++        Url = url;
++        Day = day;
++        Hours = hours;
++    }
++
++    public string Title { get; }
++    public string Url { get; }
++    public DateTime Day { get; }
++    public int? Hours { get; set; }
++    public string Name => CalendarViewModel.PlainTitle(Title);
++
++    public string Detail
++    {
++        get
++        {
++            string length = Hours is int h ? (h % 24 == 0 ? $"{h / 24} d  ·  " : $"{h} h  ·  ") : string.Empty;
++            return $"{length}starts {Day.ToString("ddd d MMM", CultureInfo.InvariantCulture)}";
++        }
++    }
++
++    [ObservableProperty]
++    private bool _active;
++
++    [ObservableProperty]
++    private string _status = string.Empty;
++
++    /// <summary>How far through its run an active boost is (0 to 1).</summary>
++    [ObservableProperty]
++    private double _progress;
++
++    /// <summary>An active boost with under 12 hours left.</summary>
++    [ObservableProperty]
++    private bool _endingSoon;
++}
+diff --git a/Skua.App.Avalonia/ViewModels/CoreBotsOptions/CoreBotsViewModel.Accounts.cs b/Skua.App.Avalonia/ViewModels/CoreBotsOptions/CoreBotsViewModel.Accounts.cs
+new file mode 100644
+index 0000000..94d93c6
+--- /dev/null
++++ b/Skua.App.Avalonia/ViewModels/CoreBotsOptions/CoreBotsViewModel.Accounts.cs
+@@ -0,0 +1,87 @@
++using Avalonia.Threading;
++using Skua.App.Avalonia.ViewModels.Options;
++using Skua.Core.Services;
++using System;
++using System.Collections.Generic;
++using System.Collections.ObjectModel;
++using System.Linq;
++
++namespace Skua.App.Avalonia.ViewModels.CoreBotsOptions;
++
++/// <summary>
++/// The Account drop-down of the CoreBots window: Load and Save (and the save when the window closes) use the picked account's
++/// CBO_Storage(name).txt, this client's or another open account's. Switching saves the account being left, as closing the window
++/// does, then loads the new one. An account with no file yet starts from the values shown.
++/// </summary>
++public partial class CoreBotsViewModel
++{
++    private DispatcherTimer? _accountsTimer;
++    private bool _syncingAccounts;
++    private AccountChoice _selectedAccount = new(Environment.ProcessId, "This client", true);
++
++    public ObservableCollection<AccountChoice> Accounts { get; } = new();
++
++    public AccountChoice SelectedAccount
++    {
++        get => _selectedAccount;
++        set
++        {
++            if (value is null || _syncingAccounts || value == _selectedAccount)
++                return;
++            if (!string.IsNullOrEmpty(TargetName))
++                SaveInternal(showDialog: false);
++            _selectedAccount = value;
++            OnPropertyChanged(nameof(SelectedAccount));
++            OnPropertyChanged(nameof(IsSelfAccount));
++            LoadInternal(showDialog: false);
++        }
++    }
++
++    public bool IsSelfAccount => _selectedAccount.IsSelf;
++
++    /// <summary>The account whose file Load and Save use: this client's character or the picked account.</summary>
++    private string TargetName => _selectedAccount.IsSelf ? _player.Username ?? "" : _selectedAccount.Name;
++
++    private void SetAccountPolling(bool on)
++    {
++        if (on)
++        {
++            RefreshAccounts();
++            _accountsTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
++            _accountsTimer.Tick -= AccountsTick;
++            _accountsTimer.Tick += AccountsTick;
++            _accountsTimer.Start();
++        }
++        else
++        {
++            _accountsTimer?.Stop();
++        }
++    }
++
++    private void AccountsTick(object? sender, EventArgs e) => RefreshAccounts();
++
++    private void RefreshAccounts()
++    {
++        string self = string.IsNullOrWhiteSpace(_player.Username) ? "This client" : _player.Username;
++        var wanted = new List<AccountChoice> { new(Environment.ProcessId, self, true) };
++        wanted.AddRange(OptionSharing.OtherClients(Environment.ProcessId).Select(c => new AccountChoice(c.ProcessId, c.Account, false)));
++        if (Accounts.SequenceEqual(wanted))
++            return;
++        _syncingAccounts = true;
++        try
++        {
++            Accounts.Clear();
++            foreach (AccountChoice account in wanted)
++                Accounts.Add(account);
++            // An account that closed (or this client logging in): keep the pick when it is still there, else this client.
++            AccountChoice? same = wanted.FirstOrDefault(a => a.ProcessId == _selectedAccount.ProcessId);
++            bool lost = same is null;
++            _selectedAccount = same ?? wanted[0];
++            OnPropertyChanged(nameof(SelectedAccount));
++            OnPropertyChanged(nameof(IsSelfAccount));
++            if (lost || _selectedAccount.IsSelf)
++                CurrentPlayer = TargetName;
++        }
++        finally { _syncingAccounts = false; }
++    }
++}
+diff --git a/Skua.App.Avalonia/ViewModels/CoreBotsOptions/CoreBotsViewModel.cs b/Skua.App.Avalonia/ViewModels/CoreBotsOptions/CoreBotsViewModel.cs
+index c428e1d..1935be4 100644
+--- a/Skua.App.Avalonia/ViewModels/CoreBotsOptions/CoreBotsViewModel.cs
++++ b/Skua.App.Avalonia/ViewModels/CoreBotsOptions/CoreBotsViewModel.cs
+@@ -25,13 +25,15 @@ public partial class CoreBotsViewModel : BotControlViewModelBase
+     protected override void OnActivated()
+     {
+         // Opening the window while logged out just shows "Not Logged In"; only the Load button explains why.
++        SetAccountPolling(true);
+         LoadInternal(showDialog: false);
+     }
+ 
+     protected override void OnDeactivated()
+     {
++        SetAccountPolling(false);
+         // Auto-save when closing the window
+-        if (!string.IsNullOrEmpty(_player.Username))
++        if (!string.IsNullOrEmpty(TargetName))
+         {
+             SaveInternal(showDialog: false);
+         }
+@@ -63,7 +65,7 @@ public partial class CoreBotsViewModel : BotControlViewModelBase
+ 
+     private void SaveInternal(bool showDialog)
+     {
+-        if (string.IsNullOrEmpty(_player.Username))
++        if (string.IsNullOrEmpty(TargetName))
+         {
+             if (showDialog)
+             {
+@@ -84,14 +86,14 @@ public partial class CoreBotsViewModel : BotControlViewModelBase
+         if (!Directory.Exists(optionsDir))
+             Directory.CreateDirectory(optionsDir);
+ 
+-        string filePath = Path.Combine(optionsDir, $"CBO_Storage({_player.Username}).txt");
++        string filePath = Path.Combine(optionsDir, $"CBO_Storage({TargetName}).txt");
+         File.WriteAllText(filePath, bob.ToString());
+ 
+         if (showDialog)
+         {
+-            _dialogService.ShowMessageBox($@"Saved to \options\CBO_Storage({_player.Username}).txt", "Save Successful!");
++            _dialogService.ShowMessageBox($@"Saved to \options\CBO_Storage({TargetName}).txt", "Save Successful!");
+         }
+-        _readValues[_player.Username] = ReadValues(File.ReadAllLines(filePath));
++        _readValues[TargetName] = ReadValues(File.ReadAllLines(filePath));
+     }
+ 
+     [RelayCommand]
+@@ -102,7 +104,7 @@ public partial class CoreBotsViewModel : BotControlViewModelBase
+ 
+     private void LoadInternal(bool showDialog)
+     {
+-        if (string.IsNullOrEmpty(_player.Username))
++        if (string.IsNullOrEmpty(TargetName))
+         {
+             if (showDialog)
+                 _dialogService.ShowMessageBox("Login first so that we can fetch your username to load the options file.", "Load");
+@@ -110,17 +112,17 @@ public partial class CoreBotsViewModel : BotControlViewModelBase
+             return;
+         }
+ 
+-        CurrentPlayer = _player.Username;
+-        if (_readValues.ContainsKey(_player.Username))
++        CurrentPlayer = TargetName;
++        if (_readValues.ContainsKey(TargetName))
+         {
+-            SetValues(_readValues[_player.Username]);
++            SetValues(_readValues[TargetName]);
+             return;
+         }
+ 
+-        string filePath = Path.Combine(ClientFileSources.SkuaOptionsDIR, $"CBO_Storage({_player.Username}).txt");
++        string filePath = Path.Combine(ClientFileSources.SkuaOptionsDIR, $"CBO_Storage({TargetName}).txt");
+         if (!File.Exists(filePath) && Directory.Exists(ClientFileSources.LegacySkuaDIR))
+         {
+-            string legacyPath = Path.Combine(ClientFileSources.LegacySkuaDIR, "options", $"CBO_Storage({_player.Username}).txt");
++            string legacyPath = Path.Combine(ClientFileSources.LegacySkuaDIR, "options", $"CBO_Storage({TargetName}).txt");
+             if (File.Exists(legacyPath))
+                 filePath = legacyPath;
+         }
+@@ -132,7 +134,7 @@ public partial class CoreBotsViewModel : BotControlViewModelBase
+ 
+         SetValues(optionsDict);
+ 
+-        _readValues.Add(_player.Username, optionsDict);
++        _readValues.Add(TargetName, optionsDict);
+     }
+ 
+     // Refreshes the class and equipment lists from the logged-in character's inventory, keeping the
+@@ -140,6 +142,11 @@ public partial class CoreBotsViewModel : BotControlViewModelBase
+     [RelayCommand]
+     private void LoadCharacter()
+     {
++        if (!IsSelfAccount)
++        {
++            _dialogService.ShowMessageBox("Load character reads the character this window is logged in as. Pick this window's account in the Account box first.", "Load Character");
++            return;
++        }
+         if (string.IsNullOrEmpty(_player.Username))
+         {
+             _dialogService.ShowMessageBox("Login first so that we can read your character's classes and equipment.", "Load Character");
 diff --git a/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs b/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
-index 0986fea..8686050 100644
+index ebde59c..75cea10 100644
 --- a/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/CurrentDropsViewModel.cs
-@@ -8,32 +8,46 @@ using Skua.Shared.Avalonia.ViewModels;
+@@ -8,6 +8,7 @@ using Skua.Shared.Avalonia.ViewModels;
  using System;
  using System.Collections.Generic;
  using System.Collections.ObjectModel;
 +using System.ComponentModel;
  using System.Linq;
-+using System.Threading.Tasks;
- 
- namespace Skua.App.Avalonia.ViewModels;
+ using System.Threading.Tasks;
+ using Avalonia.Threading;
+@@ -16,16 +17,19 @@ namespace Skua.App.Avalonia.ViewModels;
  
  public partial class CurrentDropsViewModel : BotControlViewModelBase
  {
@@ -2313,8 +2958,9 @@ index 0986fea..8686050 100644
      {
 +        _drops.PropertyChanged += DropsPropertyChanged;
          StrongReferenceMessenger.Default.Register<CurrentDropsViewModel, ItemDroppedMessage, int>(this, (int)MessageChannels.GameEvents, CurrentDropsChanged);
+         StrongReferenceMessenger.Default.Register<CurrentDropsViewModel, DropPickupResultMessage, int>(this, (int)MessageChannels.GameEvents, PickupResultReceived);
          RefreshDrops();
-     }
+@@ -33,10 +37,19 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
  
      protected override void OnDeactivated()
      {
@@ -2334,8 +2980,8 @@ index 0986fea..8686050 100644
      private readonly IScriptDrop _drops;
      private string _searchText = string.Empty;
  
-@@ -103,9 +117,56 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
-         RefreshDrops();
+@@ -103,9 +116,56 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
+         Task.Run(() => _drops.PickupACItems());
      }
  
 +    /// <summary>Picks up only the AC drops, then puts each picked-up item straight into the bank.</summary>
@@ -2391,8 +3037,8 @@ index 0986fea..8686050 100644
 +            });
      }
  
-     private void RefreshDrops()
-@@ -128,4 +189,4 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
+     private void PickupResultReceived(CurrentDropsViewModel recipient, DropPickupResultMessage message)
+@@ -134,4 +194,4 @@ public partial class CurrentDropsViewModel : BotControlViewModelBase
              }
          }
      }
@@ -2400,14 +3046,14 @@ index 0986fea..8686050 100644
 \ No newline at end of file
 +}
 diff --git a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
-index 7c5c1dd..fab5522 100644
+index ffc05fc..fab5522 100644
 --- a/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/MainMenu/MainViewModel.cs
 @@ -10,7 +10,7 @@ namespace Skua.App.Avalonia.ViewModels.MainMenu;
  public sealed partial class MainViewModel : ObservableObject
  {
      [ObservableProperty]
--    private string _title = "VibeSkua V2.1.1";
+-    private string _title = "VibeSkua V2.1.2";
 +    private string _title = "VibeSkuffle";
  
      public MainMenuViewModel MainMenu { get; }
@@ -2422,7 +3068,7 @@ index 7c5c1dd..fab5522 100644
      }
  
 diff --git a/Skua.App.Avalonia/ViewModels/Options/GameOptionsViewModel.cs b/Skua.App.Avalonia/ViewModels/Options/GameOptionsViewModel.cs
-index d5b9923..b87aec4 100644
+index 7cf6963..05982e4 100644
 --- a/Skua.App.Avalonia/ViewModels/Options/GameOptionsViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/Options/GameOptionsViewModel.cs
 @@ -1,12 +1,17 @@
@@ -2454,7 +3100,7 @@ index d5b9923..b87aec4 100644
      private static readonly string[] CombatOptions = { "AggroMonsters", "AggroAllMonsters", "AttackWithoutTarget", "InfiniteRange", "Magnetise", "HuntDelay", "HuntBuffer", "RestPackets", "SafeTimings" };
 -    private static readonly string[] DropsOptions = { "AcceptACDrops", "AcceptAllDrops", "RejectAllDrops" };
 +    private static readonly string[] DropsOptions = { "AcceptACDrops", "AcceptAllDrops", "RejectAllDrops", "RejectNonACDrops", "PickupACDropsAndSendToBank" };
-     private static readonly string[] ReloginOptions = { "AutoRelogin", "AutoReloginAny", "RetryRelogin", "SafeRelogin", "ReloginTries", "LoginTimeout" };
+     private static readonly string[] ReloginOptions = { "AutoRelogin", "AutoReloginAny", "ReloginFallback", "RetryRelogin", "SafeRelogin", "ReloginTries", "LoginTimeout" };
  
      private readonly IScriptServers _servers;
      private readonly IScriptOption _options;
@@ -2472,7 +3118,7 @@ index d5b9923..b87aec4 100644
  
 -    public GameOptionsViewModel(List<DisplayOptionItemViewModelBase> gameOptions, IScriptServers servers, IScriptOption options)
 +    public GameOptionsViewModel(Func<OptionSource, List<DisplayOptionItemViewModelBase>> buildItems, LocalOptionSource local, IScriptServers servers, IScriptOption options, IDialogService dialogs)
-         : base("Game Options", 612, 720)
+         : base("Game Options", 800, 720)
      {
          _servers = servers;
          _options = options;
@@ -3030,8 +3676,215 @@ index 9f688a5..04daebb 100644
      }
  
      protected override void OnActivated()
+diff --git a/Skua.App.Avalonia/ViewModels/ScriptLoaderViewModel.Accounts.cs b/Skua.App.Avalonia/ViewModels/ScriptLoaderViewModel.Accounts.cs
+new file mode 100644
+index 0000000..619d38a
+--- /dev/null
++++ b/Skua.App.Avalonia/ViewModels/ScriptLoaderViewModel.Accounts.cs
+@@ -0,0 +1,201 @@
++using Avalonia.Threading;
++using CommunityToolkit.Mvvm.ComponentModel;
++using CommunityToolkit.Mvvm.Input;
++using Skua.App.Avalonia.ViewModels.Options;
++using Skua.Core.Services;
++using System;
++using System.Collections.ObjectModel;
++using System.IO;
++using System.Linq;
++using System.Threading.Tasks;
++
++namespace Skua.App.Avalonia.ViewModels;
++
++/// <summary>
++/// The Account drop-down of the Script Loader: the card, Load Script and Start/Stop Script work on this client or on any other open
++/// account. Another account is a separate process, so it is driven with the same messages Army Control uses (load a script, start or
++/// stop it) and its loaded script and running state are read from the file every client writes in %TEMP%\VibeSkuaTabs\{pid}.state.
++/// </summary>
++public partial class ScriptLoaderViewModel
++{
++    private const int WM_SKUA_SET_OPTION = 0x0400 + 450;
++    private const int WM_SKUA_LOAD_SCRIPT = 0x0400 + 453;
++
++    private DispatcherTimer? _accountsTimer;
++    private bool _syncingAccounts;
++    private AccountChoice _selectedAccount = new(Environment.ProcessId, "This client", true);
++    private string _remoteScriptPath = "";
++    private bool _remoteRunning;
++
++    public ObservableCollection<AccountChoice> Accounts { get; } = new();
++
++    public AccountChoice SelectedAccount
++    {
++        get => _selectedAccount;
++        set
++        {
++            if (value is null || _syncingAccounts || value == _selectedAccount)
++                return;
++            _selectedAccount = value;
++            RefreshRemote();
++            RaiseShown();
++            OnPropertyChanged(nameof(SelectedAccount));
++        }
++    }
++
++    public bool IsOtherAccount => !_selectedAccount.IsSelf;
++
++    // What the card and the buttons show: this client's script, or the picked account's.
++    public string ShownScript => IsOtherAccount ? (string.IsNullOrWhiteSpace(_remoteScriptPath) ? "No script loaded" : Path.GetFileName(_remoteScriptPath)) : LoadedScript;
++    public string ShownScriptPath => IsOtherAccount ? _remoteScriptPath : LoadedScriptPath;
++    public bool ShownRunning => IsOtherAccount ? _remoteRunning : ScriptManager.ScriptRunning;
++    public string ShownToggleText => ShownRunning ? "Stop Script" : "Start Script";
++    public string ShownStatus => IsOtherAccount ? (_remoteRunning ? "[Running]" : string.IsNullOrWhiteSpace(_remoteScriptPath) ? "[No Script Loaded]" : "[Loaded]") : ScriptStatus;
++    public bool CanPauseShown => !IsOtherAccount && ScriptManager.ScriptRunning;
++    public bool CanEditOptionsShown => !IsOtherAccount && ToggleScriptEnabled;
++
++    // This client's own state moved: the card follows it while this client is the shown account.
++    partial void OnLoadedScriptChanged(string value) => RaiseShownIfLocal();
++    partial void OnScriptStatusChanged(string value) => RaiseShownIfLocal();
++    partial void OnToggleScriptEnabledChanged(bool value) => RaiseShownIfLocal();
++
++    private void RaiseShownIfLocal()
++    {
++        if (!IsOtherAccount)
++            RaiseShown();
++    }
++
++    private void RaiseShown()
++    {
++        OnPropertyChanged(nameof(IsOtherAccount));
++        OnPropertyChanged(nameof(ShownScript));
++        OnPropertyChanged(nameof(ShownScriptPath));
++        OnPropertyChanged(nameof(ShownRunning));
++        OnPropertyChanged(nameof(ShownToggleText));
++        OnPropertyChanged(nameof(ShownStatus));
++        OnPropertyChanged(nameof(CanPauseShown));
++        OnPropertyChanged(nameof(CanEditOptionsShown));
++    }
++
++    /// <summary>The view calls this when it appears and goes: the open accounts are only polled while the Script Loader is on screen.</summary>
++    public void SetAccountPolling(bool on)
++    {
++        if (on)
++        {
++            RefreshAccounts();
++            _accountsTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(1500) };
++            _accountsTimer.Tick -= AccountsTick;
++            _accountsTimer.Tick += AccountsTick;
++            _accountsTimer.Start();
++        }
++        else
++        {
++            _accountsTimer?.Stop();
++        }
++    }
++
++    private void AccountsTick(object? sender, EventArgs e)
++    {
++        RefreshAccounts();
++        if (IsOtherAccount)
++        {
++            RefreshRemote();
++            RaiseShown();
++        }
++    }
++
++    private static string SelfAccountName()
++    {
++        try
++        {
++            string? name = CommunityToolkit.Mvvm.DependencyInjection.Ioc.Default.GetService<Skua.Core.Interfaces.IScriptPlayer>() is { LoggedIn: true } player ? player.Username : null;
++            if (!string.IsNullOrWhiteSpace(name))
++                return name;
++        }
++        catch { }
++        return "This client";
++    }
++
++    private void RefreshAccounts()
++    {
++        var wanted = new System.Collections.Generic.List<AccountChoice> { new(Environment.ProcessId, SelfAccountName(), true) };
++        wanted.AddRange(OptionSharing.OtherClients(Environment.ProcessId).Select(c => new AccountChoice(c.ProcessId, c.Account, false)));
++        if (Accounts.SequenceEqual(wanted))
++            return;
++        _syncingAccounts = true;
++        try
++        {
++            Accounts.Clear();
++            foreach (AccountChoice account in wanted)
++                Accounts.Add(account);
++            // An account that closed: back to this client.
++            _selectedAccount = wanted.FirstOrDefault(a => a.ProcessId == _selectedAccount.ProcessId) ?? wanted[0];
++            OnPropertyChanged(nameof(SelectedAccount));
++            RaiseShown();
++        }
++        finally { _syncingAccounts = false; }
++    }
++
++    private void RefreshRemote()
++    {
++        _remoteScriptPath = "";
++        _remoteRunning = false;
++        if (!IsOtherAccount)
++            return;
++        try
++        {
++            string file = Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", $"{_selectedAccount.ProcessId}.state");
++            if (File.Exists(file))
++            {
++                string[] lines = File.ReadAllLines(file);
++                _remoteScriptPath = lines.Length > 0 ? lines[0].Trim() : "";
++                _remoteRunning = lines.Length > 1 && lines[1].Trim() == "1";
++            }
++        }
++        catch { }
++    }
++
++    /// <summary>Load Script button: on this client as before, or on the picked account.</summary>
++    [RelayCommand]
++    private void LoadScriptForAccount()
++    {
++        if (!IsOtherAccount)
++        {
++            LoadScript();
++            return;
++        }
++        string? path = _fileDialog.OpenFile(_scriptPath, "Skua Scripts (*.cs)|*.cs");
++        if (path is null)
++            return;
++        SendLoadToAccount(path);
++    }
++
++    /// <summary>Start / Stop Script button: on this client as before, or on the picked account.</summary>
++    [RelayCommand]
++    private async Task ToggleScriptForAccount()
++    {
++        if (!IsOtherAccount)
++        {
++            await ToggleScript();
++            return;
++        }
++        if (!_remoteRunning && string.IsNullOrWhiteSpace(_remoteScriptPath))
++        {
++            _dialogService.ShowMessageBox($"No script is loaded on {_selectedAccount.Name}. Load one first.", "Scripts");
++            return;
++        }
++        Skua.Core.AppStartup.HotKeys.PostToArmyClients(WM_SKUA_SET_OPTION, 99, _remoteRunning ? 0 : 1, includeSelf: false, onlyPid: _selectedAccount.ProcessId);
++        // The account reports its new state within a moment; show the intent right away.
++        _remoteRunning = !_remoteRunning;
++        RaiseShown();
++    }
++
++    private void SendLoadToAccount(string path)
++    {
++        // The target reads the path from this shared file when the message reaches it.
++        File.WriteAllText(Path.Combine(Path.GetTempPath(), "skua_global_script.txt"), path);
++        Skua.Core.AppStartup.HotKeys.PostToArmyClients(WM_SKUA_LOAD_SCRIPT, 0, 0, includeSelf: false, onlyPid: _selectedAccount.ProcessId);
++        _remoteScriptPath = path;
++        RaiseShown();
++    }
++}
 diff --git a/Skua.App.Avalonia/ViewModels/ScriptLoaderViewModel.cs b/Skua.App.Avalonia/ViewModels/ScriptLoaderViewModel.cs
-index 5c5fdcb..3d3fc13 100644
+index 5c5fdcb..4eb40ec 100644
 --- a/Skua.App.Avalonia/ViewModels/ScriptLoaderViewModel.cs
 +++ b/Skua.App.Avalonia/ViewModels/ScriptLoaderViewModel.cs
 @@ -40,11 +40,13 @@ public partial class ScriptLoaderViewModel : BotControlViewModelBase
@@ -3048,7 +3901,14 @@ index 5c5fdcb..3d3fc13 100644
              }
              else if (e.PropertyName == nameof(IScriptManager.ScriptRunning))
              {
-@@ -63,6 +65,36 @@ public partial class ScriptLoaderViewModel : BotControlViewModelBase
+@@ -58,11 +60,43 @@ public partial class ScriptLoaderViewModel : BotControlViewModelBase
+                 OnPropertyChanged(nameof(TogglePauseScriptIcon));
+             }
+         };
++        // The Account drop-down's card follows this client's script when this client is the shown account.
++        ScriptManager.PropertyChanged += (_, _) => RaiseShownIfLocal();
+         _windowService = windowService;
+         _dialogService = dialogService;
          ScriptLogs = logs.FirstOrDefault(l => l.Title == "Script") ?? logs.First();
      }
  
@@ -3085,6 +3945,220 @@ index 5c5fdcb..3d3fc13 100644
      public IScriptManager ScriptManager { get; }
  
      public string ToggleScriptText => ScriptManager.ScriptRunning ? "Stop Script" : "Start Script";
+diff --git a/Skua.App.Avalonia/Views/CalendarView.axaml b/Skua.App.Avalonia/Views/CalendarView.axaml
+new file mode 100644
+index 0000000..bc96029
+--- /dev/null
++++ b/Skua.App.Avalonia/Views/CalendarView.axaml
+@@ -0,0 +1,191 @@
++<UserControl xmlns="https://github.com/avaloniaui"
++             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
++             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
++             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
++             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
++             xmlns:vms="clr-namespace:Skua.App.Avalonia.ViewModels"
++             x:Class="Skua.App.Avalonia.Views.CalendarView"
++             x:DataType="vms:CalendarViewModel"
++             Background="{DynamicResource SkuaPageBrush}"
++             mc:Ignorable="d" d:DesignHeight="640" d:DesignWidth="520">
++
++  <UserControl.Styles>
++    <Style Selector="Border.cal-card">
++      <Setter Property="Background" Value="{DynamicResource SkuaSurfaceBrush}" />
++      <Setter Property="BorderBrush" Value="{DynamicResource SkuaBorderBrush}" />
++      <Setter Property="BorderThickness" Value="1" />
++      <Setter Property="CornerRadius" Value="10" />
++      <Setter Property="Padding" Value="12,10" />
++      <Setter Property="ClipToBounds" Value="True" />
++    </Style>
++    <Style Selector="TextBlock.cal-heading">
++      <Setter Property="FontSize" Value="11" />
++      <Setter Property="FontWeight" Value="SemiBold" />
++      <Setter Property="Foreground" Value="{DynamicResource SkuaAccentBrush}" />
++      <Setter Property="VerticalAlignment" Value="Center" />
++    </Style>
++    <Style Selector="TextBlock.cal-big">
++      <Setter Property="FontSize" Value="28" />
++      <Setter Property="FontWeight" Value="SemiBold" />
++      <Setter Property="Foreground" Value="{DynamicResource SkuaTextBrush}" />
++    </Style>
++    <Style Selector="TextBlock.cal-big.urgent">
++      <Setter Property="Foreground" Value="{DynamicResource SkuaWarningBrush}" />
++    </Style>
++
++    <!-- Rounded tile behind a heading icon -->
++    <Style Selector="Border.cal-tile">
++      <Setter Property="Width" Value="26" />
++      <Setter Property="Height" Value="26" />
++      <Setter Property="CornerRadius" Value="8" />
++      <Setter Property="VerticalAlignment" Value="Center" />
++    </Style>
++
++    <!-- Progress bars: thin and round, the fill colour set per use -->
++    <Style Selector="ProgressBar.cal-bar">
++      <Setter Property="Height" Value="7" />
++      <Setter Property="MinHeight" Value="7" />
++      <Setter Property="MinWidth" Value="0" />
++      <Setter Property="CornerRadius" Value="3.5" />
++      <Setter Property="Background" Value="{DynamicResource SkuaSurfaceAltBrush}" />
++    </Style>
++    <Style Selector="ProgressBar.cal-bar.blue"><Setter Property="Foreground" Value="#4C8DFF" /></Style>
++    <Style Selector="ProgressBar.cal-bar.green"><Setter Property="Foreground" Value="{DynamicResource SkuaSuccessBrush}" /></Style>
++    <Style Selector="ProgressBar.cal-bar.ending"><Setter Property="Foreground" Value="{DynamicResource SkuaWarningBrush}" /></Style>
++
++    <!-- A boost row: an icon tile, the name, the time and a bar -->
++    <Style Selector="Border.boost-row">
++      <Setter Property="Background" Value="{DynamicResource SkuaSurfaceAltBrush}" />
++      <Setter Property="CornerRadius" Value="8" />
++      <Setter Property="Padding" Value="10,8,10,8" />
++      <Setter Property="Margin" Value="0,3" />
++    </Style>
++    <Style Selector="TextBlock.boost-time">
++      <Setter Property="FontSize" Value="12" />
++      <Setter Property="FontWeight" Value="SemiBold" />
++      <Setter Property="VerticalAlignment" Value="Center" />
++    </Style>
++    <Style Selector="TextBlock.boost-time.on"><Setter Property="Foreground" Value="{DynamicResource SkuaSuccessBrush}" /></Style>
++    <Style Selector="TextBlock.boost-time.ending"><Setter Property="Foreground" Value="{DynamicResource SkuaWarningBrush}" /></Style>
++    <Style Selector="TextBlock.boost-time.soon"><Setter Property="Foreground" Value="{DynamicResource SkuaWarningBrush}" /></Style>
++  </UserControl.Styles>
++
++  <ScrollViewer VerticalScrollBarVisibility="Auto">
++    <StackPanel Margin="12" Spacing="10">
++      <!-- Server time (US Eastern) -->
++      <Border Classes="cal-card">
++        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
++          <Border Classes="cal-tile" Background="#334C8DFF">
++            <materialIcons:MaterialIcon Kind="ClockOutline" Width="15" Height="15" Foreground="#4C8DFF" />
++          </Border>
++          <StackPanel Grid.Column="1" Spacing="2">
++            <TextBlock Classes="cal-heading" Text="SERVER TIME" HorizontalAlignment="Center" />
++            <TextBlock Text="{Binding ServerTime}" FontSize="18" FontWeight="SemiBold" HorizontalAlignment="Center"
++                       FontFamily="Cascadia Mono,Consolas,Courier New,monospace" Foreground="{DynamicResource SkuaTextBrush}" />
++          </StackPanel>
++        </Grid>
++      </Border>
++
++      <!-- The two resets side by side; icons and bars have fixed colours; only the headings follow the Application Theme (accent); green / yellow mean ON and coming up -->
++      <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
++        <Border Grid.Column="0" Classes="cal-card">
++          <StackPanel Spacing="7">
++            <StackPanel Orientation="Horizontal" Spacing="8">
++              <Border Classes="cal-tile" Background="#33F5A524">
++                <materialIcons:MaterialIcon Kind="WhiteBalanceSunny" Width="15" Height="15" Foreground="#F5A524" />
++              </Border>
++              <TextBlock Classes="cal-heading" Text="DAILY RESET" />
++            </StackPanel>
++            <TextBlock Classes="cal-big" Classes.urgent="{Binding DailyUrgent}" Text="{Binding DailyText}" />
++            <ProgressBar Classes="cal-bar blue" Minimum="0" Maximum="1" Value="{Binding DailyProgress}" />
++          </StackPanel>
++        </Border>
++        <Border Grid.Column="1" Classes="cal-card">
++          <StackPanel Spacing="7">
++            <StackPanel Orientation="Horizontal" Spacing="8">
++              <Border Classes="cal-tile" Background="#339F7AEA">
++                <materialIcons:MaterialIcon Kind="CalendarWeek" Width="15" Height="15" Foreground="#9F7AEA" />
++              </Border>
++              <TextBlock Classes="cal-heading" Text="WEEKLY RESET" />
++            </StackPanel>
++            <TextBlock Classes="cal-big" Classes.urgent="{Binding WeeklyUrgent}" Text="{Binding WeeklyText}" />
++            <ProgressBar Classes="cal-bar blue" Minimum="0" Maximum="1" Value="{Binding WeeklyProgress}" />
++          </StackPanel>
++        </Border>
++      </Grid>
++
++      <!-- Boosts -->
++      <Border Classes="cal-card">
++        <StackPanel Spacing="6">
++          <Grid ColumnDefinitions="*,Auto">
++            <StackPanel Orientation="Horizontal" Spacing="8">
++              <Border Classes="cal-tile" Background="#3334C759">
++                <materialIcons:MaterialIcon Kind="LightningBolt" Width="15" Height="15" Foreground="#34C759" />
++              </Border>
++              <TextBlock Classes="cal-heading" Text="BOOSTS" />
++            </StackPanel>
++            <Button Grid.Column="1" Classes="skua-button small" Command="{Binding RefreshCommand}">
++              <StackPanel Orientation="Horizontal" Spacing="5">
++                <materialIcons:MaterialIcon Kind="Refresh" Width="14" Height="14" />
++                <TextBlock Text="Refresh" VerticalAlignment="Center" />
++              </StackPanel>
++            </Button>
++          </Grid>
++          <TextBlock Text="{Binding UpdatedText}" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++          <TextBlock Text="{Binding Note}" IsVisible="{Binding HasNote}" TextWrapping="Wrap" Foreground="{DynamicResource SkuaWarningBrush}" FontSize="12" />
++          <TextBlock Text="No boosts listed." IsVisible="{Binding HasNoBoosts}" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++
++          <!-- Running now: green -->
++          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,8,0,0" IsVisible="{Binding HasActive}">
++            <materialIcons:MaterialIcon Kind="PlayCircle" Width="15" Height="15" Foreground="{DynamicResource SkuaSuccessBrush}" />
++            <TextBlock Classes="cal-heading" Text="ACTIVE NOW" Foreground="{DynamicResource SkuaSuccessBrush}" />
++          </StackPanel>
++          <ItemsControl ItemsSource="{Binding ActiveBoosts}" IsVisible="{Binding HasActive}">
++            <ItemsControl.ItemTemplate>
++              <DataTemplate x:DataType="vms:CalendarBoost">
++                <Border Classes="boost-row on">
++                  <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="10">
++                    <Border Grid.RowSpan="2" Classes="cal-tile" Background="#3334C759">
++                      <materialIcons:MaterialIcon Kind="LightningBolt" Width="15" Height="15" Foreground="#34C759" />
++                    </Border>
++                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7">
++                      <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource SkuaTextBrush}" />
++                      <Border Classes="chip success"><TextBlock Text="ON" /></Border>
++                    </StackPanel>
++                    <TextBlock Grid.Column="2" Classes="boost-time on" Classes.ending="{Binding EndingSoon}" Text="{Binding Status}" />
++                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Detail}" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++                    <ProgressBar Grid.Row="2" Grid.ColumnSpan="3" Margin="0,7,0,0" Classes="cal-bar green" Classes.ending="{Binding EndingSoon}" Minimum="0" Maximum="1" Value="{Binding Progress}" />
++                  </Grid>
++                </Border>
++              </DataTemplate>
++            </ItemsControl.ItemTemplate>
++          </ItemsControl>
++
++          <!-- Coming: amber -->
++          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,8,0,0" IsVisible="{Binding HasUpcoming}">
++            <materialIcons:MaterialIcon Kind="ClockFast" Width="15" Height="15" Foreground="{DynamicResource SkuaWarningBrush}" />
++            <TextBlock Classes="cal-heading" Text="COMING UP" Foreground="{DynamicResource SkuaWarningBrush}" />
++          </StackPanel>
++          <ItemsControl ItemsSource="{Binding UpcomingBoosts}" IsVisible="{Binding HasUpcoming}">
++            <ItemsControl.ItemTemplate>
++              <DataTemplate x:DataType="vms:CalendarBoost">
++                <Border Classes="boost-row soon">
++                  <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10">
++                    <Border Grid.RowSpan="2" Classes="cal-tile" Background="#334C8DFF">
++                      <materialIcons:MaterialIcon Kind="ClockOutline" Width="15" Height="15" Foreground="#4C8DFF" />
++                    </Border>
++                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="7">
++                      <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource SkuaTextBrush}" />
++                    </StackPanel>
++                    <TextBlock Grid.Column="2" Classes="boost-time soon" Text="{Binding Status}" />
++                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding Detail}" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++                  </Grid>
++                </Border>
++              </DataTemplate>
++            </ItemsControl.ItemTemplate>
++          </ItemsControl>
++        </StackPanel>
++      </Border>
++    </StackPanel>
++  </ScrollViewer>
++</UserControl>
+diff --git a/Skua.App.Avalonia/Views/CalendarView.axaml.cs b/Skua.App.Avalonia/Views/CalendarView.axaml.cs
+new file mode 100644
+index 0000000..51d1a16
+--- /dev/null
++++ b/Skua.App.Avalonia/Views/CalendarView.axaml.cs
+@@ -0,0 +1,11 @@
++using Avalonia.Controls;
++
++namespace Skua.App.Avalonia.Views;
++
++public partial class CalendarView : UserControl
++{
++    public CalendarView()
++    {
++        InitializeComponent();
++    }
++}
 diff --git a/Skua.App.Avalonia/Views/CommandPaletteWindow.cs b/Skua.App.Avalonia/Views/CommandPaletteWindow.cs
 new file mode 100644
 index 0000000..3b660e4
@@ -3211,6 +4285,25 @@ index 0000000..3b660e4
 +        try { entry.Item.Command?.Execute(null); } catch { }
 +    }
 +}
+diff --git a/Skua.App.Avalonia/Views/CoreBotsView.axaml b/Skua.App.Avalonia/Views/CoreBotsView.axaml
+index 6a45ec7..01df2be 100644
+--- a/Skua.App.Avalonia/Views/CoreBotsView.axaml
++++ b/Skua.App.Avalonia/Views/CoreBotsView.axaml
+@@ -16,11 +16,9 @@
+                                     Foreground="{DynamicResource SkuaAccentBrush}" />
+       </Border>
+       <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="2,0,0,0">
+-        <TextBlock Text="Profile" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
+-        <TextBlock Text="{Binding CurrentPlayer}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+-                   IsVisible="{Binding CurrentPlayer, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+-        <TextBlock Text="Not logged in" FontWeight="SemiBold" Foreground="{DynamicResource SkuaMutedTextBrush}"
+-                   IsVisible="{Binding CurrentPlayer, Converter={x:Static StringConverters.IsNullOrEmpty}}" />
++        <TextBlock Text="Account" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++        <ComboBox HorizontalAlignment="Stretch" MinWidth="180" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount, Mode=TwoWay}"
++                  ToolTip.Tip="Pick another open account: Load and Save use that account's CoreBots file. An account with no file yet starts from the values shown." />
+       </StackPanel>
+       <Button Grid.Column="2" Classes="skua-button w84" Command="{Binding LoadCommand}" ToolTip.Tip="Load saved CoreBots settings">
+         <StackPanel Orientation="Horizontal" Spacing="6">
 diff --git a/Skua.App.Avalonia/Views/CurrentDropsView.axaml b/Skua.App.Avalonia/Views/CurrentDropsView.axaml
 index b2b89c6..853f141 100644
 --- a/Skua.App.Avalonia/Views/CurrentDropsView.axaml
@@ -3263,7 +4356,7 @@ index b2b89c6..853f141 100644
    </Grid>
  </UserControl>
 diff --git a/Skua.App.Avalonia/Views/GameOptionsView.axaml b/Skua.App.Avalonia/Views/GameOptionsView.axaml
-index c7cd830..2b957ba 100644
+index b3c6c7b..506b7a1 100644
 --- a/Skua.App.Avalonia/Views/GameOptionsView.axaml
 +++ b/Skua.App.Avalonia/Views/GameOptionsView.axaml
 @@ -4,20 +4,31 @@
@@ -3301,18 +4394,19 @@ index c7cd830..2b957ba 100644
        <ListBox.ItemTemplate>
          <DataTemplate x:DataType="vms:OptionGroupViewModel">
            <StackPanel Orientation="Horizontal" Spacing="5" ToolTip.Tip="{Binding Title}">
-@@ -30,8 +41,9 @@
+@@ -30,9 +41,9 @@
      </ListBox>
  
-     <!-- One list: a tinted header per section (under All), a row per option -->
+     <!-- One list: a tinted header per section (under All), its options in two columns -->
 -    <Border Grid.Row="2" Classes="option-list" VerticalAlignment="Top">
+-      <!-- A fixed scrollbar lane, so the right column's fields don't sit under an overlay scrollbar -->
 +    <Border Grid.Row="3" Classes="option-list" VerticalAlignment="Top">
-       <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+       <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" AllowAutoHide="False">
 +        <StackPanel>
          <ItemsControl ItemsSource="{Binding FilteredGroups}" Margin="0,0,0,-1">
-           <ItemsControl.ItemTemplate>
-             <DataTemplate x:DataType="vms:OptionGroupViewModel">
-@@ -59,10 +71,11 @@
+           <ItemsControl.Styles>
+             <!-- A line between the columns -->
+@@ -71,10 +82,11 @@
              </DataTemplate>
            </ItemsControl.ItemTemplate>
          </ItemsControl>
@@ -3325,7 +4419,7 @@ index c7cd830..2b957ba 100644
        <Button Grid.Column="0" Classes="skua-button w84" Command="{Binding ResetDefaultOptionsCommand}" ToolTip.Tip="Reset to application default values">
          <StackPanel Orientation="Horizontal" Spacing="6">
            <materialIcons:MaterialIcon Kind="Restore" Width="15" Height="15" />
-@@ -75,7 +88,7 @@
+@@ -87,7 +99,7 @@
            <TextBlock Text="Reset" VerticalAlignment="Center" />
          </StackPanel>
        </Button>
@@ -3335,10 +4429,10 @@ index c7cd830..2b957ba 100644
        <Button Grid.Column="3" Classes="skua-button skua-primary w112" Command="{Binding SaveOptionsCommand}" ToolTip.Tip="Keep these options for next time">
          <StackPanel Orientation="Horizontal" Spacing="6">
 diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
-index e8365ef..759af3d 100644
+index e242ea8..fcc9285 100644
 --- a/Skua.App.Avalonia/Views/MainWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
-@@ -102,6 +102,73 @@ public partial class MainWindow : Window
+@@ -105,6 +105,73 @@ public partial class MainWindow : Window
      private int _preThrottleFPS = -1;
      private string? _preThrottleQuality = null;
  
@@ -3412,7 +4506,7 @@ index e8365ef..759af3d 100644
      public void HideTitleBar()
      {
          _isTitleBarPermanentlyHidden = true;
-@@ -117,6 +184,25 @@ public partial class MainWindow : Window
+@@ -120,6 +187,25 @@ public partial class MainWindow : Window
      public MainWindow()
      {
          InitializeComponent();
@@ -3438,7 +4532,7 @@ index e8365ef..759af3d 100644
          _mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
          _mainMenuVm = Ioc.Default.GetRequiredService<MainMenuViewModel>();
          _flash = Ioc.Default.GetRequiredService<IFlashUtil>();
-@@ -154,8 +240,94 @@ public partial class MainWindow : Window
+@@ -157,8 +243,94 @@ public partial class MainWindow : Window
          MainMenuControl.Items.Clear();
          foreach (MainMenuItemViewModel item in _mainMenuVm.MainMenuItems)
              MainMenuControl.Items.Add(CreateMainMenuItem(item, isTopLevel: true));
@@ -3533,7 +4627,7 @@ index e8365ef..759af3d 100644
      private global::Avalonia.Controls.MenuItem CreateMainMenuItem(IMainMenuItemViewModel viewModel, bool isTopLevel = false)
      {
          global::Avalonia.Controls.MenuItem menuItem = new()
-@@ -216,6 +388,7 @@ public partial class MainWindow : Window
+@@ -219,6 +391,7 @@ public partial class MainWindow : Window
                  "Script Loader" => MaterialIconKind.ScriptOutline,
                  "Scheduler" => MaterialIconKind.CalendarClock,
                  "Game" => MaterialIconKind.GamepadVariantOutline,
@@ -3541,7 +4635,15 @@ index e8365ef..759af3d 100644
                  "Application" => MaterialIconKind.ApplicationCogOutline,
                  "CoreBots" => MaterialIconKind.RobotOutline,
                  "Application Themes" => MaterialIconKind.PaletteOutline,
-@@ -270,6 +443,8 @@ public partial class MainWindow : Window
+@@ -229,6 +402,7 @@ public partial class MainWindow : Window
+                 "Grabber" => MaterialIconKind.HandBackRightOutline,
+                 "Current Drops" => MaterialIconKind.GiftOutline,
+                 "Junk Items" => MaterialIconKind.DeleteSweepOutline,
++                "Calendar" => MaterialIconKind.CalendarMonthOutline,
+                 "Skills" => MaterialIconKind.LightningBoltOutline,
+                 "Stats" => MaterialIconKind.ChartLine,
+                 "Runtime" => MaterialIconKind.PlayNetworkOutline,
+@@ -273,6 +447,8 @@ public partial class MainWindow : Window
      private void RegisterMessages()
      {
          WeakReferenceMessenger.Default.Register<MainWindow, FlashChangedMessage<AxShockwaveFlash>>(this, static (r, m) => r.OnFlashControlChanged(m.Flash));
@@ -3550,7 +4652,7 @@ index e8365ef..759af3d 100644
      }
      #endif
  
-@@ -283,11 +458,27 @@ public partial class MainWindow : Window
+@@ -286,11 +462,27 @@ public partial class MainWindow : Window
          {
              notifyOptions.PropertyChanged += (s, e) =>
              {
@@ -3580,7 +4682,7 @@ index e8365ef..759af3d 100644
                          if (HeadlessOverlay != null) HeadlessOverlay.IsVisible = isHeadless;
                          if (FlashHost != null) FlashHost.IsVisible = !isHeadless && _isFlashLoaded;
                      });
-@@ -299,6 +490,17 @@ public partial class MainWindow : Window
+@@ -302,6 +494,17 @@ public partial class MainWindow : Window
      private void MainWindow_Opened(object? sender, EventArgs e)
      {
          _startup.Execute();
@@ -3598,7 +4700,7 @@ index e8365ef..759af3d 100644
          _flash.FlashCall += OnFlashCall;
  
          try
-@@ -323,6 +525,35 @@ public partial class MainWindow : Window
+@@ -326,6 +529,35 @@ public partial class MainWindow : Window
  #endif
          }
  
@@ -3634,7 +4736,7 @@ index e8365ef..759af3d 100644
          _tabTitleSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
          string lastWrittenUsername = "";
          _tabTitleSyncTimer.Tick += (s, ev) =>
-@@ -348,8 +579,44 @@ public partial class MainWindow : Window
+@@ -374,8 +606,44 @@ public partial class MainWindow : Window
          _tabTitleSyncTimer.Start();
      }
  
@@ -3679,9 +4781,9 @@ index e8365ef..759af3d 100644
          App.DisposeTrayIcon();
          _tabTitleSyncTimer?.Stop();
          try
-@@ -381,8 +648,11 @@ public partial class MainWindow : Window
-             Dispatcher.UIThread.Post(() =>
-             {
+@@ -416,8 +684,11 @@ public partial class MainWindow : Window
+                 // Hiding alone leaves the indeterminate animation running at the monitor's refresh rate.
+                 LoadingBar.IsIndeterminate = false;
                  LoadingBar.IsVisible = false;
 -                FlashHost.IsVisible = !_options.HeadlessMode;
 -                HeadlessOverlay.IsVisible = _options.HeadlessMode;
@@ -3693,7 +4795,7 @@ index e8365ef..759af3d 100644
                  try
                  {
                      FlashHost?.SetScaleMode(false);
-@@ -393,6 +663,106 @@ public partial class MainWindow : Window
+@@ -428,6 +699,106 @@ public partial class MainWindow : Window
          }
      }
  
@@ -3800,7 +4902,7 @@ index e8365ef..759af3d 100644
  #if IS_WINDOWS
      private IntPtr WindowSubclassProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam, nuint uIdSubclass, IntPtr dwRefData)
      {
-@@ -479,15 +849,43 @@ public partial class MainWindow : Window
+@@ -514,15 +885,43 @@ public partial class MainWindow : Window
          }
          else if (uMsg == WM_SKUA_LOGIN)
          {
@@ -3848,7 +4950,7 @@ index e8365ef..759af3d 100644
          else if (uMsg == 0x0400 + 448) // WM_SKUA_LOGOUT
          {
              Ioc.Default.GetRequiredService<IScriptServers>().Logout();
-@@ -617,6 +1015,15 @@ public partial class MainWindow : Window
+@@ -673,6 +1072,15 @@ public partial class MainWindow : Window
                      }
                      break;
              }
@@ -3864,7 +4966,7 @@ index e8365ef..759af3d 100644
              return IntPtr.Zero;
          }
          else if (uMsg == WM_SKUA_ARMY_SCHEDULER)
-@@ -709,46 +1116,14 @@ public partial class MainWindow : Window
+@@ -765,46 +1173,14 @@ public partial class MainWindow : Window
          }
          else if (uMsg == 0x0400 + 452) // WM_SKUA_THROTTLE
          {
@@ -3920,12 +5022,27 @@ index e8365ef..759af3d 100644
          }
          else if (uMsg == WM_SKUA_OPEN_BANK)
 diff --git a/Skua.App.Avalonia/Views/ScriptLoaderView.axaml b/Skua.App.Avalonia/Views/ScriptLoaderView.axaml
-index 067f9b8..ec25f87 100644
+index 94dd70e..fe4731f 100644
 --- a/Skua.App.Avalonia/Views/ScriptLoaderView.axaml
 +++ b/Skua.App.Avalonia/Views/ScriptLoaderView.axaml
-@@ -7,16 +7,22 @@
+@@ -6,18 +6,36 @@
+              x:DataType="vms:ScriptLoaderViewModel"
+              x:Class="Skua.App.Avalonia.Views.ScriptLoaderView">
    
-     <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="12" RowSpacing="10">
+-    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="12" RowSpacing="10">
++    <DockPanel Margin="12" LastChildFill="True">
++
++    <!-- Whose script the card and the buttons below work on: this client or any other open account -->
++    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="0,0,0,10">
++      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
++        <materialIcons:MaterialIcon Kind="AccountSwitchOutline" Width="16" Height="16" Foreground="{DynamicResource SkuaAccentBrush}" />
++        <TextBlock Text="Account" VerticalAlignment="Center" />
++      </StackPanel>
++      <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount, Mode=TwoWay}"
++                ToolTip.Tip="Pick another open account: the script you load or start here goes to that account" />
++    </Grid>
++
++    <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
          
 -        <!-- 1. Header Status Card -->
 +        <!-- 1. Header Status Card; right-click for script identity actions -->
@@ -3948,21 +5065,129 @@ index 067f9b8..ec25f87 100644
                                 FontSize="9"
                                 FontWeight="Bold"
                                 Foreground="{DynamicResource SkuaMutedTextBrush}"
-@@ -25,7 +31,7 @@
+@@ -26,7 +44,7 @@
                                 FontWeight="Bold"
                                 FontFamily="JetBrains Mono,Consolas,Courier New,monospace"
                                 Foreground="{DynamicResource SkuaTextBrush}"
 -                               Text="{Binding LoadedScript, FallbackValue='No script loaded'}"
-+                               ToolTip.Tip="{Binding LoadedScriptPath}" Text="{Binding LoadedScript, FallbackValue='No script loaded'}"
++                               ToolTip.Tip="{Binding ShownScriptPath}" Text="{Binding ShownScript, FallbackValue='No script loaded'}"
                                 TextTrimming="CharacterEllipsis" />
                  </StackPanel>
  
+@@ -41,10 +59,10 @@
+                     <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                         <!-- Status dot: muted when idle/loaded, green running, amber paused/compiling, red on error -->
+                         <Ellipse Width="6" Height="6" VerticalAlignment="Center"
+-                                 Classes.running="{Binding ScriptStatus, Converter={x:Static ObjectConverters.Equal}, ConverterParameter='[Running]'}"
+-                                 Classes.paused="{Binding ScriptStatus, Converter={x:Static ObjectConverters.Equal}, ConverterParameter='[Paused]'}"
+-                                 Classes.compiling="{Binding ScriptStatus, Converter={x:Static ObjectConverters.Equal}, ConverterParameter='Compiling...'}"
+-                                 Classes.error="{Binding ScriptStatus, Converter={x:Static ObjectConverters.Equal}, ConverterParameter='[Error]'}">
++                                 Classes.running="{Binding ShownStatus, Converter={x:Static ObjectConverters.Equal}, ConverterParameter='[Running]'}"
++                                 Classes.paused="{Binding ShownStatus, Converter={x:Static ObjectConverters.Equal}, ConverterParameter='[Paused]'}"
++                                 Classes.compiling="{Binding ShownStatus, Converter={x:Static ObjectConverters.Equal}, ConverterParameter='Compiling...'}"
++                                 Classes.error="{Binding ShownStatus, Converter={x:Static ObjectConverters.Equal}, ConverterParameter='[Error]'}">
+                             <Ellipse.Styles>
+                                 <Style Selector="Ellipse"><Setter Property="Fill" Value="{DynamicResource SkuaMutedTextBrush}" /></Style>
+                                 <Style Selector="Ellipse.running"><Setter Property="Fill" Value="{DynamicResource SkuaSuccessBrush}" /></Style>
+@@ -55,7 +73,7 @@
+                         <TextBlock FontSize="10"
+                                    FontWeight="Bold"
+                                    Foreground="{DynamicResource SkuaTextBrush}"
+-                                   Text="{Binding ScriptStatus, FallbackValue='[No script]'}" />
++                                   Text="{Binding ShownStatus, FallbackValue='[No script]'}" />
+                     </StackPanel>
+                 </Border>
+             </Grid>
+@@ -75,7 +93,7 @@
+                     Padding="8,0"
+                     HorizontalAlignment="Stretch"
+                     HorizontalContentAlignment="Center"
+-                    Command="{Binding LoadScriptCommand}">
++                    Command="{Binding LoadScriptForAccountCommand}">
+                 <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                     <materialIcons:MaterialIcon Kind="FolderOpen" Width="15" Height="15" />
+                     <TextBlock Text="Load Script" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+@@ -132,7 +150,7 @@
+                     HorizontalAlignment="Stretch"
+                     HorizontalContentAlignment="Center"
+                     Command="{Binding EditScriptConfigCommand}"
+-                    IsEnabled="{Binding ToggleScriptEnabled}">
++                    IsEnabled="{Binding CanEditOptionsShown}">
+                 <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                     <materialIcons:MaterialIcon Kind="Cog" Width="15" Height="15" />
+                     <TextBlock Text="Edit Script Options" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+@@ -142,24 +160,24 @@
+             <!-- Start / Stop Script Button -->
+             <Button Grid.Row="3" Grid.Column="0"
+                     Classes="skua-button"
+-                    Classes.skua-danger="{Binding ScriptManager.ScriptRunning}"
+-                    Classes.skua-primary="{Binding !ScriptManager.ScriptRunning}"
++                    Classes.skua-danger="{Binding ShownRunning}"
++                    Classes.skua-primary="{Binding !ShownRunning}"
+                     Height="32"
+                     Padding="8,0"
+                     HorizontalAlignment="Stretch"
+                     HorizontalContentAlignment="Center"
+-                    Command="{Binding ToggleScriptCommand}"
++                    Command="{Binding ToggleScriptForAccountCommand}"
+                     IsEnabled="{Binding ToggleScriptEnabled}">
+                 <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                     <materialIcons:MaterialIcon Kind="Play"
+                                                 Width="15" Height="15"
+                                                 VerticalAlignment="Center"
+-                                                IsVisible="{Binding !ScriptManager.ScriptRunning}" />
++                                                IsVisible="{Binding !ShownRunning}" />
+                     <materialIcons:MaterialIcon Kind="Stop"
+                                                 Width="15" Height="15"
+                                                 VerticalAlignment="Center"
+-                                                IsVisible="{Binding ScriptManager.ScriptRunning}" />
+-                    <TextBlock Text="{Binding ToggleScriptText}" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" />
++                                                IsVisible="{Binding ShownRunning}" />
++                    <TextBlock Text="{Binding ShownToggleText}" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" />
+                 </StackPanel>
+             </Button>
+             
+@@ -171,7 +189,7 @@
+                     HorizontalAlignment="Stretch"
+                     HorizontalContentAlignment="Center"
+                     Command="{Binding TogglePauseScriptCommand}"
+-                    IsEnabled="{Binding ScriptManager.ScriptRunning}">
++                    IsEnabled="{Binding CanPauseShown}">
+                 <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                     <materialIcons:MaterialIcon Kind="{Binding TogglePauseScriptIcon}" Width="15" Height="15" VerticalAlignment="Center" />
+                     <TextBlock Text="{Binding TogglePauseScriptText}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+@@ -223,4 +241,5 @@
+             </StackPanel>
+         </Button>
+     </Grid>
++    </DockPanel>
+ </UserControl>
+diff --git a/Skua.App.Avalonia/Views/ScriptLoaderView.axaml.cs b/Skua.App.Avalonia/Views/ScriptLoaderView.axaml.cs
+index f25d51d..e1ecce7 100644
+--- a/Skua.App.Avalonia/Views/ScriptLoaderView.axaml.cs
++++ b/Skua.App.Avalonia/Views/ScriptLoaderView.axaml.cs
+@@ -1,4 +1,5 @@
+ using Avalonia.Controls;
++using Skua.App.Avalonia.ViewModels;
+ using Avalonia.Interactivity;
+ 
+ namespace Skua.App.Avalonia.Views;
+@@ -8,6 +9,9 @@ public partial class ScriptLoaderView : UserControl
+     public ScriptLoaderView()
+     {
+         InitializeComponent();
++        // The open accounts (the Account drop-down) are only polled while this view is on screen.
++        AttachedToVisualTree += (_, _) => (DataContext as ScriptLoaderViewModel)?.SetAccountPolling(true);
++        DetachedFromVisualTree += (_, _) => (DataContext as ScriptLoaderViewModel)?.SetAccountPolling(false);
+     }
+ 
+     private async void CopyLog_Click(object? sender, RoutedEventArgs e)
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.ArmyOptions.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.ArmyOptions.cs
 new file mode 100644
-index 0000000..7417e7e
+index 0000000..a13ae13
 --- /dev/null
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.ArmyOptions.cs
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,113 @@
 +using Avalonia.Controls;
 +using Avalonia.Interactivity;
 +using Avalonia.Media;
@@ -4026,6 +5251,7 @@ index 0000000..7417e7e
 +        UpdateHeadlessIcons(states);
 +        UpdateDogNotices();
 +        UpdateLoadedScriptSummary();
++        UpdateFollowGroups();
 +        foreach (var item in MiscOptionsMenu.Items.OfType<MenuItem>())
 +        {
 +            string name = item.Tag?.ToString() ?? "";
@@ -4077,10 +5303,10 @@ index 0000000..7417e7e
 +}
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.DogNotices.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.DogNotices.cs
 new file mode 100644
-index 0000000..2b47b9b
+index 0000000..b9f9b11
 --- /dev/null
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.DogNotices.cs
-@@ -0,0 +1,189 @@
+@@ -0,0 +1,203 @@
 +using Avalonia;
 +using Avalonia.Controls;
 +using Avalonia.Layout;
@@ -4141,18 +5367,32 @@ index 0000000..2b47b9b
 +            rows.Add((info.Title?.Text ?? $"Client {info.Process.Id}", script));
 +        }
 +
-+        string summary;
-+        if (rows.Count == 0 || rows.Any(r => r.Script is null))
-+            summary = "Unknown (no recent report)";
-+        else
-+        {
-+            var distinct = rows.Select(r => r.Script!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-+            summary = distinct.Count == 1
-+                ? (distinct[0].Length == 0 ? "None loaded" : $"All the same · {distinct[0]}")
-+                : $"Mixed · {distinct.Count} different";
-+        }
++        string summary = SummarizeScripts(rows.Select(r => r.Script).ToList());
 +        MenuLoadedScript.Header = $"Loaded script: {summary}";
 +        ToolTip.SetTip(MenuLoadedScript, rows.Count == 0 ? null : string.Join("\n", rows.Select(r => $"{r.Account}: {(r.Script is null ? "no recent report" : r.Script.Length == 0 ? "none" : r.Script)}")));
++    }
++
++    /// <summary>
++    /// The text of the "Loaded script" line from each client's script (null: no recent report, empty: none loaded):
++    /// "All the same · Farm.cs", "2 accounts same, 4 none", "Mixed · 2 different, 1 none". A client with no script is counted as
++    /// "none" instead of making every other client "mixed". Same wording as the Rust client.
++    /// </summary>
++    internal static string SummarizeScripts(IReadOnlyList<string?> scripts)
++    {
++        if (scripts.Count == 0 || scripts.Any(s => s is null))
++            return "Unknown (no recent report)";
++
++        int none = scripts.Count(s => s!.Length == 0);
++        var loaded = scripts.Where(s => s!.Length > 0).Select(s => s!).ToList();
++        var kinds = loaded.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
++        string tail = none > 0 ? $", {none} none" : "";
++        if (kinds.Count == 0)
++            return "None loaded";
++        if (kinds.Count > 1)
++            return $"Mixed · {kinds.Count} different{tail}";
++        if (none == 0)
++            return $"All the same · {kinds[0]}";
++        return loaded.Count == 1 ? $"1 account with a script{tail}" : $"{loaded.Count} accounts same{tail}";
 +    }
 +
 +    private sealed record DogLine(int Pid, string Account, DogNoticeData Notice, string Text);
@@ -4270,8 +5510,255 @@ index 0000000..2b47b9b
 +        ToolTip.SetTip(icon, info.DogPhase switch { DogPhase.Working => "Logging back in", DogPhase.Failed => "Could not log back in", _ => info.Headless ? "Headless" : null });
 +    }
 +}
+diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.FollowGroups.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.FollowGroups.cs
+new file mode 100644
+index 0000000..a56852c
+--- /dev/null
++++ b/Skua.App.Avalonia/Views/TabbedHostWindow.FollowGroups.cs
+@@ -0,0 +1,241 @@
++using Avalonia;
++using Avalonia.Controls;
++using Avalonia.Media;
++using Skua.Core.Models;
++using System;
++using System.Collections.Generic;
++using System.Diagnostics;
++using System.IO;
++using System.Linq;
++
++namespace Skua.App.Avalonia.Views;
++
++/// <summary>
++/// Tabs of accounts that follow another account stand together under one colour, like a browser's tab groups: the group's tabs are
++/// brought next to each other (the master first) and the whole tab takes the group's colour; the master wears a crown over its icon.
++/// Who follows whom comes from the status files the Butler writes (%APPDATA%\Skua\character_locations\{name}_butlerv5).
++/// Same rules as the Rust client.
++/// </summary>
++internal static class FollowGroups
++{
++    internal sealed record Group(string Master, int? MasterTab, List<int> Tabs)
++    {
++        public int Followers => Tabs.Count - (MasterTab.HasValue ? 1 : 0);
++    }
++
++    /// <summary>Follower name to the master it follows, from the status files of accounts that are logged in and whose client runs.</summary>
++    internal static Dictionary<string, string> ReadFollowMap(string directory)
++    {
++        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
++        try
++        {
++            if (!Directory.Exists(directory))
++                return map;
++            foreach (string file in Directory.EnumerateFiles(directory, "*_butlerv5"))
++            {
++                try
++                {
++                    string username = "", following = "";
++                    bool loggedIn = false;
++                    int pid = 0;
++                    foreach (string raw in File.ReadAllLines(file))
++                    {
++                        int eq = raw.IndexOf('=');
++                        if (eq <= 0)
++                            continue;
++                        string key = raw[..eq].Trim().ToLowerInvariant(), value = raw[(eq + 1)..].Trim();
++                        switch (key)
++                        {
++                            case "username": username = value; break;
++                            case "following": following = value; break;
++                            case "loggedin": loggedIn = value == "1"; break;
++                            case "pid": int.TryParse(value, out pid); break;
++                        }
++                    }
++                    if (username.Length > 0 && following.Length > 0 && loggedIn && !following.Equals(username, StringComparison.OrdinalIgnoreCase) && IsRunning(pid))
++                        map[username] = following;
++                }
++                catch { }
++            }
++        }
++        catch { }
++        return map;
++    }
++
++    private static bool IsRunning(int pid)
++    {
++        try
++        {
++            using Process p = Process.GetProcessById(pid);
++            return !p.HasExited;
++        }
++        catch { return false; }
++    }
++
++    /// <summary>The groups among the tabs; <paramref name="names"/> is the account name of each tab.</summary>
++    internal static List<Group> Build(IReadOnlyList<string> names, IReadOnlyDictionary<string, string> follows)
++    {
++        var found = new List<(string Master, List<int> Tabs)>();
++        var indexOf = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
++        for (int tab = 0; tab < names.Count; tab++)
++        {
++            string name = names[tab].Trim();
++            if (name.Length == 0 || !follows.TryGetValue(name, out string? master))
++                continue;
++            if (!indexOf.TryGetValue(master, out int at))
++            {
++                at = found.Count;
++                indexOf[master] = at;
++                found.Add((master, new List<int>()));
++            }
++            found[at].Tabs.Add(tab);
++        }
++        var groups = new List<Group>();
++        foreach ((string master, List<int> tabs) in found)
++        {
++            int masterTab = names.ToList().FindIndex(n => n.Trim().Equals(master, StringComparison.OrdinalIgnoreCase));
++            if (masterTab >= 0 && !tabs.Contains(masterTab))
++            {
++                tabs.Add(masterTab);
++                tabs.Sort();
++                groups.Add(new Group(master, masterTab, tabs));
++            }
++            else
++                groups.Add(new Group(master, null, tabs));
++        }
++        return groups;
++    }
++
++    /// <summary>The order that puts every group together: the master first, then its followers; a group stands where its first tab was.</summary>
++    internal static List<int> GroupedOrder(int count, IReadOnlyList<Group> groups)
++    {
++        var placed = new bool[count];
++        var order = new List<int>(count);
++        for (int tab = 0; tab < count; tab++)
++        {
++            if (placed[tab])
++                continue;
++            Group? group = groups.FirstOrDefault(g => g.Tabs.Contains(tab));
++            if (group is null)
++            {
++                placed[tab] = true;
++                order.Add(tab);
++                continue;
++            }
++            var members = group.Tabs.ToList();
++            if (group.MasterTab is int m)
++            {
++                members.Remove(m);
++                members.Insert(0, m);
++            }
++            foreach (int t in members.Where(t => !placed[t]))
++            {
++                placed[t] = true;
++                order.Add(t);
++            }
++        }
++        return order;
++    }
++
++    internal static string Signature(IReadOnlyList<string> names, IReadOnlyList<Group> groups) =>
++        string.Join("|", groups.Select(g => $"{g.Master.ToLowerInvariant()}:{string.Join(",", g.Tabs.Select(t => names[t].ToLowerInvariant()))}"));
++
++    private static readonly Color[] Palette =
++    {
++        Color.Parse("#60A5FA"), Color.Parse("#34D399"), Color.Parse("#FBBF24"), Color.Parse("#F472B6"),
++        Color.Parse("#A78BFA"), Color.Parse("#FB923C"), Color.Parse("#2DD4BF"), Color.Parse("#F87171"),
++    };
++
++    /// <summary>The colour of a group: the same master always gets the same one.</summary>
++    internal static Color ColorFor(string master)
++    {
++        uint hash = 7;
++        foreach (char c in master.Trim().ToLowerInvariant())
++            hash = unchecked(hash * 31 + (uint)c);
++        return Palette[hash % Palette.Length];
++    }
++}
++
++public partial class TabbedHostWindow
++{
++    private IReadOnlyDictionary<string, string> _follows = new Dictionary<string, string>();
++    private DateTime _followsRead = DateTime.MinValue;
++    private string _followSignature = "";
++    private int _followTabCount = -1;
++
++    private void UpdateFollowGroups()
++    {
++        if ((DateTime.UtcNow - _followsRead).TotalSeconds >= 2)
++        {
++            _followsRead = DateTime.UtcNow;
++            _follows = FollowGroups.ReadFollowMap(System.IO.Path.Combine(ClientFileSources.LegacySkuaDIR, "character_locations"));
++        }
++
++        List<TabItem> tabs = InstancesTabControl.Items.OfType<TabItem>().Where(_tabs.ContainsKey).ToList();
++        List<string> names = tabs.Select(t => _tabs[t].AccountOrderKey).ToList();
++        List<FollowGroups.Group> groups = FollowGroups.Build(names, _follows);
++        string signature = FollowGroups.Signature(names, groups);
++        // Brought together once when the grouping or the set of tabs changes, so a tab dragged away is left where it was put.
++        if (signature != _followSignature || tabs.Count != _followTabCount)
++        {
++            _followSignature = signature;
++            _followTabCount = tabs.Count;
++            if (BringGroupsTogether(tabs, groups))
++            {
++                tabs = InstancesTabControl.Items.OfType<TabItem>().Where(_tabs.ContainsKey).ToList();
++                names = tabs.Select(t => _tabs[t].AccountOrderKey).ToList();
++                groups = FollowGroups.Build(names, _follows);
++            }
++        }
++        ApplyGroupLook(tabs, groups);
++    }
++
++    private bool BringGroupsTogether(List<TabItem> tabs, List<FollowGroups.Group> groups)
++    {
++        List<int> want = FollowGroups.GroupedOrder(tabs.Count, groups);
++        if (want.SequenceEqual(Enumerable.Range(0, tabs.Count)))
++            return false;
++        object? selected = InstancesTabControl.SelectedItem;
++        _ignoreSelectionChange = true;
++        try
++        {
++            foreach (TabItem tab in tabs)
++                InstancesTabControl.Items.Remove(tab);
++            foreach (int index in want)
++                InstancesTabControl.Items.Add(tabs[index]);
++            InstancesTabControl.SelectedItem = selected;
++        }
++        finally { _ignoreSelectionChange = false; }
++        _lastActiveHwnd = IntPtr.Zero;
++        _lastGridViewState = !_isGridViewEnabled;
++        DoReposition();
++        return true;
++    }
++
++    private void ApplyGroupLook(List<TabItem> tabs, List<FollowGroups.Group> groups)
++    {
++        for (int i = 0; i < tabs.Count; i++)
++        {
++            TabInfo info = _tabs[tabs[i]];
++            if (info.HeaderPanel is null)
++                continue;
++            FollowGroups.Group? crowned = groups.FirstOrDefault(g => g.MasterTab == i && g.Followers > 0);
++            if (info.Crown is not null)
++                info.Crown.IsVisible = crowned is not null;
++            FollowGroups.Group? group = groups.FirstOrDefault(g => g.Tabs.Contains(i));
++            if (group is null)
++            {
++                tabs[i].Classes.Set("follow-group", false);
++                ToolTip.SetTip(info.HeaderPanel, null);
++                continue;
++            }
++            // The whole tab takes the group's colour: the style in TabbedHostWindow.axaml reads these resources from the tab.
++            Color color = FollowGroups.ColorFor(group.Master);
++            tabs[i].Resources["FollowGroupBrush"] = new SolidColorBrush(color, 0.30);
++            tabs[i].Resources["FollowGroupHoverBrush"] = new SolidColorBrush(color, 0.42);
++            tabs[i].Resources["FollowGroupSelectedBrush"] = new SolidColorBrush(color, 0.36);
++            tabs[i].Classes.Set("follow-group", true);
++            ToolTip.SetTip(info.HeaderPanel, group.MasterTab == i ? $"Leading {group.Followers} follower(s)" : $"Following {group.Master}");
++        }
++    }
++}
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
-index 3f06f05..dd33a5e 100644
+index 9b6be87..cad1519 100644
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
 @@ -7,15 +7,15 @@
@@ -4293,10 +5780,21 @@ index 3f06f05..dd33a5e 100644
  
          <!-- Top Tab Bar & Army Bar -->
          <Border Grid.Row="1"
-@@ -101,6 +101,17 @@
+@@ -101,6 +101,28 @@
                                  <Style Selector="TabControl /template/ Rectangle#PART_Separator">
                                      <Setter Property="IsVisible" Value="False" />
                                  </Style>
++                                <!-- Tabs of a follow group (see FollowGroups.cs): the whole tab takes the group's colour, which each tab
++                                     carries as its own resources. These come after the selected and hover styles so they win. -->
++                                <Style Selector="TabItem.follow-group /template/ Border#PART_LayoutRoot">
++                                    <Setter Property="Background" Value="{DynamicResource FollowGroupBrush}" />
++                                </Style>
++                                <Style Selector="TabItem.follow-group:pointerover /template/ Border#PART_LayoutRoot">
++                                    <Setter Property="Background" Value="{DynamicResource FollowGroupHoverBrush}" />
++                                </Style>
++                                <Style Selector="TabItem.follow-group:selected /template/ Border#PART_LayoutRoot">
++                                    <Setter Property="Background" Value="{DynamicResource FollowGroupSelectedBrush}" />
++                                </Style>
 +                                <Style Selector="TabItem.drag-source">
 +                                    <Setter Property="Opacity" Value="0.55" />
 +                                </Style>
@@ -4311,7 +5809,7 @@ index 3f06f05..dd33a5e 100644
                              </TabControl.Styles>
                              <TabControl.ItemsPanel>
                                  <ItemsPanelTemplate>
-@@ -179,6 +190,11 @@
+@@ -179,6 +201,11 @@
                                          <materialIcons:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14" />
                                      </MenuItem.Icon>
                                  </MenuItem>
@@ -4323,7 +5821,7 @@ index 3f06f05..dd33a5e 100644
                                  <MenuItem Header="Army Scheduler" Click="MenuItem_ArmyScheduler_Click">
                                      <MenuItem.Icon>
                                          <materialIcons:MaterialIcon Kind="CalendarClockOutline" Width="14" Height="14" />
-@@ -232,38 +248,38 @@
+@@ -237,38 +264,38 @@
                                      <MenuItem.Icon>
                                          <materialIcons:MaterialIcon Kind="TuneVariant" Width="14" Height="14" />
                                      </MenuItem.Icon>
@@ -4370,7 +5868,47 @@ index 3f06f05..dd33a5e 100644
                                          <MenuItem.Icon>
                                              <materialIcons:MaterialIcon Kind="Broadcast" Width="14" Height="14" />
                                          </MenuItem.Icon>
-@@ -293,8 +309,11 @@
+@@ -294,12 +321,51 @@
+                             <TextBlock x:Name="GridViewText" Text="Grid View" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource SkuaTextBrush}" VerticalAlignment="Center" />
+                         </StackPanel>
+                     </Border>
++
++                    <!-- Size the game is played at while one account is shown (Grid View off): Auto fills the window. Click to change. -->
++                    <Border x:Name="GameSizeBorder"
++                            Cursor="Hand"
++                            Height="28"
++                            BorderThickness="1"
++                            BorderBrush="{DynamicResource SkuaBorderBrush}"
++                            Background="{DynamicResource SkuaSurfaceAltBrush}"
++                            CornerRadius="6"
++                            Padding="8,0"
++                            Margin="4,0,0,0"
++                            VerticalAlignment="Center"
++                            PointerPressed="GameSizeBorder_PointerPressed">
++                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
++                            <materialIcons:MaterialIcon Kind="ResizeBottomRight" Width="14" Height="14" Foreground="{DynamicResource SkuaTextBrush}" VerticalAlignment="Center" />
++                            <TextBlock x:Name="GameSizeText" Text="Size: Auto" FontSize="12" Foreground="{DynamicResource SkuaMutedTextBrush}" VerticalAlignment="Center" />
++                        </StackPanel>
++                    </Border>
++                    <!-- How Grid View lays the accounts out: Auto, stacked vertically, side by side. Click to change. -->
++                    <Border x:Name="GridLayoutBorder"
++                            IsVisible="False"
++                            Cursor="Hand"
++                            Height="28"
++                            BorderThickness="1"
++                            BorderBrush="{DynamicResource SkuaBorderBrush}"
++                            Background="{DynamicResource SkuaSurfaceAltBrush}"
++                            CornerRadius="6"
++                            Padding="8,0"
++                            Margin="4,0,0,0"
++                            VerticalAlignment="Center"
++                            PointerPressed="GridLayoutBorder_PointerPressed">
++                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
++                            <materialIcons:MaterialIcon x:Name="GridLayoutIcon" Kind="ViewDashboardOutline" Width="14" Height="14" Foreground="{DynamicResource SkuaTextBrush}" VerticalAlignment="Center" />
++                            <TextBlock x:Name="GridLayoutText" Text="Auto" FontSize="12" Foreground="{DynamicResource SkuaMutedTextBrush}" VerticalAlignment="Center" />
++                        </StackPanel>
++                    </Border>
+                 </StackPanel>
              </Grid>
          </Border>
          
@@ -4384,10 +5922,10 @@ index 3f06f05..dd33a5e 100644
                  <TextBlock Text="Loading Game Instance..." Foreground="{DynamicResource SkuaTextBrush}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,6" />
                  <TextBlock Text="Please wait while the game client initializes" Foreground="{DynamicResource SkuaMutedTextBrush}" FontSize="12" HorizontalAlignment="Center" />
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
-index 40cc187..0884240 100644
+index b76adc5..116678d 100644
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
-@@ -46,6 +46,11 @@ public partial class TabbedHostWindow : Window
+@@ -47,6 +47,11 @@ public partial class TabbedHostWindow : Window
      private const int WM_SKUA_CHILD_READY = 0x0400 + 440;
      private const int WM_SKUA_CHILD_DPICHANGED = 0x0400 + 441;
  
@@ -4399,7 +5937,7 @@ index 40cc187..0884240 100644
      [DllImport("user32.dll", SetLastError = true)]
      public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
  
-@@ -222,7 +227,17 @@ public partial class TabbedHostWindow : Window
+@@ -223,7 +228,21 @@ public partial class TabbedHostWindow : Window
          public Process Process { get; set; } = null!;
          public IntPtr ChildHwnd { get; set; } = IntPtr.Zero;
          public bool IsThrottled { get; set; } = false;
@@ -4414,25 +5952,30 @@ index 40cc187..0884240 100644
 +        public string? IconKey { get; set; }
          public bool IsCustomNamed { get; set; } = false;
 +        public string AccountOrderKey { get; set; } = "";
++        // The tab header, for the tooltip of a follow group (see FollowGroups.cs).
++        public StackPanel? HeaderPanel { get; set; }
++        // The crown over the icon of the account the others follow.
++        public MaterialIcon? Crown { get; set; }
      }
  
      private readonly string[] _initialArgs;
-@@ -301,7 +316,13 @@ public partial class TabbedHostWindow : Window
+@@ -330,8 +349,14 @@ public partial class TabbedHostWindow : Window
      {
          _initialArgs = initialArgs ?? Array.Empty<string>();
          InitializeComponent();
--        Title = $"VibeSkua V{Skua.Core.Models.ClientFileSources.DisplayVersion}";
 +#if UI_PROFILE
 +        UiStallProfiler.Start(this, "host");
 +#endif
 +        // Keep Windows from going to sleep while the army runs (the screen may still turn off). Lasts as
 +        // long as this window's thread does.
 +        try { SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED); } catch { }
+         LoadArmyJumpSettings();
+-        Title = $"VibeSkua V{Skua.Core.Models.ClientFileSources.DisplayVersion}";
 +        Title = $"VibeSkuffle V{Skua.Core.Models.ClientFileSources.DisplayVersion}";
          MainTitleBar.TitleText = Title;
  
          try
-@@ -326,8 +347,7 @@ public partial class TabbedHostWindow : Window
+@@ -356,8 +381,7 @@ public partial class TabbedHostWindow : Window
          catch { }
  
          var options = Ioc.Default.GetRequiredService<IScriptOption>();
@@ -4442,7 +5985,7 @@ index 40cc187..0884240 100644
  
          Opened += TabbedHostWindow_Opened;
          PositionChanged += (s, e) => OnWindowPositionChanged(e.Point);
-@@ -370,6 +390,11 @@ public partial class TabbedHostWindow : Window
+@@ -400,6 +424,15 @@ public partial class TabbedHostWindow : Window
          titleSyncTimer.Tick += (s, e) => SyncTabTitles();
          titleSyncTimer.Start();
  
@@ -4451,10 +5994,14 @@ index 40cc187..0884240 100644
 +        summaryTimer.Tick += (s, e) => System.Threading.Tasks.Task.Run(Skua.Core.Services.VibeAlerts.DailySummaryTick);
 +        summaryTimer.Start();
 +
++        _gridLayout = NormalGridLayout(Ioc.Default.GetService<ISettingsService>()?.Get("VibeSkuffleGridLayout", "auto"));
++        UpdateGridLayoutButton();
++        _gameSize = ParseGameSize(Ioc.Default.GetService<ISettingsService>()?.Get("VibeSkuffleGameSize", "auto"));
++        UpdateGameSizeButton();
          GridViewBorder.PointerEntered += GridViewBorder_PointerEntered;
          GridViewBorder.PointerExited += GridViewBorder_PointerExited;
          GlobeBorder.PointerEntered += GlobeBorder_PointerEntered;
-@@ -419,7 +444,7 @@ public partial class TabbedHostWindow : Window
+@@ -462,7 +495,7 @@ public partial class TabbedHostWindow : Window
  
                          if (tab.Header is StackPanel headerPanel)
                          {
@@ -4463,7 +6010,7 @@ index 40cc187..0884240 100644
                              var editBox = headerPanel.Children.OfType<TextBox>().FirstOrDefault();
                              if (titleBlock != null && (titleBlock.Text.StartsWith("User ") || titleBlock.Text.StartsWith("Skua ") || titleBlock.Text != username))
                              {
-@@ -441,6 +466,7 @@ public partial class TabbedHostWindow : Window
+@@ -484,6 +517,7 @@ public partial class TabbedHostWindow : Window
          if (_hostHwnd != IntPtr.Zero)
          {
              HotKeys.HostHwnd = _hostHwnd;
@@ -4471,7 +6018,7 @@ index 40cc187..0884240 100644
              _subclassProc = HostWindowSubclassProc;
              SetWindowSubclass(_hostHwnd, _subclassProc, 1, IntPtr.Zero);
          }
-@@ -570,6 +596,18 @@ public partial class TabbedHostWindow : Window
+@@ -613,6 +647,18 @@ public partial class TabbedHostWindow : Window
              }
          }
  
@@ -4490,7 +6037,7 @@ index 40cc187..0884240 100644
          if (uMsg == WM_SKUA_CHILD_READY)
          {
              IntPtr childHwnd = wParam;
-@@ -648,6 +686,8 @@ public partial class TabbedHostWindow : Window
+@@ -691,6 +737,8 @@ public partial class TabbedHostWindow : Window
  
      private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
      {
@@ -4499,7 +6046,7 @@ index 40cc187..0884240 100644
          _isClosing = true;
          App.DisposeTrayIcon();
          try { _pipeCts.Cancel(); } catch { }
-@@ -852,6 +892,31 @@ public partial class TabbedHostWindow : Window
+@@ -898,6 +946,31 @@ public partial class TabbedHostWindow : Window
      private const int WM_SKUA_JUMP_MAP = 0x0400 + 449;
      private const int WM_SKUA_SET_OPTION = 0x0400 + 450;
      private const int WM_SKUA_THROTTLE = 0x0400 + 452;
@@ -4531,7 +6078,7 @@ index 40cc187..0884240 100644
      private const int WM_SKUA_LOAD_SCRIPT = 0x0400 + 453;
      private const int WM_SKUA_ARMY_SCHEDULER = 0x0400 + 454;
      private const int WM_SKUA_ARMY_SCHEDULER_STOP = 0x0400 + 455;
-@@ -928,6 +993,23 @@ public partial class TabbedHostWindow : Window
+@@ -974,6 +1047,23 @@ public partial class TabbedHostWindow : Window
  
      private bool _ignoreSelectionChange = false;
  
@@ -4555,7 +6102,95 @@ index 40cc187..0884240 100644
      public void EnterGridView()
      {
          if (_tabs.Count <= 1 || _isTogglingGridView) return;
-@@ -1261,18 +1343,23 @@ public partial class TabbedHostWindow : Window
+@@ -1049,6 +1139,87 @@ public partial class TabbedHostWindow : Window
+         }
+     }
+ 
++    // How Grid View arranges the accounts: "auto" (a near-square grid), "vertical" (one column: two accounts stack top and
++    // bottom) or "horizontal" (one row: side by side). Kept in the settings.
++    private string _gridLayout = "auto";
++
++    private static string NormalGridLayout(string? value) => value is "vertical" or "horizontal" ? value : "auto";
++
++    private static (int Cols, int Rows) GridShape(string layout, int n)
++    {
++        switch (layout)
++        {
++            case "vertical": return (1, Math.Max(n, 1));
++            case "horizontal": return (Math.Max(n, 1), 1);
++            default:
++                int cols = (int)Math.Ceiling(Math.Sqrt(n));
++                return (cols, (int)Math.Ceiling((double)n / cols));
++        }
++    }
++
++    // The size (pixels) the game is played at while one account is shown: null fills the window. The Size button steps through
++    // these; the game is centred and shrunk (same shape) when the window is smaller. Kept in the settings.
++    private static readonly (int W, int H)[] GameSizes = { (640, 367), (960, 550), (1280, 720), (1600, 900), (1920, 1080) };
++    private (int W, int H)? _gameSize;
++
++    private static (int W, int H)? ParseGameSize(string? value)
++    {
++        string[] parts = (value ?? "").Split('x');
++        if (parts.Length == 2 && int.TryParse(parts[0], out int w) && int.TryParse(parts[1], out int h)
++            && w is >= 320 and <= 7680 && h is >= 180 and <= 4320)
++            return (w, h);
++        return null;
++    }
++
++    private static (int X, int Y, int W, int H) FitGameSize(int x, int y, int w, int h, (int W, int H)? size)
++    {
++        if (size is not { } s || w <= 0 || h <= 0)
++            return (x, y, w, h);
++        double shrink = Math.Min(1.0, Math.Min((double)w / s.W, (double)h / s.H));
++        int gw = Math.Max((int)(s.W * shrink), 1), gh = Math.Max((int)(s.H * shrink), 1);
++        return (x + (w - gw) / 2, y + (h - gh) / 2, gw, gh);
++    }
++
++    private void UpdateGameSizeButton()
++    {
++        GameSizeText.Text = _gameSize is { } s ? $"Size: {s.W}x{s.H}" : "Size: Auto";
++        ToolTip.SetTip(GameSizeBorder, _gameSize is { } t
++            ? $"Game size: {t.W} x {t.H}. Click for the next size."
++            : "Game size: fills the window. Click to play at a fixed size (centred, never larger than the window).");
++    }
++
++    private void GameSizeBorder_PointerPressed(object? sender, PointerPressedEventArgs e)
++    {
++        int next = _gameSize is { } s ? Array.IndexOf(GameSizes, s) + 1 : 0;
++        _gameSize = next < GameSizes.Length ? GameSizes[next] : null;
++        Ioc.Default.GetService<ISettingsService>()?.Set("VibeSkuffleGameSize", _gameSize is { } g ? $"{g.W}x{g.H}" : "auto");
++        UpdateGameSizeButton();
++        _lastX = int.MinValue; // forces the game to be placed again
++        DoReposition();
++    }
++
++    private void UpdateGridLayoutButton()
++    {
++        (string text, MaterialIconKind icon, string tip) = _gridLayout switch
++        {
++            "vertical" => ("Stacked", MaterialIconKind.ViewAgendaOutline, "Grid View layout: stacked top to bottom. Click for side by side."),
++            "horizontal" => ("Side by side", MaterialIconKind.ViewColumnOutline, "Grid View layout: side by side. Click for automatic."),
++            _ => ("Auto", MaterialIconKind.ViewDashboardOutline, "Grid View layout: automatic grid. Click to stack the accounts top to bottom."),
++        };
++        GridLayoutText.Text = text;
++        GridLayoutIcon.Kind = icon;
++        ToolTip.SetTip(GridLayoutBorder, tip);
++    }
++
++    private void GridLayoutBorder_PointerPressed(object? sender, PointerPressedEventArgs e)
++    {
++        _gridLayout = _gridLayout switch { "auto" => "vertical", "vertical" => "horizontal", _ => "auto" };
++        Ioc.Default.GetService<ISettingsService>()?.Set("VibeSkuffleGridLayout", _gridLayout);
++        UpdateGridLayoutButton();
++        if (_isGridViewEnabled)
++            DoReposition();
++    }
++
+     private void GridViewBorder_PointerPressed(object? sender, PointerPressedEventArgs e)
+     {
+         e.Handled = true;
+@@ -1310,18 +1481,23 @@ public partial class TabbedHostWindow : Window
          string originalHeader = menuItem?.Header?.ToString() ?? "Login All Clients";
          if (menuItem != null) menuItem.IsEnabled = false;
  
@@ -4589,17 +6224,19 @@ index 40cc187..0884240 100644
          }
  
          if (menuItem != null)
-@@ -1303,7 +1390,8 @@ public partial class TabbedHostWindow : Window
-             string[] parts = (vm.DialogTextInput ?? "").Split(',');
-             string targetMap = parts.Length > 0 ? parts[0].Trim() : "";
-             string targetCell = parts.Length > 1 ? parts[1].Trim() : "Enter";
--            if (!string.IsNullOrWhiteSpace(targetMap) || !string.IsNullOrWhiteSpace(targetCell))
-+            // A map is required (an empty box used to send everyone to ",Enter" and remember that).
-+            if (!string.IsNullOrWhiteSpace(targetMap))
-             {
-                 _lastJumpMap = targetMap;
-                 _lastJumpCell = targetCell;
-@@ -1522,6 +1610,23 @@ public partial class TabbedHostWindow : Window
+@@ -2121,6 +2297,11 @@ public partial class TabbedHostWindow : Window
+ 
+     private void UpdateGridViewBorderColor()
+     {
++        // The layout button only shows while Grid View is on.
++        if (GridLayoutBorder != null)
++            GridLayoutBorder.IsVisible = _isGridViewEnabled;
++        if (GameSizeBorder != null)
++            GameSizeBorder.IsVisible = !_isGridViewEnabled;
+         if (_isGridViewEnabled)
+         {
+             GridViewBorder[!Border.BackgroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("SkuaSelectionBrush");
+@@ -2270,6 +2451,23 @@ public partial class TabbedHostWindow : Window
          }, DispatcherPriority.Render);
      }
  
@@ -4623,7 +6260,7 @@ index 40cc187..0884240 100644
      private void DoReposition()
      {
          if (!IsLoaded || _isClosing || _isDraggingWindow) return;
-@@ -1554,9 +1659,19 @@ public partial class TabbedHostWindow : Window
+@@ -2302,9 +2500,19 @@ public partial class TabbedHostWindow : Window
  
              if (WindowState == WindowState.Minimized || !IsVisible)
              {
@@ -4646,12 +6283,15 @@ index 40cc187..0884240 100644
                  return;
              }
  
-@@ -1615,24 +1730,26 @@ public partial class TabbedHostWindow : Window
+@@ -2361,26 +2569,27 @@ public partial class TabbedHostWindow : Window
+             if (_isGridViewEnabled)
+             {
                  int n = activeWindows.Count;
-                 int cols = (int)Math.Ceiling(Math.Sqrt(n));
-                 int rows = (int)Math.Ceiling((double)n / cols);
+-                int cols = (int)Math.Ceiling(Math.Sqrt(n));
+-                int rows = (int)Math.Ceiling((double)n / cols);
 -                int cellW = w / cols;
 -                int cellH = h / rows;
++                (int cols, int rows) = GridShape(_gridLayout, n);
 +
 +                TabInfo? gridSelected = null;
 +                if (selectedTab != null)
@@ -4682,16 +6322,40 @@ index 40cc187..0884240 100644
                      if (activeWindows[i].IsThrottled)
                      {
                          activeWindows[i].IsThrottled = false;
-@@ -1677,6 +1794,8 @@ public partial class TabbedHostWindow : Window
+@@ -2408,23 +2617,26 @@ public partial class TabbedHostWindow : Window
+                 }
+                 HotKeys.ActiveChildHwnd = activeChildHwnd;
+ 
+-                if (x == _lastX && y == _lastY && w == _lastW && h == _lastH &&
++                (int gameX, int gameY, int gameW, int gameH) = FitGameSize(x, y, w, h, _gameSize);
++                if (gameX == _lastX && gameY == _lastY && gameW == _lastW && gameH == _lastH &&
+                     activeChildHwnd == _lastActiveHwnd && _lastGridViewState == _isGridViewEnabled)
                  {
-                     SetWindowPos(activeChildHwnd, IntPtr.Zero, x, y, w, h, baseFlags);
+                     return;
+                 }
+ 
+-                _lastX = x;
+-                _lastY = y;
+-                _lastW = w;
+-                _lastH = h;
++                _lastX = gameX;
++                _lastY = gameY;
++                _lastW = gameW;
++                _lastH = gameH;
+                 _lastActiveHwnd = activeChildHwnd;
+                 _lastGridViewState = false;
+ 
+                 if (activeChildHwnd != IntPtr.Zero)
+                 {
+-                    SetWindowPos(activeChildHwnd, IntPtr.Zero, x, y, w, h, baseFlags);
++                    SetWindowPos(activeChildHwnd, IntPtr.Zero, gameX, gameY, gameW, gameH, baseFlags);
                      ShowWindow(activeChildHwnd, SW_SHOW);
 +                    if (activeInfo != null)
 +                        PostVisibility(activeInfo, 0);
                      if (activeInfo != null && activeInfo.IsThrottled)
                      {
                          activeInfo.IsThrottled = false;
-@@ -1691,6 +1810,8 @@ public partial class TabbedHostWindow : Window
+@@ -2439,6 +2651,8 @@ public partial class TabbedHostWindow : Window
                      TabInfo info = kvp.Value;
                      if (info.ChildHwnd == IntPtr.Zero) continue;
  
@@ -4700,7 +6364,7 @@ index 40cc187..0884240 100644
                      if (!info.IsThrottled)
                      {
                          info.IsThrottled = true;
-@@ -1811,6 +1932,86 @@ public partial class TabbedHostWindow : Window
+@@ -2559,6 +2773,86 @@ public partial class TabbedHostWindow : Window
              InstancesTabControl.SelectedItem = remaining;
      }
  
@@ -4787,7 +6451,7 @@ index 40cc187..0884240 100644
      public void AddNewInstance(string rawArgs)
      {
          AddNewInstance(ParseRawCommandLine(rawArgs));
-@@ -1824,7 +2025,7 @@ public partial class TabbedHostWindow : Window
+@@ -2572,7 +2866,7 @@ public partial class TabbedHostWindow : Window
          var currentTitles = InstancesTabControl.Items.OfType<TabItem>()
              .Select(t => t.Header as StackPanel)
              .Where(p => p != null)
@@ -4796,7 +6460,7 @@ index 40cc187..0884240 100644
              .Where(t => t != null && (t.StartsWith("User ") || t.StartsWith("Skua ")))
              .Select(t =>
              {
-@@ -1901,27 +2102,29 @@ public partial class TabbedHostWindow : Window
+@@ -2649,27 +2943,45 @@ public partial class TabbedHostWindow : Window
              CornerRadius = new CornerRadius(9),
              VerticalAlignment = VerticalAlignment.Center
          };
@@ -4820,7 +6484,24 @@ index 40cc187..0884240 100644
 +        ToolTip.SetTip(closeBtn, "Close account tab");
 +        closeBtn.Child = closeIcon;
  
-         headerPanel.Children.Add(tabIcon);
+-        headerPanel.Children.Add(tabIcon);
++        // The icon sits in a grid so the account that is followed can wear a crown above it.
++        MaterialIcon crown = new MaterialIcon
++        {
++            Kind = MaterialIconKind.Crown,
++            Width = 10,
++            Height = 10,
++            IsVisible = false,
++            IsHitTestVisible = false,
++            HorizontalAlignment = HorizontalAlignment.Center,
++            VerticalAlignment = VerticalAlignment.Top,
++            Margin = new Thickness(0, -8, 6, 0),
++            Foreground = new SolidColorBrush(Color.Parse("#FBBF24")),
++        };
++        Grid iconHost = new Grid { VerticalAlignment = VerticalAlignment.Center };
++        iconHost.Children.Add(tabIcon);
++        iconHost.Children.Add(crown);
++        headerPanel.Children.Add(iconHost);
          headerPanel.Children.Add(editTitle);
          headerPanel.Children.Add(title);
          headerPanel.Children.Add(closeBtn);
@@ -4833,12 +6514,12 @@ index 40cc187..0884240 100644
 +        closeBtn.PointerEntered += (s, ev) => { closeIcon.Foreground = Brushes.White; closeBtn.Background = new SolidColorBrush(Color.Parse("#EF4444")); };
 +        closeBtn.PointerExited += (s, ev) => { closeIcon[!MaterialIcon.ForegroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("SkuaMutedTextBrush"); closeBtn.Background = Brushes.Transparent; };
 +        
-+        TabInfo info = new TabInfo { AccountOrderKey = AccountKey(clientArgs ?? Array.Empty<string>()), Icon = tabIcon, Title = title };
++        TabInfo info = new TabInfo { AccountOrderKey = AccountKey(clientArgs ?? Array.Empty<string>()), Icon = tabIcon, Title = title, HeaderPanel = headerPanel, Crown = crown };
 +        
          Action closeEditMode = () =>
          {
              if (!editTitle.IsVisible) return;
-@@ -1984,6 +2187,8 @@ public partial class TabbedHostWindow : Window
+@@ -2732,6 +3044,8 @@ public partial class TabbedHostWindow : Window
          }, DispatcherPriority.Background);
  
          _tabs[newTab] = info;
@@ -4847,7 +6528,7 @@ index 40cc187..0884240 100644
  
          EnqueueSpawn(() =>
          {
-@@ -2019,6 +2224,17 @@ public partial class TabbedHostWindow : Window
+@@ -2767,6 +3081,17 @@ public partial class TabbedHostWindow : Window
                  {
                      if (!_isClosing)
                      {
@@ -4865,7 +6546,7 @@ index 40cc187..0884240 100644
                          CloseTab(newTab);
                      }
                  });
-@@ -2043,13 +2259,9 @@ public partial class TabbedHostWindow : Window
+@@ -2791,13 +3116,9 @@ public partial class TabbedHostWindow : Window
              }
  
              info.Process = p;
@@ -4882,7 +6563,7 @@ index 40cc187..0884240 100644
              HotKeys.RegisterSkuaPid((uint)p.Id);
  
              int pid = p.Id;
-@@ -2113,6 +2325,26 @@ public partial class TabbedHostWindow : Window
+@@ -2861,6 +3182,26 @@ public partial class TabbedHostWindow : Window
          ContextMenu ctx = new ContextMenu();
          MenuItem closeItem = new MenuItem { Header = "Close Tab" };
          closeItem.Click += (s, ev) => CloseTab(newTab);
@@ -4909,7 +6590,7 @@ index 40cc187..0884240 100644
          MenuItem closeOthersItem = new MenuItem { Header = "Close Other Tabs" };
          closeOthersItem.Click += (s, ev) =>
          {
-@@ -2126,6 +2358,21 @@ public partial class TabbedHostWindow : Window
+@@ -2874,6 +3215,21 @@ public partial class TabbedHostWindow : Window
              var toRemove = InstancesTabControl.Items.OfType<TabItem>().Where((t, i) => i > idx && t.Header is StackPanel).ToList();
              foreach (var tab in toRemove) CloseTab(tab);
          };
@@ -4931,7 +6612,7 @@ index 40cc187..0884240 100644
          ctx.Items.Add(closeItem);
          ctx.Items.Add(closeOthersItem);
          ctx.Items.Add(closeRightItem);
-@@ -2151,7 +2398,16 @@ public partial class TabbedHostWindow : Window
+@@ -2899,7 +3255,16 @@ public partial class TabbedHostWindow : Window
          newTab.ContextMenu = ctx;
  
          Point startPoint = new Point();
@@ -4949,7 +6630,7 @@ index 40cc187..0884240 100644
          {
              var prop = ev.GetCurrentPoint(headerPanel).Properties;
              if (prop.IsRightButtonPressed)
-@@ -2164,21 +2420,7 @@ public partial class TabbedHostWindow : Window
+@@ -2912,21 +3277,7 @@ public partial class TabbedHostWindow : Window
                  return;
  
              startPoint = ev.GetPosition(null);
@@ -4972,7 +6653,7 @@ index 40cc187..0884240 100644
              ev.Handled = true;
          };
  
-@@ -2192,8 +2434,8 @@ public partial class TabbedHostWindow : Window
+@@ -2940,8 +3291,8 @@ public partial class TabbedHostWindow : Window
  
          headerPanel.PointerMoved += async (s, ev) =>
          {
@@ -4983,7 +6664,7 @@ index 40cc187..0884240 100644
              if (ev.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
              {
                  Point mousePos = ev.GetPosition(null);
-@@ -2202,10 +2444,34 @@ public partial class TabbedHostWindow : Window
+@@ -2950,10 +3301,34 @@ public partial class TabbedHostWindow : Window
                  {
                      var dragData = new global::Avalonia.Input.DataObject();
                      dragData.Set("TabItem", newTab);
@@ -5019,7 +6700,7 @@ index 40cc187..0884240 100644
  
          newTab.AddHandler(DragDrop.DropEvent, (s, ev) =>
          {
-@@ -2214,10 +2480,24 @@ public partial class TabbedHostWindow : Window
+@@ -2962,10 +3337,24 @@ public partial class TabbedHostWindow : Window
                  TabItem? droppedTab = ev.Data.Get("TabItem") as TabItem;
                  if (droppedTab != null && droppedTab != newTab)
                  {
@@ -5047,7 +6728,7 @@ index 40cc187..0884240 100644
                  }
              }
          });
-@@ -2225,6 +2505,46 @@ public partial class TabbedHostWindow : Window
+@@ -2973,6 +3362,46 @@ public partial class TabbedHostWindow : Window
          #endregion Tab Interactions
      }
  
@@ -5094,7 +6775,7 @@ index 40cc187..0884240 100644
      #region Group Assignment Helper
  
      private string? GetTabLoggedInUsername(TabItem tab, TabInfo? info, string currentTitle)
-@@ -2382,4 +2702,4 @@ public partial class TabbedHostWindow : Window
+@@ -3130,4 +3559,4 @@ public partial class TabbedHostWindow : Window
      #endregion Group Assignment Helper
  
      #endregion Tab Management
@@ -6032,10 +7713,10 @@ index 640dc22..899ce00 100644
      private void PlayerDead(ScriptCombat recipient, PlayerDeathMessage message)
 diff --git a/Skua.Core/Scripts/ScriptDrop.ACBanking.cs b/Skua.Core/Scripts/ScriptDrop.ACBanking.cs
 new file mode 100644
-index 0000000..f3ab2fe
+index 0000000..662fb7a
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptDrop.ACBanking.cs
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,206 @@
 +using Skua.Core.Interfaces;
 +using Skua.Core.Models.Items;
 +
@@ -6090,7 +7771,7 @@ index 0000000..f3ab2fe
 +        {
 +            try
 +            {
-+                await Task.Delay(1000, token);
++                await Task.Delay(250, token);
 +                if (!Player.LoggedIn) continue;
 +                // Rejection is legal during combat and must never be blocked behind banking.
 +                if (Options.RejectNonACDrops && CurrentDropInfos.Any(d => !d.Coins))
@@ -6135,9 +7816,24 @@ index 0000000..f3ab2fe
 +            Interlocked.Exchange(ref _bankingACDrops, 1);
 +            _combat.Value.CancelAutoAttack();
 +            // Let attacks already sent settle, then recheck before every operation.
-+            await Task.Delay(500, token);
++            await Task.Delay(150, token);
 +            if (!SafeToBank(account)) return "Combat resumed; AC banking will wait.";
-+            List<string> banked = new(), failed = new();
++            List<string> banked = new(), failed = new(), rejected = new();
++
++            // An item the bank already holds (one that cannot be owned twice) is rejected, not picked up and banked again.
++            if (drops.Length > 0)
++            {
++                if (!_bank.Value.Loaded) _bank.Value.Load(true);
++                ItemBase[] already = drops.Where(d => !d.Temp && d.MaxStack <= 1 && _bank.Value.Contains(d.ID)).ToArray();
++                if (already.Length > 0 && RejectDrops(already))
++                {
++                    rejected.AddRange(already.Select(d => d.Name));
++                    drops = drops.Where(d => already.All(a => a.ID != d.ID)).ToArray();
++                }
++            }
++
++            // Every pickup goes out at once; then each is waited for. One at a time took a round trip per item.
++            List<(ItemBase Drop, int Before)> sent = new();
 +            foreach (ItemBase drop in drops)
 +            {
 +                if (!SafeToBank(account) || (automatic && !Options.PickupACDropsAndSendToBank)) break;
@@ -6150,21 +7846,24 @@ index 0000000..f3ab2fe
 +                    _lootRetry[drop.ID] = DateTime.UtcNow.AddSeconds(30);
 +                    continue;
 +                }
-+                int quantity = previous?.Quantity ?? 0;
 +                // Use the same server operation as Pickup, bypassing only our automatic-queue guard.
 +                Send.Packet($"%xt%zm%getDrop%{Map.RoomID}%{drop.ID}%");
 +                _currentDropInfos.Remove(d => d.ID == drop.ID);
-+                DateTime until = DateTime.UtcNow.AddSeconds(10);
-+                bool received = false;
-+                while (SafeAccount(account) && DateTime.UtcNow < until)
-+                {
-+                    InventoryItem? item = Inventory.Items.FirstOrDefault(i => i.ID == drop.ID);
-+                    if (item != null && item.Quantity > quantity) { received = true; break; }
-+                    await Task.Delay(200, token);
-+                }
-+                if (received) _pendingBank[drop.ID] = (drop.Name, 0);
-+                else failed.Add(drop.Name);
++                sent.Add((drop, previous?.Quantity ?? 0));
 +            }
++            DateTime until = DateTime.UtcNow.AddSeconds(10);
++            while (sent.Count > 0 && SafeAccount(account) && DateTime.UtcNow < until)
++            {
++                sent.RemoveAll(s =>
++                {
++                    InventoryItem? item = Inventory.Items.FirstOrDefault(i => i.ID == s.Drop.ID);
++                    if (item == null || item.Quantity <= s.Before) return false;
++                    _pendingBank[s.Drop.ID] = (s.Drop.Name, 0);
++                    return true;
++                });
++                if (sent.Count > 0) await Task.Delay(40, token);
++            }
++            failed.AddRange(sent.Select(s => s.Drop.Name));
 +
 +            foreach (var entry in _pendingBank.ToArray())
 +            {
@@ -6196,9 +7895,10 @@ index 0000000..f3ab2fe
 +            }
 +            OnPropertyChanged(nameof(CurrentDropInfos));
 +            OnPropertyChanged(nameof(CurrentDrops));
-+            return (banked.Count > 0 ? $"Banked: {string.Join(", ", banked)}. " : "") +
++            return (rejected.Count > 0 ? $"Rejected (already in the bank): {string.Join(", ", rejected)}. " : "") +
++                (banked.Count > 0 ? $"Banked: {string.Join(", ", banked)}. " : "") +
 +                (failed.Count > 0 ? $"Not banked: {string.Join(", ", failed.Distinct())}. Check inventory/bank space and item restrictions." :
-+                _pendingBank.Count > 0 ? "Remaining items queued until out of combat." : banked.Count == 0 ? "No eligible AC drops." : "");
++                _pendingBank.Count > 0 ? "Remaining items queued until out of combat." : banked.Count == 0 && rejected.Count == 0 ? "No eligible AC drops." : "");
 +        }
 +        finally
 +        {
@@ -6209,14 +7909,25 @@ index 0000000..f3ab2fe
 +        }
 +    }
 +
++    /// <summary>Rejects just these drops and leaves every other drop where it is (the game only offers "reject all except these names").</summary>
++    private bool RejectDrops(ItemBase[] items)
++    {
++        string[] keep = CurrentDropInfos.Where(d => items.All(i => i.ID != d.ID)).Select(d => d.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
++        if (!Flash.Call<bool>("rejectExcept", string.Join(',', keep).ToLowerInvariant())) return false;
++        _currentDropInfos.Remove(d => items.Any(i => i.ID == d.ID));
++        OnPropertyChanged(nameof(CurrentDropInfos));
++        OnPropertyChanged(nameof(CurrentDrops));
++        return true;
++    }
++
 +    private bool SafeAccount(string account) => _pendingSession == Volatile.Read(ref _lootSession) && Player.LoggedIn && Player.Username.Equals(account, StringComparison.OrdinalIgnoreCase);
 +    private bool SafeToBank(string account) => SafeAccount(account) && Player.Playing && !Player.InCombat;
 +}
 diff --git a/Skua.Core/Scripts/ScriptDrop.cs b/Skua.Core/Scripts/ScriptDrop.cs
-index 513dd82..99a7f5c 100644
+index 3fae4a8..ca3912e 100644
 --- a/Skua.Core/Scripts/ScriptDrop.cs
 +++ b/Skua.Core/Scripts/ScriptDrop.cs
-@@ -17,7 +17,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -18,7 +18,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
          Lazy<IScriptWait> wait,
          Lazy<IScriptOption> options,
          Lazy<IScriptPlayer> player,
@@ -6225,7 +7936,7 @@ index 513dd82..99a7f5c 100644
      {
          _lazySend = send;
          _lazyWait = wait;
-@@ -26,6 +26,9 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -27,6 +27,9 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
          _lazyPlayer = player;
          _lazyFlash = flash;
          _lazyInventory = inventory;
@@ -6234,24 +7945,18 @@ index 513dd82..99a7f5c 100644
 +        _autoLootTask = Task.Run(AutoLootLoop);
  
          StrongReferenceMessenger.Default.Register<ScriptDrop, ItemDroppedMessage, int>(this, (int)MessageChannels.GameEvents, AddDrop);
-         StrongReferenceMessenger.Default.Register<ScriptDrop, LogoutMessage, int>(this, (int)MessageChannels.GameEvents, ClearDrops);
-@@ -75,6 +78,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
-             return;
- 
-         ItemBase drop = _currentDropInfos.Find(d => d.Name.ToLowerInvariant() == name.ToLowerInvariant())!;
-+        if ((drop.Coins && Options.PickupACDropsAndSendToBank) || (!drop.Coins && Options.RejectNonACDrops)) return;
-         if (!drop.Temp && !Inventory.HasSpaceFor(drop))
-             return;
-         Send.Packet($"%xt%zm%getDrop%{Map.RoomID}%{drop.ID}%");
-@@ -86,6 +90,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
-     public void Pickup(int id)
+         StrongReferenceMessenger.Default.Register<ScriptDrop, DropPickupResultMessage, int>(this, (int)MessageChannels.GameEvents, PickupResult);
+@@ -101,6 +104,9 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+     private bool SendPickup(ItemBase drop)
      {
-         ItemBase? drop = CurrentDropInfos.FirstOrDefault(i => i.ID == id);
-+        if (drop != null && ((drop.Coins && Options.PickupACDropsAndSendToBank) || (!drop.Coins && Options.RejectNonACDrops))) return;
-         if (drop is null || (!drop.Temp && !Inventory.HasSpaceFor(drop)))
-             return;
- 
-@@ -132,6 +137,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+         _loopToken.Value?.ThrowIfCancellationRequested();
++        // AC drops go through the banking loop and non-AC drops are refused when those options are on (VibeSkuffle).
++        if ((drop.Coins && Options.PickupACDropsAndSendToBank) || (!drop.Coins && Options.RejectNonACDrops))
++            return false;
+         if (!drop.Temp && !Inventory.HasSpaceFor(drop))
+             return false;
+         // The automatic loop only re-sends a refused drop once a slot has freed up; an explicit pickup always retries.
+@@ -165,6 +171,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      {
          if (Options.AcceptACDrops)
              PickupACItems();
@@ -6260,7 +7965,7 @@ index 513dd82..99a7f5c 100644
          RejectExceptCore(names);
      }
  
-@@ -139,6 +146,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -172,6 +180,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      {
          if (Options.AcceptACDrops)
              PickupACItems();
@@ -6269,7 +7974,7 @@ index 513dd82..99a7f5c 100644
          IEnumerable<string> items = CurrentDropInfos.Where(d => ids.Contains(d.ID)).Select(d => d.Name);
          RejectExceptCore(items);
      }
-@@ -153,7 +162,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -186,7 +196,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      private void RejectExceptCore(IEnumerable<string> names)
      {
          HashSet<string> keep = new(names, StringComparer.OrdinalIgnoreCase);
@@ -6278,7 +7983,7 @@ index 513dd82..99a7f5c 100644
              keep.UnionWith(CurrentDropInfos.Where(d => d.Coins).Select(d => d.Name));
          if (!Flash.Call<bool>("rejectExcept", keep.Join(',').ToLowerInvariant()))
              return;
-@@ -273,7 +282,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -314,7 +324,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
                  if (pickupNames.Length > 0)
                      Pickup(pickupNames);
  
@@ -6287,15 +7992,15 @@ index 513dd82..99a7f5c 100644
                      RejectExcept(BuildRejectElseWhitelist(pickupNames, pickupIDs));
              }
              catch (OperationCanceledException) when (token.IsCancellationRequested)
-@@ -320,6 +329,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -375,6 +385,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
  
      private void ClearDrops(ScriptDrop recipient, LogoutMessage message)
      {
 +        Interlocked.Increment(ref recipient._lootSession);
+         recipient._refusedIDs.Clear();
          recipient._currentDropInfos.Clear();
          recipient.OnPropertyChanged(nameof(recipient.CurrentDropInfos));
-         recipient.OnPropertyChanged(nameof(recipient.CurrentDrops));
-@@ -357,6 +367,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -413,6 +424,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      {
          if (_disposed) return;
          _disposed = true;
@@ -6303,7 +8008,7 @@ index 513dd82..99a7f5c 100644
  
          try
          {
-@@ -385,6 +396,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -441,6 +453,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      {
          if (_disposed) return;
          _disposed = true;
@@ -6313,10 +8018,10 @@ index 513dd82..99a7f5c 100644
          {
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..b59070c
+index 0000000..99e2f00
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,779 @@
+@@ -0,0 +1,811 @@
 +using Skua.Core.Interfaces;
 +using Skua.Core.Services;
 +
@@ -6911,6 +8616,37 @@ index 0000000..b59070c
 +        StartFixRecovery($" {what} {needed} times in {QuestErrorWindowMs / 60000} minutes while farming (an AQW bug a relog usually fixes)");
 +    }
 +
++    // ---- "One Time Quest Only" spam ----------------------------------------------------------------------
++    // A script (or the game) that keeps asking for a quest that can only be done once makes the server answer
++    // "One Time Quest Only" over and over. Logging out and in clears it. If it starts again soon after that relog,
++    // a relog is not enough: restart the whole client.
++
++    private const int OneTimeQuestCount = 8;
++    private const int OneTimeQuestWindowMs = 60000;
++    private const int OneTimeQuestAgainMs = 15 * 60000;
++    private readonly Queue<int> _oneTimeQuest = new();
++    private int _lastOneTimeQuestFix;
++
++    /// <summary>A packet said "One Time Quest Only".</summary>
++    private void OnOneTimeQuestOnly()
++    {
++        if (_wdBusy || _waitForLogin || !Player.LoggedIn)
++            return;
++        int now = Environment.TickCount;
++        lock (_oneTimeQuest)
++        {
++            _oneTimeQuest.Enqueue(now);
++            while (_oneTimeQuest.Count > 0 && now - _oneTimeQuest.Peek() > OneTimeQuestWindowMs)
++                _oneTimeQuest.Dequeue();
++            if (_oneTimeQuest.Count < OneTimeQuestCount)
++                return;
++            _oneTimeQuest.Clear();
++        }
++        bool again = _lastOneTimeQuestFix != 0 && now - _lastOneTimeQuestFix < OneTimeQuestAgainMs;
++        _lastOneTimeQuestFix = now | 1;
++        StartFixRecovery($" \"One Time Quest Only\" came {OneTimeQuestCount} times in {OneTimeQuestWindowMs / 1000} seconds", restartClientNow: again);
++    }
++
 +    private async Task ReturnToRoom(string room, string? cell, string? pad)
 +    {
 +        try
@@ -7024,7 +8760,7 @@ index 0000000..b59070c
 +
 +    private readonly List<int> _wdFixTimes = new();
 +
-+    private void StartFixRecovery(string why)
++    private void StartFixRecovery(string why, bool restartClientNow = false)
 +    {
 +        int now = Environment.TickCount;
 +        int count;
@@ -7034,12 +8770,13 @@ index 0000000..b59070c
 +            _wdFixTimes.Add(now);
 +            count = _wdFixTimes.Count;
 +        }
-+        if (count >= 3 && Flash is IRestartableGamePlayer player && player.CanRestartClient && ClientRestartAllowed())
++        if ((count >= 3 || restartClientNow) && Flash is IRestartableGamePlayer player && player.CanRestartClient && ClientRestartAllowed())
 +        {
 +            lock (_wdFixTimes)
 +                _wdFixTimes.Clear();
-+            WdLog($"{why}; logging out and back in hasn't fixed it ({count} times in 45 minutes). Restarting the whole client (same as closing the tab and starting it again).");
-+            Alert("whole client restarted", $"{why.Trim()}; relogs didn't fix it ({count} in 45 minutes), so the whole client was restarted (it comes back with its script).", VibeAlerts.Level.Warning);
++            string reason = restartClientNow ? "it came back right after the relog" : $"logging out and back in hasn't fixed it ({count} times in 45 minutes)";
++            WdLog($"{why}; {reason}. Restarting the whole client (same as closing the tab and starting it again).");
++            Alert("whole client restarted", $"{why.Trim()}; {reason}, so the whole client was restarted (it comes back with its script).", VibeAlerts.Level.Warning);
 +            _wdBusy = true;
 +            _ = Task.Run(async () =>
 +            {
@@ -7502,7 +9239,7 @@ index 0000000..2e533d6
 +    }
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.cs b/Skua.Core/Scripts/ScriptInterface.cs
-index 8775d94..e2479e9 100644
+index e54560f..897ab3d 100644
 --- a/Skua.Core/Scripts/ScriptInterface.cs
 +++ b/Skua.Core/Scripts/ScriptInterface.cs
 @@ -1,3 +1,4 @@
@@ -7527,7 +9264,7 @@ index 8775d94..e2479e9 100644
  
                  if (Manager.ScriptRunning)
                      RunScriptHandlers();
-@@ -389,6 +391,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -393,6 +395,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
      /// <param name="lastConnChange">Last time the loading message changed.</param>
      /// <param name="lastConnDetail">Last loading message.</param>
      /// <returns>The last loading message and its time</returns>
@@ -7536,7 +9273,7 @@ index 8775d94..e2479e9 100644
      private (int newTime, string newText) CheckStuckonLoading(int lastConnChange, string lastConnDetail)
      {
          string connDetail = Flash.IsNull("mcConnDetail.stage") ? "null" : Flash.GetGameObject("mcConnDetail.txtDetail.text", "null")!;
-@@ -396,8 +400,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -400,8 +404,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
              return (Environment.TickCount, connDetail);
          if (connDetail.Contains("has been lost") && !_waitForLogin)
          {
@@ -7548,7 +9285,7 @@ index 8775d94..e2479e9 100644
                  Log("Connection lost detected. Triggering auto re-login.");
                  BeginLogout();
              }
-@@ -415,7 +421,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -419,7 +425,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                          if (Options.AutoRelogin)
                              BeginLogout();
                          else
@@ -7557,7 +9294,7 @@ index 8775d94..e2479e9 100644
                          return;
                      }
                      Map.Join(Map.LastMap);
-@@ -426,7 +432,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -430,7 +436,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  if (Options.AutoRelogin)
                      BeginLogout();
                  else
@@ -7566,7 +9303,7 @@ index 8775d94..e2479e9 100644
              }
          }
          if (connDetail == lastConnDetail)
-@@ -474,6 +480,14 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -478,6 +484,14 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "loaded":
@@ -7581,7 +9318,7 @@ index 8775d94..e2479e9 100644
                  Initialize();
                  break;
  
-@@ -493,6 +507,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -497,6 +511,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                          case "logout":
                              Log("Intentional logout button clicked by user in game. Auto re-login disarmed.");
                              Servers.IsIntentionalLogout = true;
@@ -7590,7 +9327,7 @@ index 8775d94..e2479e9 100644
                              CancelRelogin();
                              if (Manager.ScriptRunning)
                                  _ = Manager.StopScript();
-@@ -501,6 +517,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -505,6 +521,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                          case "changeServer":
                              Log("Intentional 'Change Server' button clicked by user in game. Auto re-login disarmed.");
                              Servers.IsIntentionalLogout = true;
@@ -7599,16 +9336,18 @@ index 8775d94..e2479e9 100644
                              CancelRelogin();
                              if (Manager.ScriptRunning)
                                  _ = Manager.StopScript();
-@@ -537,6 +555,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -541,6 +559,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "pext":
 +                if (((string)args[0]).Contains("Missing Quest Progress", StringComparison.OrdinalIgnoreCase))
 +                    OnMissingQuestProgress();
++                if (((string)args[0]).Contains("One Time Quest Only", StringComparison.OrdinalIgnoreCase))
++                    OnOneTimeQuestOnly();
                  dynamic packet = JsonConvert.DeserializeObject<dynamic>((string)args[0])!;
                  string type = packet["params"].type;
                  dynamic data = packet["params"].dataObj;
-@@ -664,6 +684,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -669,6 +691,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                                  Stats.QuestsCompleted++;
                                  Messenger.Send<QuestTurninMessage, int>(new(Convert.ToInt32(data.QuestID)), (int)MessageChannels.GameEvents);
                              }
@@ -7619,7 +9358,7 @@ index 8775d94..e2479e9 100644
                              break;
  
                          case "loadBank":
-@@ -714,6 +738,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -719,6 +745,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                      case "eLO2":
                          Log("In-game exit logout packet (eLO) detected. Disarming auto re-login.");
                          Servers.IsIntentionalLogout = true;
@@ -7628,7 +9367,7 @@ index 8775d94..e2479e9 100644
                          CancelRelogin();
                          if (Manager.ScriptRunning)
                              _ = Manager.StopScript();
-@@ -723,6 +749,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -728,6 +756,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                      case "eSL2":
                          Log("In-game exit to server list packet (eSL) detected. Disarming auto re-login.");
                          Servers.IsIntentionalLogout = true;
@@ -7637,7 +9376,7 @@ index 8775d94..e2479e9 100644
                          CancelRelogin();
                          if (Manager.ScriptRunning)
                              _ = Manager.StopScript();
-@@ -801,8 +829,19 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -806,8 +836,19 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
  
          Log("Auto re-login triggered.");
          bool wasRunning = Manager.ScriptRunning;
@@ -7657,7 +9396,7 @@ index 8775d94..e2479e9 100644
          _waitForLogin = true;
          try
          {
-@@ -822,7 +861,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -827,7 +868,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
              {
                  delay = Math.Max(800, Options.ReloginTryDelay);
              }
@@ -7666,7 +9405,7 @@ index 8775d94..e2479e9 100644
          }
          catch
          {
-@@ -856,8 +895,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -861,8 +902,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
      private void Relogin(int delay, bool startScript, CancellationTokenSource reloginCts)
      {
          reloginCts.Token.ThrowIfCancellationRequested();
@@ -7677,7 +9416,7 @@ index 8775d94..e2479e9 100644
          _reloginTask = Schedule(delay, async _ =>
          {
              try
-@@ -871,6 +912,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -876,6 +919,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  else if (startScript && !relogged)
                      Log("Skipping script restart because re-login did not succeed.");
                  Log($"Re-login was {(relogged ? "successful" : "cancelled or unsuccessful")}.");
@@ -7726,7 +9465,7 @@ index ace088d..3dd7d61 100644
      }
  
 diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.cs
-index 5610192..1a1edec 100644
+index 02c915c..b667280 100644
 --- a/Skua.Core/Scripts/ScriptOption.cs
 +++ b/Skua.Core/Scripts/ScriptOption.cs
 @@ -26,10 +26,14 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
@@ -7827,7 +9566,7 @@ index 5610192..1a1edec 100644
  
      [ObjectBinding("ui.mcFPS.visible", HasSetter = true)]
      private bool _showFPS = false;
-@@ -168,7 +231,42 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -172,7 +235,42 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
      [ObservableProperty]
      private bool _headlessMode;
  
@@ -7871,7 +9610,7 @@ index 5610192..1a1edec 100644
      {
          try
          {
-@@ -181,7 +279,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -185,7 +283,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
              }
              else
              {
@@ -7880,7 +9619,7 @@ index 5610192..1a1edec 100644
                  _lazyFlash.Value.Call("setGameObject", "stage.quality", "HIGH");
                  _lazyFlash.Value.Call("setGameObject", "world.rootClass.mixer.soundTransform.volume", 1);
              }
-@@ -379,7 +477,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -383,7 +481,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
          StringCollection saveOptions = new();
          foreach (PropertyInfo pi in GetType().GetProperties())
          {
@@ -7889,7 +9628,7 @@ index 5610192..1a1edec 100644
                  continue;
              string key = pi.Name;
              object? value = pi.GetValue(this);
-@@ -398,7 +496,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -402,7 +500,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
  
          foreach (PropertyInfo pi in GetType().GetProperties())
          {
@@ -7898,7 +9637,7 @@ index 5610192..1a1edec 100644
                  continue;
              if (_userOptions.ContainsKey(pi.Name))
              {
-@@ -417,7 +515,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -421,7 +519,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
          ScriptOption defaults = new(_lazyFlash);
          foreach (PropertyInfo pi in GetType().GetProperties())
          {
@@ -7907,7 +9646,7 @@ index 5610192..1a1edec 100644
                  continue;
  
              pi.SetValue(this, pi.GetValue(defaults), null);
-@@ -454,4 +552,4 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -458,4 +556,4 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
          }
          return dict;
      }
@@ -7928,7 +9667,7 @@ index 77e02d6..963a266 100644
          else if (normalizedSpecifier.StartsWith($".{Path.DirectorySeparatorChar}", StringComparison.Ordinal) ||
                   normalizedSpecifier.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
 diff --git a/Skua.Core/Scripts/ScriptServers.cs b/Skua.Core/Scripts/ScriptServers.cs
-index 6d38204..9fed92a 100644
+index afd92fc..363963b 100644
 --- a/Skua.Core/Scripts/ScriptServers.cs
 +++ b/Skua.Core/Scripts/ScriptServers.cs
 @@ -1,3 +1,4 @@
@@ -8007,9 +9746,9 @@ index 6d38204..9fed92a 100644
          CommunityToolkit.Mvvm.Messaging.StrongReferenceMessenger.Default.Send<Skua.Core.Messaging.LogoutRequestedMessage, int>(new(), (int)Skua.Core.Messaging.MessageChannels.GameEvents);
          DisconnectToLogin();
      }
-@@ -308,22 +360,29 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
- 
-         HashSet<string> triedServers = attemptedServers ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+@@ -321,22 +373,29 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+             return preferredServer ?? FindByName(candidates, Options.ReloginServer, true);
+         }
  
 -        Server? selectedServer = FindByName(candidates, preferredName, true, triedServers);
 +        // Servers where a login just got stuck count as tried, as long as some other server is left.
@@ -8041,7 +9780,7 @@ index 6d38204..9fed92a 100644
          if (selectedServer is not null)
              return selectedServer;
  
-@@ -446,6 +505,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -459,6 +518,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
          bool autoRelogSwitch = Options.AutoRelogin;
          Options.AutoRelogin = false;
          ReloginLog($"Relogging on server {server.Name} [{server.PlayerCount}/{server.MaxPlayers}].");
@@ -8049,7 +9788,7 @@ index 6d38204..9fed92a 100644
  
          StrongReferenceMessenger.Default.Send<LogoutRequestedMessage, int>(new(), (int)MessageChannels.GameEvents);
          StrongReferenceMessenger.Default.Send<LogoutMessage, int>((int)MessageChannels.GameEvents);
-@@ -483,13 +543,16 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -496,13 +556,16 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
          return Task.Run(() => EnsureRelogin(serverName, CancellationToken.None)).GetAwaiter().GetResult();
      }
  
@@ -8064,10 +9803,10 @@ index 6d38204..9fed92a 100644
 -        Server? server = SelectReloginServer();
 +        // Back to the server the account was on (the stuck-server list still applies).
 +        Server? server = SelectReloginServer(Options.AutoReloginAny ? null : PreferredReloginServer);
+         string? preferredName = server?.Name;
          if (server is null)
          {
-             ReloginLog("No eligible servers available for auto relogin.");
-@@ -617,8 +680,10 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -645,8 +708,10 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                      continue;
                  }
                  attemptedServers.Add(targetServer.Name ?? string.Empty);
@@ -8078,7 +9817,7 @@ index 6d38204..9fed92a 100644
  
                  // Teardown previous session and enforce ghost session backoff on retries
                  if (IsConnected || tries > 1)
-@@ -628,6 +693,9 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -656,6 +721,9 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                          ? Math.Max(10000 + (tries - 2) * 3000, Options.ReloginTryDelay)
                          : Math.Max(4000, Options.ReloginTryDelay);
                      ReloginLog($"Waiting {backoffMs / 1000.0:F1}s ghost session backoff before attempt {tries}...");
@@ -8088,7 +9827,7 @@ index 6d38204..9fed92a 100644
                      await Task.Delay(backoffMs, token);
                  }
  
-@@ -696,6 +764,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -725,6 +793,7 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                  if (Player.Playing && Flash.IsWorldLoaded)
                  {
                      ReloginLog($"Connected successfully to {targetServer.Name}. World loaded.");
@@ -8096,7 +9835,7 @@ index 6d38204..9fed92a 100644
                      return true;
                  }
  
-@@ -707,10 +776,17 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
+@@ -737,10 +806,17 @@ public partial class ScriptServers : ObservableRecipient, IScriptServers
                      await WaitReloginDelay(token);
              }
          }
@@ -9878,7 +11617,7 @@ index 0000000..33a016a
 +}
 diff --git a/Skua.Manager.Avalonia/Converters/ServerPingTextConverter.cs b/Skua.Manager.Avalonia/Converters/ServerPingTextConverter.cs
 deleted file mode 100644
-index ae66a24..0000000
+index 53f3942..0000000
 --- a/Skua.Manager.Avalonia/Converters/ServerPingTextConverter.cs
 +++ /dev/null
 @@ -1,28 +0,0 @@
@@ -9902,7 +11641,7 @@ index ae66a24..0000000
 -        return server.Ping switch
 -        {
 -            -1 => "...",
--            9999 => "timeout",
+-            9999 => "No response",
 -            _ => $"{server.Ping}ms"
 -        };
 -    }
@@ -10178,10 +11917,10 @@ index 0000000..a4e131a
 +}
 diff --git a/Skua.Manager.Avalonia/Services/ServerPing.cs b/Skua.Manager.Avalonia/Services/ServerPing.cs
 new file mode 100644
-index 0000000..9b56296
+index 0000000..83f1726
 --- /dev/null
 +++ b/Skua.Manager.Avalonia/Services/ServerPing.cs
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,78 @@
 +using System;
 +using System.Collections.Generic;
 +using System.Diagnostics;
@@ -10221,9 +11960,32 @@ index 0000000..9b56296
 +                byte[] reply = new byte[256];
 +                Stopwatch watch = Stopwatch.StartNew();
 +                await stream.WriteAsync(VersionCheck, limit.Token).ConfigureAwait(false);
-+                int read = await stream.ReadAsync(reply, limit.Token).ConfigureAwait(false);
-+                if (read > 0)
-+                    times.Add(watch.ElapsedMilliseconds);
++                // The answer ends with a zero byte; only the server's own "apiOK" counts (an "apiKO" or a closed connection is no sample).
++                StringBuilder message = new();
++                bool answered = false, refused = false;
++                while (!answered && !refused)
++                {
++                    int read = await stream.ReadAsync(reply, limit.Token).ConfigureAwait(false);
++                    if (read == 0)
++                        break;
++                    for (int b = 0; b < read && !answered && !refused; b++)
++                    {
++                        if (reply[b] != 0)
++                        {
++                            message.Append((char)reply[b]);
++                            continue;
++                        }
++                        string text = message.ToString();
++                        message.Clear();
++                        if (text.Contains("action='apiOK'", StringComparison.OrdinalIgnoreCase) || text.Contains("action=\"apiOK\"", StringComparison.OrdinalIgnoreCase))
++                        {
++                            times.Add(watch.ElapsedMilliseconds);
++                            answered = true;
++                        }
++                        else if (text.Contains("apiKO", StringComparison.OrdinalIgnoreCase))
++                            refused = true;
++                    }
++                }
 +            }
 +            catch
 +            {
@@ -10436,7 +12198,7 @@ index 3fadb74..573546c 100644
                      <ComboBox.ItemTemplate>
                          <DataTemplate>
 diff --git a/Skua.Manager.Avalonia/UserControls/AccountManagerUserControl.axaml.cs b/Skua.Manager.Avalonia/UserControls/AccountManagerUserControl.axaml.cs
-index 5771a20..64c1408 100644
+index 3b9298a..5f94e61 100644
 --- a/Skua.Manager.Avalonia/UserControls/AccountManagerUserControl.axaml.cs
 +++ b/Skua.Manager.Avalonia/UserControls/AccountManagerUserControl.axaml.cs
 @@ -36,6 +36,9 @@ public partial class AccountManagerUserControl : UserControl
@@ -10450,7 +12212,7 @@ index 5771a20..64c1408 100644
      {
          StrongReferenceMessenger.Default.UnregisterAll(this);
 diff --git a/Skua.Manager.Avalonia/UserControls/ArmyQueueUserControl.axaml b/Skua.Manager.Avalonia/UserControls/ArmyQueueUserControl.axaml
-index acb4e40..9148c82 100644
+index e4c948b..c7de639 100644
 --- a/Skua.Manager.Avalonia/UserControls/ArmyQueueUserControl.axaml
 +++ b/Skua.Manager.Avalonia/UserControls/ArmyQueueUserControl.axaml
 @@ -156,8 +156,11 @@
@@ -10468,18 +12230,18 @@ index acb4e40..9148c82 100644
                                              <ItemsPanelTemplate>
                                                  <StackPanel Orientation="Horizontal" Spacing="4" />
 diff --git a/Skua.Manager.Avalonia/UserControls/ArmyQueueUserControl.axaml.cs b/Skua.Manager.Avalonia/UserControls/ArmyQueueUserControl.axaml.cs
-index a21e840..24e3cec 100644
+index 7e32bfe..32dfa2b 100644
 --- a/Skua.Manager.Avalonia/UserControls/ArmyQueueUserControl.axaml.cs
 +++ b/Skua.Manager.Avalonia/UserControls/ArmyQueueUserControl.axaml.cs
-@@ -1,5 +1,7 @@
+@@ -1,6 +1,7 @@
  using Avalonia;
  using Avalonia.Controls;
-+using Avalonia.Input;
+ using Avalonia.Input;
 +using Avalonia.VisualTree;
  using Skua.Manager.Avalonia.ViewModels;
  using System;
  using System.ComponentModel;
-@@ -15,6 +17,54 @@ public partial class ArmyQueueUserControl : UserControl
+@@ -18,6 +19,54 @@ public partial class ArmyQueueUserControl : UserControl
          InitializeComponent();
          DataContextChanged += OnDataContextChanged;
          Loaded += (s, e) => (DataContext as ArmyQueueViewModel)?.EnsureSelection();
@@ -10576,7 +12338,7 @@ index 671f5e9..3165dbc 100644
                                 FontSize="12"
                                 Foreground="{DynamicResource SkuaMutedTextBrush}" />
 diff --git a/Skua.Manager.Avalonia/ViewModels/AccountManagerViewModel.cs b/Skua.Manager.Avalonia/ViewModels/AccountManagerViewModel.cs
-index fbd1646..c05d53c 100644
+index 33ef654..c05d53c 100644
 --- a/Skua.Manager.Avalonia/ViewModels/AccountManagerViewModel.cs
 +++ b/Skua.Manager.Avalonia/ViewModels/AccountManagerViewModel.cs
 @@ -58,6 +58,9 @@ public sealed partial class AccountManagerViewModel : BotControlViewModelBase
@@ -10607,20 +12369,25 @@ index fbd1646..c05d53c 100644
 -
 -    [RelayCommand]
 -    public async Task StartAllAccountsInNewWindow()
+-    {
+-        await StartAccountBatch(Accounts.ToList(), "all accounts", StartWithScript, true);
+-    }
+-
+-    [RelayCommand]
+-    public async Task StartAllAccounts()
 +    [ObservableProperty] private int _launchDelaySeconds = 1;
 +    [ObservableProperty] private bool _launchInProgress;
 +    [ObservableProperty] private string _launchStatus = "";
 +    private CancellationTokenSource? _launchCancellation;
 +    partial void OnLaunchDelaySecondsChanged(int value)
      {
--        await StartAccountBatch(Accounts.ToList(), "all accounts", StartWithScript, true);
+-        await StartAccountBatch(Accounts.ToList(), "all accounts", StartWithScript);
 +        int clamped = Math.Clamp(value, 0, 60);
 +        if (value != clamped) { LaunchDelaySeconds = clamped; return; }
 +        PerformInternalSettingsChange(() => _settingsService.Set("LaunchDelaySeconds", clamped));
      }
 -
--    [RelayCommand]
--    public async Task StartAllAccounts()
+-    private async Task StartAccountBatch(List<IAccountItemViewModel> accounts, string batchName, bool runScript, bool newWindow = false)
 +    [RelayCommand] public Task StartAccounts() => LaunchAccounts(Accounts.Where(a => a.UseCheck).ToList(), StartWithScript);
 +    [RelayCommand] public Task StartAllAccounts() => LaunchAccounts(Accounts.ToList(), StartWithScript);
 +    [RelayCommand] public Task StartAccountsInNewWindow() => LaunchAccounts(Accounts.Where(a => a.UseCheck).ToList(), StartWithScript, true);
@@ -10628,11 +12395,6 @@ index fbd1646..c05d53c 100644
 +    [RelayCommand] public void CancelRemainingLaunches() => _launchCancellation?.Cancel();
 +    private async Task LaunchAccounts(List<IAccountItemViewModel> accounts, bool withScript, bool newWindow = false)
      {
--        await StartAccountBatch(Accounts.ToList(), "all accounts", StartWithScript);
--    }
--
--    private async Task StartAccountBatch(List<IAccountItemViewModel> accounts, string batchName, bool runScript, bool newWindow = false)
--    {
 -        if (_isLaunching || accounts.Count == 0)
 -            return;
 -
@@ -10729,7 +12491,7 @@ index fbd1646..c05d53c 100644
              ServerList.AddRange(_cachedServers);
  
              string lastServer = _settingsService.Get<string>("LastServer");
-@@ -1007,36 +999,52 @@ public sealed partial class AccountManagerViewModel : BotControlViewModelBase
+@@ -1007,92 +999,52 @@ public sealed partial class AccountManagerViewModel : BotControlViewModelBase
              if (!string.IsNullOrEmpty(lastServer))
                  serverToSelect = Enumerable.FirstOrDefault<Server>(ServerList, s => s.Name == lastServer);
              SelectedServer = serverToSelect ?? ServerList[0];
@@ -10744,8 +12506,10 @@ index fbd1646..c05d53c 100644
  
 -    private async Task _MeasureServerPings(List<Server> servers)
 -    {
--        const int TimeoutMs = 2000;
+-        const int TimeoutMs = 2500;
+-        const int SampleCount = 3;
 -        const long FailedPing = 9999;
+-        byte[] versionCheck = System.Text.Encoding.UTF8.GetBytes("<msg t='sys'><body action='verChk' r='0'><ver v='165' /></body></msg>\0");
 +    private DateTime _lastPingRun = DateTime.MinValue;
 +    private int _pingRunning;
  
@@ -10768,35 +12532,86 @@ index fbd1646..c05d53c 100644
 +        List<Server> servers = _cachedServers.ToList();
 +        return Task.Run(async () =>
          {
--            using (System.Net.NetworkInformation.Ping pinger = new())
+-            if (!server.Online || string.IsNullOrWhiteSpace(server.IP) || server.Port <= 0 || server.Port > 65535)
 +            try
              {
--                try
--                {
--                    System.Net.NetworkInformation.PingReply reply = await pinger.SendPingAsync(server.IP, TimeoutMs);
--                    server.Ping = reply.Status == System.Net.NetworkInformation.IPStatus.Success
--                        ? reply.RoundtripTime
--                        : FailedPing;
--                }
--                catch
+-                server.Ping = FailedPing;
+-                return;
 +                await Task.WhenAll(servers.Where(s => s.Online).Select(async server =>
-                 {
--                    server.Ping = FailedPing;
--                }
++                {
 +                    long? ms = await ServerPing.MeasureAsync(server.IP, server.Port);
 +                    Dispatcher.UIThread.Post(() => server.Ping = ms ?? Server.NoAnswer);
 +                }));
              }
+-
+-            List<double> samples = new(SampleCount);
+-
+-            for (int sample = 0; sample < SampleCount; sample++)
++            catch
+             {
+-                try
+-                {
+-                    using System.Net.Sockets.TcpClient client = new();
+-                    await client.ConnectAsync(server.IP, server.Port).WaitAsync(TimeSpan.FromMilliseconds(TimeoutMs));
+-
+-                    using System.Net.Sockets.NetworkStream stream = client.GetStream();
+-                    await stream.WriteAsync(versionCheck.AsMemory());
+-                    await stream.FlushAsync();
+-
+-                    // Start timing after the version check is sent; TCP connect time alone can be misleading.
+-                    Stopwatch stopwatch = Stopwatch.StartNew();
+-                    using CancellationTokenSource timeout = new(TimeoutMs);
+-                    byte[] buffer = new byte[1];
+-                    System.Text.StringBuilder response = new();
+-
+-                    while (!timeout.IsCancellationRequested)
+-                    {
+-                        int bytesRead = await stream.ReadAsync(buffer.AsMemory(), timeout.Token);
+-                        if (bytesRead == 0)
+-                            break;
+-
+-                        if (buffer[0] != 0)
+-                        {
+-                            response.Append((char)buffer[0]);
+-                            continue;
+-                        }
+-
+-                        string message = response.ToString();
+-                        response.Clear();
+-
+-                        if (message.Contains("action='apiOK'", StringComparison.OrdinalIgnoreCase)
+-                            || message.Contains("action=\"apiOK\"", StringComparison.OrdinalIgnoreCase))
+-                        {
+-                            stopwatch.Stop();
+-                            samples.Add(stopwatch.Elapsed.TotalMilliseconds);
+-                            break;
+-                        }
+-
+-                        if (message.Contains("action='apiKO'", StringComparison.OrdinalIgnoreCase)
+-                            || message.Contains("action=\"apiKO\"", StringComparison.OrdinalIgnoreCase))
+-                            break;
+-                    }
+-                }
+-                catch
+-                {
+-                    // A failed connection or missing protocol response is not a valid latency sample.
+-                }
+             }
+-
+-            if (samples.Count == 0)
++            finally
+             {
+-                server.Ping = FailedPing;
+-                return;
++                Interlocked.Exchange(ref _pingRunning, 0);
+             }
+-
+-            samples.Sort();
+-            double median = samples[samples.Count / 2];
+-            server.Ping = (long)Math.Round(median, MidpointRounding.AwayFromZero);
 -        })).ToList();
 -
 -        await Task.WhenAll(pingTasks);
-+            catch
-+            {
-+            }
-+            finally
-+            {
-+                Interlocked.Exchange(ref _pingRunning, 0);
-+            }
 +        });
      }
  
@@ -11183,12 +12998,28 @@ index 360bd65..2c834a3 100644
                  }
                  catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
 diff --git a/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml b/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml
-index ce05def..9d0efbc 100644
+index ce05def..cc59ba7 100644
 --- a/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml
 +++ b/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml
-@@ -18,18 +18,22 @@
+@@ -9,35 +9,32 @@
+              mc:Ignorable="d"
+              d:DesignHeight="400"
+              d:DesignWidth="600">
+-    <Grid Margin="16">
+-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
++    <!-- The whole page scrolls: at the default window size the release notes and progress bar used to push the buttons below the
++         bottom edge, and Update & Restart could only be reached in full screen. The buttons sit right under the status for the same reason. -->
++    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
++        <StackPanel Margin="16" VerticalAlignment="Center" HorizontalAlignment="Center">
+             <materialIcons:MaterialIcon Kind="Update"
+-                                        Width="100"
+-                                        Height="100"
++                                        Width="64"
++                                        Height="64"
+                                         HorizontalAlignment="Center"
                                          Foreground="{DynamicResource SkuaAccentBrush}"
-                                         Margin="0,0,0,24" />
+-                                        Margin="0,0,0,24" />
++                                        Margin="0,0,0,12" />
  
 -            <TextBlock Text="VibeSkua Client Updater"
 +            <TextBlock Text="VibeSkuffle Client Updater"
@@ -11202,23 +13033,43 @@ index ce05def..9d0efbc 100644
                         FontSize="15"
                         Foreground="{DynamicResource SkuaMutedTextBrush}"
                         HorizontalAlignment="Center"
-                        Margin="0,0,0,24" />
+-                       Margin="0,0,0,24" />
++                       Margin="0,0,0,12" />
  
-+            <CheckBox Content="Include preview releases" IsChecked="{Binding IncludePreviews}" IsEnabled="{Binding !IsChecking}" Margin="0,0,0,12" />
-+            <ScrollViewer MaxHeight="200" Margin="0,0,0,16" IsVisible="{Binding UpdateAvailable}">
-+                <TextBlock Text="{Binding ReleaseNotes}" TextWrapping="Wrap" MaxWidth="650" />
-+            </ScrollViewer>
-             <ProgressBar Value="{Binding ProgressValue}"
-                          Minimum="0"
-                          Maximum="100"
-@@ -37,6 +41,7 @@
-                          Margin="0,0,0,24"
-                          IsVisible="{Binding UpdateAvailable}" />
+-            <ProgressBar Value="{Binding ProgressValue}"
+-                         Minimum="0"
+-                         Maximum="100"
+-                         Height="10"
+-                         Margin="0,0,0,24"
+-                         IsVisible="{Binding UpdateAvailable}" />
++            <CheckBox Content="Include preview releases" IsChecked="{Binding IncludePreviews}" IsEnabled="{Binding !IsChecking}" HorizontalAlignment="Center" Margin="0,0,0,12" />
  
-+            <Button Content="Preview Support Report" Click="SupportReport_Click" HorizontalAlignment="Center" Margin="0,0,0,12" Classes="skua-button" />
-             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
++            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
                  <Button Command="{Binding CheckForUpdateCommand}"
                          Content="Check for Updates"
+                         IsEnabled="{Binding !IsChecking}"
+@@ -52,6 +49,19 @@
+                         Width="160"
+                         Classes="skua-button skua-primary" />
+             </StackPanel>
++
++            <ProgressBar Value="{Binding ProgressValue}"
++                         Minimum="0"
++                         Maximum="100"
++                         Height="10"
++                         Margin="0,0,0,12"
++                         IsVisible="{Binding UpdateAvailable}" />
++
++            <ScrollViewer MaxHeight="160" Margin="0,0,0,12" IsVisible="{Binding UpdateAvailable}">
++                <TextBlock Text="{Binding ReleaseNotes}" TextWrapping="Wrap" MaxWidth="650" />
++            </ScrollViewer>
++
++            <Button Content="Preview Support Report" Click="SupportReport_Click" HorizontalAlignment="Center" Margin="0,0,0,4" Classes="skua-button" />
+         </StackPanel>
+-    </Grid>
++    </ScrollViewer>
+ </UserControl>
 diff --git a/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml.cs b/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml.cs
 index a8ce715..efb5289 100644
 --- a/Skua.Manager.Avalonia/Views/AppUpdaterView.axaml.cs
@@ -12284,28 +14135,22 @@ index e2715dc..f1ad97f 100644
      }
  }
 diff --git a/Skua.Shared.Avalonia/Controls/ScriptRepo/ScriptRepoControl.axaml b/Skua.Shared.Avalonia/Controls/ScriptRepo/ScriptRepoControl.axaml
-index 5719b42..810bb64 100644
+index 9bdbb09..543412e 100644
 --- a/Skua.Shared.Avalonia/Controls/ScriptRepo/ScriptRepoControl.axaml
 +++ b/Skua.Shared.Avalonia/Controls/ScriptRepo/ScriptRepoControl.axaml
-@@ -76,6 +76,18 @@
-                 </Grid>
- 
-                 <!-- Actions & Stats Sub-Bar -->
-+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-+                    <Button Classes="skua-button" Height="30" Padding="10,0"
-+                            Command="{Binding InstallUltrasCommand}" IsEnabled="{Binding !IsBusy}"
-+                            ToolTip.Tip="Download the latest UltrasLW into Skua/Scripts/UltrasLW. Every click downloads it again.">
-+                        <StackPanel Orientation="Horizontal" Spacing="6">
-+                            <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="14" Height="14" />
-+                            <TextBlock Text="Download / Update UltrasLW" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
-+                        </StackPanel>
-+                    </Button>
-+                    <TextBlock Grid.Column="1" Text="Fresh download every time. Your other scripts stay in place."
-+                               VerticalAlignment="Center" FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource SkuaMutedTextBrush}" />
-+                </Grid>
-                 <Border Height="1" Background="{DynamicResource SkuaBorderBrush}" />
- 
-                 <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+@@ -326,6 +326,12 @@
+                 <materialIcons:MaterialIcon Kind="DotsHorizontal" Width="14" Height="14" />
+                 <Button.Flyout>
+                     <MenuFlyout Placement="TopEdgeAlignedRight">
++                        <MenuItem Header="Download / Update UltrasLW" Command="{Binding InstallUltrasCommand}"
++                                  ToolTip.Tip="Download the latest UltrasLW into Skua/Scripts/UltrasLW. Every click downloads it again.">
++                            <MenuItem.Icon>
++                                <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="14" Height="14" />
++                            </MenuItem.Icon>
++                        </MenuItem>
+                         <MenuItem Header="Update dates from Git" Command="{Binding UpdateDatesCommand}">
+                             <MenuItem.Icon>
+                                 <materialIcons:MaterialIcon Kind="CalendarSyncOutline" Width="14" Height="14" />
 diff --git a/Skua.Shared.Avalonia/Controls/Settings/ServerStatusInline.axaml b/Skua.Shared.Avalonia/Controls/Settings/ServerStatusInline.axaml
 index e2f90b8..f6ae6a0 100644
 --- a/Skua.Shared.Avalonia/Controls/Settings/ServerStatusInline.axaml
@@ -12323,7 +14168,7 @@ index e2f90b8..f6ae6a0 100644
                  IsVisible="{Binding Server.Online, ElementName=Root}"
                  Spacing="4">
 diff --git a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs b/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
-index c921ea2..47b0c77 100644
+index 033cfb3..e1dec09 100644
 --- a/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
 +++ b/Skua.Shared.Avalonia/Controls/Shell/WindowTitleBar.axaml.cs
 @@ -15,7 +15,7 @@ namespace Skua.Shared.Avalonia.Controls.Shell;
@@ -12451,7 +14296,7 @@ index 0000000..4447e35
 +    }
 +}
 diff --git a/Skua.Shared.Avalonia/ViewModels/ScriptRepo/ScriptRepoViewModel.cs b/Skua.Shared.Avalonia/ViewModels/ScriptRepo/ScriptRepoViewModel.cs
-index fce7299..76be40b 100644
+index bb8daa7..b361aab 100644
 --- a/Skua.Shared.Avalonia/ViewModels/ScriptRepo/ScriptRepoViewModel.cs
 +++ b/Skua.Shared.Avalonia/ViewModels/ScriptRepo/ScriptRepoViewModel.cs
 @@ -9,6 +9,7 @@ using Skua.Core.Models;
@@ -12462,7 +14307,7 @@ index fce7299..76be40b 100644
  using System;
  using System.Collections.Generic;
  using System.Collections.ObjectModel;
-@@ -130,7 +131,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
+@@ -141,7 +142,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
      };
  
      public int DownloadedQuantity => _scripts.Count(s => s.Downloaded);
@@ -12471,7 +14316,7 @@ index fce7299..76be40b 100644
      public int ScriptQuantity => _scripts.Count;
      public int BotScriptQuantity => _scripts.Count;
      public int PinnedQuantity => _scripts.Count(s => s.IsPinned);
-@@ -374,7 +375,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
+@@ -377,7 +378,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
                 UpdateDatesCommand.IsRunning ||
                 RefreshScriptsCommand.IsRunning ||
                 DownloadAllCommand.IsRunning ||
@@ -12480,8 +14325,8 @@ index fce7299..76be40b 100644
      }
  
      [RelayCommand]
-@@ -421,7 +422,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
- 
+@@ -425,7 +426,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
+         IsLoadingScripts = true;
          try
          {
 -            List<ScriptInfoViewModel> scriptViewModels = await Task.Run(() =>
@@ -12489,7 +14334,7 @@ index fce7299..76be40b 100644
              {
                  ISettingsService? settingsService = Ioc.Default.GetService<ISettingsService>();
                  settingsService?.ReloadSettings();
-@@ -595,6 +596,26 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
+@@ -599,6 +600,26 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
                      catch { }
                  }
  
@@ -12516,7 +14361,7 @@ index fce7299..76be40b 100644
                  // 3. Fast in-place sorting
                  viewModels.Sort((a, b) =>
                  {
-@@ -613,9 +634,11 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
+@@ -617,9 +638,11 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
                      }
                  });
  
@@ -12529,7 +14374,7 @@ index fce7299..76be40b 100644
              _scripts.ReplaceRange(scriptViewModels);
  
              ApplySearchFilter();
-@@ -721,6 +744,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
+@@ -727,6 +750,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
          target.LocalSize = 0;
          target.Info.CachedDownloaded = false;
          target.Info.CachedLocalSize = 0;
@@ -12537,7 +14382,7 @@ index fce7299..76be40b 100644
          OnPropertyChanged(nameof(DownloadedQuantity));
          OnPropertyChanged(nameof(OutdatedQuantity));
          OnPropertyChanged(nameof(ScriptQuantity));
-@@ -728,6 +752,22 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
+@@ -734,6 +758,22 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
          IsBusy = false;
      }
  
@@ -12560,7 +14405,7 @@ index fce7299..76be40b 100644
      [RelayCommand]
      private async Task Download(ScriptInfoViewModel? script = null, CancellationToken token = default)
      {
-@@ -758,6 +798,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
+@@ -762,6 +802,7 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
          {
              IsBusy = false;
          }
@@ -12568,7 +14413,7 @@ index fce7299..76be40b 100644
          OnPropertyChanged(nameof(DownloadedQuantity));
          OnPropertyChanged(nameof(OutdatedQuantity));
          OnPropertyChanged(nameof(ScriptQuantity));
-@@ -826,6 +867,12 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
+@@ -830,6 +871,12 @@ public partial class ScriptRepoViewModel : BotControlViewModelBase
      public void CancelTask()
      {
          bool wasRunning = false;
@@ -12582,10 +14427,10 @@ index fce7299..76be40b 100644
          if (_updateDatesCts != null)
          {
 diff --git a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
-index 53919ed..fec58a4 100644
+index b83996c..c4ab04e 100644
 --- a/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
 +++ b/Skua.Shared.Avalonia/ViewModels/ScriptSchedulerViewModel.cs
-@@ -509,6 +509,6 @@ public partial class ScriptSchedulerViewModel : BotControlViewModelBase
+@@ -531,6 +531,6 @@ public partial class ScriptSchedulerViewModel : BotControlViewModelBase
                  return servers.CachedUsername!;
          }
          catch { }

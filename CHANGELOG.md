@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.4 (2026-11-03) - VibeSkua 2.1.2, Calendar, Game Size and 1650 MB memory restart
+
+- Updated to VibeSkua 2.1.2 (`d622a57`): redesigned Army Control Map Travel with presets and history, Army Queue drag-and-drop, Relogin Fallback and Relogin Watchdog options, script downloads at startup, redesigned Search Scripts and Scheduler, Junk Items filters and quantities, and refused drops staying listed until accepted.
+- New Calendar window (Tools & Helpers) with daily and weekly reset countdowns and the AQW boosts; new Game Size button and Grid View layout button; follow groups in the tab strip; Account drop-downs in the Script Loader and CoreBots options.
+- The game window restarts at 1650 MB of memory (was 6000 MB), out of combat, at most once per 30 minutes; `SKUA_MEMORY_LIMIT_MB` still overrides it.
+- Watch Dog relogs "One Time Quest Only" spam; Pickup AC Drops And Send To Bank is faster and skips AC drops the bank already holds; Army Control counts accounts with no script as "none"; the Updater page scrolls. See the [release notes](docs/RELEASE-v1.0.4.md).
+
 ## v1.0.3 (2026-10-30) - Grid View start option, toasts, Auto Headless and account switcher
 
 - New Manager option **Open Grid View when starting 2 or more accounts** (off by default); Start All, Start Selected, groups and the "in new window" starts open the client window in Grid View when they launch two or more accounts.
