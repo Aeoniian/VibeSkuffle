@@ -8470,10 +8470,10 @@ index 3fae4a8..bc582a1 100644
          {
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..230f518
+index 0000000..9ece029
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,823 @@
+@@ -0,0 +1,916 @@
 +using Skua.Core.Interfaces;
 +using Skua.Core.Services;
 +
@@ -8607,6 +8607,7 @@ index 0000000..230f518
 +            _wdOutSince = 0;
 +            _wdWaitSince = 0;
 +            CheckStuckScript();
++            CheckEmptyRoom(Environment.TickCount);
 +            RescueTick();
 +            RestartAfterSilentRelogin();
 +            // Back from a recovery with no script to restart: go back to the room it was in (a re-login
@@ -9031,6 +9032,98 @@ index 0000000..230f518
 +        _stuckSince = 0;
 +        StartFixRecovery($" the script has done nothing for {minutes} minutes (no kills, drops, quests or moving)");
 +    }
++
++
++    // ---- An empty room -------------------------------------------------------------------------------------
++    // A rare AQW load glitch (usually a join sent right after another action: "Please slow down. Last action was too
++    // soon!"): the character is in the right room but the room never loads, with no monsters, no NPCs and no avatar, so a
++    // script farms nothing for hours. Jumping to the current cell by hand fixes it. When the character stays "not loaded"
++    // for SECONDS while a script runs, jump to the current cell, and if that does not help, join the room again (3 tries,
++    // then it only says so). Off with SECONDS = 0.
++
++    private int _emptySince;
++    private int _emptyFixes;
++    private int _emptyLastFix;
++    private int _emptyCheckAt;
++    private bool _emptyGaveUp;
++
++    private void CheckEmptyRoom(int now)
++    {
++        if (now - _emptyCheckAt < 5000)
++            return;
++        _emptyCheckAt = now;
++        int seconds = EmptyRoomSeconds;
++        if (seconds <= 0 || !Manager.ScriptRunning || RescueActive || _wdBusy)
++        {
++            _emptySince = 0;
++            return;
++        }
++        string room, cell, pad;
++        bool loaded, noMonsters;
++        try
++        {
++            loaded = Player.Loaded;
++            room = Map.FullName;
++            cell = Player.Cell;
++            pad = Player.Pad;
++            noMonsters = !(Monsters.MapMonsters?.Count > 0);
++        }
++        catch
++        {
++            return;
++        }
++        if (loaded || string.IsNullOrWhiteSpace(room))
++        {
++            _emptySince = 0;
++            _emptyFixes = 0;
++            _emptyGaveUp = false;
++            return;
++        }
++        if (_emptySince == 0)
++        {
++            _emptySince = now | 1;
++            return;
++        }
++        if (unchecked(now - _emptySince) < seconds * 1000)
++            return;
++        if (_emptyLastFix != 0 && unchecked(now - _emptyLastFix) < seconds * 1000)
++            return;
++        if (_emptyFixes >= 3)
++        {
++            if (!_emptyGaveUp)
++            {
++                _emptyGaveUp = true;
++                WdLog($" still not loaded in {room} after {_emptyFixes} fixes; leaving it to the script.");
++            }
++            return;
++        }
++        _emptyFixes++;
++        _emptyLastFix = now | 1;
++        int attempt = _emptyFixes;
++        _ = Task.Run(() =>
++        {
++            try
++            {
++                if (attempt == 1 || !noMonsters)
++                {
++                    WdLog($" the room {room} has not loaded for {seconds} seconds (no avatar, no monsters); jumping to the current cell ({cell}).");
++                    Map.Jump(cell, pad);
++                }
++                else
++                {
++                    WdLog($" {room} still has not loaded; joining it again.");
++                    Map.Join(room, string.IsNullOrWhiteSpace(cell) ? "Enter" : cell, string.IsNullOrWhiteSpace(pad) ? "Spawn" : pad, true);
++                }
++            }
++            catch (Exception ex)
++            {
++                WdLog($" couldn't fix the empty room: {ex.Message}");
++            }
++        });
++    }
++
++    private static int EmptyRoomSeconds =>
++        int.TryParse(Environment.GetEnvironmentVariable("SKUA_EMPTY_ROOM_SECONDS"), out int s) && s >= 0 ? s : 90;
 +
 +    // ---- "Quest Complete Failed: Missing Quest Progress" ------------------------------------------------
 +    // AQW sometimes gets stuck refusing every turn-in of a quest that is actually done; logging out and back
@@ -9928,7 +10021,7 @@ index 0000000..82fa693
 +    }
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.cs b/Skua.Core/Scripts/ScriptInterface.cs
-index e54560f..897ab3d 100644
+index e54560f..e442124 100644
 --- a/Skua.Core/Scripts/ScriptInterface.cs
 +++ b/Skua.Core/Scripts/ScriptInterface.cs
 @@ -1,3 +1,4 @@
@@ -9953,7 +10046,25 @@ index e54560f..897ab3d 100644
  
                  if (Manager.ScriptRunning)
                      RunScriptHandlers();
-@@ -393,6 +395,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -378,7 +380,17 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+         if (Options.AggroAllMonsters)
+             Send.Packet($"%xt%zm%aggroMon%{Map.RoomID}%{string.Join("%", Monsters.MapMonsters.Select(m => m.MapID))}%");
+         if (Options.SkipCutscenes)
++        {
+             Flash.Call("skipCutscenes");
++            // A cutscene hides the world while it plays, and removing it early leaves the world hidden, which looks just like
++            // Lag Killer being on. Only Lag Killer may hide it.
++            try
++            {
++                if (!Options.LagKiller && !Flash.GetGameObject<bool>("world.visible", true))
++                    Flash.SetGameObject("world.visible", true);
++            }
++            catch { }
++        }
+         if (Options.WalkSpeed != 8)
+             Player.WalkSpeed = Options.WalkSpeed;
+         if (!Lite.UntargetSelf)
+@@ -393,6 +405,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
      /// <param name="lastConnChange">Last time the loading message changed.</param>
      /// <param name="lastConnDetail">Last loading message.</param>
      /// <returns>The last loading message and its time</returns>
@@ -9962,7 +10073,7 @@ index e54560f..897ab3d 100644
      private (int newTime, string newText) CheckStuckonLoading(int lastConnChange, string lastConnDetail)
      {
          string connDetail = Flash.IsNull("mcConnDetail.stage") ? "null" : Flash.GetGameObject("mcConnDetail.txtDetail.text", "null")!;
-@@ -400,8 +404,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -400,8 +414,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
              return (Environment.TickCount, connDetail);
          if (connDetail.Contains("has been lost") && !_waitForLogin)
          {
@@ -9974,7 +10085,7 @@ index e54560f..897ab3d 100644
                  Log("Connection lost detected. Triggering auto re-login.");
                  BeginLogout();
              }
-@@ -419,7 +425,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -419,7 +435,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                          if (Options.AutoRelogin)
                              BeginLogout();
                          else
@@ -9983,7 +10094,7 @@ index e54560f..897ab3d 100644
                          return;
                      }
                      Map.Join(Map.LastMap);
-@@ -430,7 +436,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -430,7 +446,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  if (Options.AutoRelogin)
                      BeginLogout();
                  else
@@ -9992,7 +10103,7 @@ index e54560f..897ab3d 100644
              }
          }
          if (connDetail == lastConnDetail)
-@@ -478,6 +484,14 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -478,6 +494,14 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "loaded":
@@ -10007,7 +10118,7 @@ index e54560f..897ab3d 100644
                  Initialize();
                  break;
  
-@@ -497,6 +511,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -497,6 +521,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                          case "logout":
                              Log("Intentional logout button clicked by user in game. Auto re-login disarmed.");
                              Servers.IsIntentionalLogout = true;
@@ -10016,7 +10127,7 @@ index e54560f..897ab3d 100644
                              CancelRelogin();
                              if (Manager.ScriptRunning)
                                  _ = Manager.StopScript();
-@@ -505,6 +521,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -505,6 +531,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                          case "changeServer":
                              Log("Intentional 'Change Server' button clicked by user in game. Auto re-login disarmed.");
                              Servers.IsIntentionalLogout = true;
@@ -10025,7 +10136,7 @@ index e54560f..897ab3d 100644
                              CancelRelogin();
                              if (Manager.ScriptRunning)
                                  _ = Manager.StopScript();
-@@ -541,6 +559,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -541,6 +569,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  break;
  
              case "pext":
@@ -10036,7 +10147,7 @@ index e54560f..897ab3d 100644
                  dynamic packet = JsonConvert.DeserializeObject<dynamic>((string)args[0])!;
                  string type = packet["params"].type;
                  dynamic data = packet["params"].dataObj;
-@@ -669,6 +691,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -669,6 +701,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                                  Stats.QuestsCompleted++;
                                  Messenger.Send<QuestTurninMessage, int>(new(Convert.ToInt32(data.QuestID)), (int)MessageChannels.GameEvents);
                              }
@@ -10047,7 +10158,7 @@ index e54560f..897ab3d 100644
                              break;
  
                          case "loadBank":
-@@ -719,6 +745,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -719,6 +755,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                      case "eLO2":
                          Log("In-game exit logout packet (eLO) detected. Disarming auto re-login.");
                          Servers.IsIntentionalLogout = true;
@@ -10056,7 +10167,7 @@ index e54560f..897ab3d 100644
                          CancelRelogin();
                          if (Manager.ScriptRunning)
                              _ = Manager.StopScript();
-@@ -728,6 +756,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -728,6 +766,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                      case "eSL2":
                          Log("In-game exit to server list packet (eSL) detected. Disarming auto re-login.");
                          Servers.IsIntentionalLogout = true;
@@ -10065,7 +10176,7 @@ index e54560f..897ab3d 100644
                          CancelRelogin();
                          if (Manager.ScriptRunning)
                              _ = Manager.StopScript();
-@@ -806,8 +836,19 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -806,8 +846,19 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
  
          Log("Auto re-login triggered.");
          bool wasRunning = Manager.ScriptRunning;
@@ -10085,7 +10196,7 @@ index e54560f..897ab3d 100644
          _waitForLogin = true;
          try
          {
-@@ -827,7 +868,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -827,7 +878,7 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
              {
                  delay = Math.Max(800, Options.ReloginTryDelay);
              }
@@ -10094,7 +10205,7 @@ index e54560f..897ab3d 100644
          }
          catch
          {
-@@ -861,8 +902,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -861,8 +912,10 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
      private void Relogin(int delay, bool startScript, CancellationTokenSource reloginCts)
      {
          reloginCts.Token.ThrowIfCancellationRequested();
@@ -10105,7 +10216,7 @@ index e54560f..897ab3d 100644
          _reloginTask = Schedule(delay, async _ =>
          {
              try
-@@ -876,6 +919,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
+@@ -876,6 +929,8 @@ public class ScriptInterface : IScriptInterface, IScriptInterfaceManager, IDispo
                  else if (startScript && !relogged)
                      Log("Skipping script restart because re-login did not succeed.");
                  Log($"Re-login was {(relogged ? "successful" : "cancelled or unsuccessful")}.");
