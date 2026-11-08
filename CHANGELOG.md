@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.6 (2026-11-08) - hotfix: 8192 MB memory restart
+
+- The game window now restarts for memory at **8192 MB** (4000 MB in v1.0.5, 1650 MB in v1.0.4), so busy windows are no longer restarted and logged back in over and over. `SKUA_MEMORY_LIMIT_MB` still overrides it. Nothing else changed since v1.0.5. See the [release notes](docs/RELEASE-v1.0.6.md).
+
 ## v1.0.5 (2026-11-07) - 4000 MB memory restart, Accept AC Drops, Watch Dog rescue changes and Game-Only Full Screen
 
 - The game window restarts for memory at 4000 MB (it was 1650 MB in v1.0.4, which restarted busy windows about every 30 minutes and logged the account back in each time); `SKUA_MEMORY_LIMIT_MB` still overrides it.

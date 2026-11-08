@@ -8,13 +8,13 @@ VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (v2.1.2) with the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
 goes wrong: stuck logins, crashes, freezes, memory build-up, and a crashed tab window.
 
-> **Stable release: v1.0.5.** Download the [latest release](../../releases), or update directly through
+> **Stable release: v1.0.6.** Download the [latest release](../../releases), or update directly through
 > **Manager → Updater**. Report problems in [Issues](../../issues).
 
-v1.0.5 raises the memory restart to 4000 MB (1650 MB restarted busy windows too often), fixes the Accept AC Drops spam,
+v1.0.6 is a hotfix: the memory restart is now 8192 MB. v1.0.5 raised it to 4000 MB (1650 MB restarted busy windows too often), fixed the Accept AC Drops spam,
 adds Noxus2k-AQW's Watch Dog rescue changes and a Game-Only Full Screen (Shift+F11). The release ZIP is tidied: the two
-exes at the top, everything else in `source`. See the [release notes](docs/RELEASE-v1.0.5.md); the previous
-[v1.0.4 notes](docs/RELEASE-v1.0.4.md), [v1.0.3 notes](docs/RELEASE-v1.0.3.md) and [renderer testing details](docs/RENDERER-PERFORMANCE.md) are still available.
+exes at the top, everything else in `source`. See the [release notes](docs/RELEASE-v1.0.6.md); the previous
+[v1.0.5 notes](docs/RELEASE-v1.0.5.md), [v1.0.4 notes](docs/RELEASE-v1.0.4.md), [v1.0.3 notes](docs/RELEASE-v1.0.3.md) and [renderer testing details](docs/RENDERER-PERFORMANCE.md) are still available.
 
 ---
 

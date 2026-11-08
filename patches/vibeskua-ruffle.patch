@@ -866,7 +866,7 @@ index 0000000..adcef23
 +#endif
 diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 new file mode 100644
-index 0000000..5914edb
+index 0000000..046f84d
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 @@ -0,0 +1,1045 @@
@@ -1000,7 +1000,7 @@ index 0000000..5914edb
 +        ApplyRuffleOptions(startInfo);
 +        // Read again at every start, so editing ruffle-options.txt takes effect with the next restart.
 +        _memoryLimitMb = startInfo.Environment.TryGetValue("SKUA_MEMORY_LIMIT_MB", out string? limit)
-+            && long.TryParse(limit, out long limitMb) && limitMb > 0 ? limitMb : 4000;
++            && long.TryParse(limit, out long limitMb) && limitMb > 0 ? limitMb : 8192;
 +        StartHealthTimer();
 +
 +        try
@@ -1174,7 +1174,7 @@ index 0000000..5914edb
 +    // ---- Health check (week-long runs) ----------------------------------------------------------------
 +    // Every 30 s: a quick call to the game. Three unanswered in a row (about a minute and a half
 +    // frozen) and the game window is restarted; the login watchdog then logs back in and restarts the
-+    // script. Also a memory safety net: past SKUA_MEMORY_LIMIT_MB (ruffle-options.txt, default 4000)
++    // script. Also a memory safety net: past SKUA_MEMORY_LIMIT_MB (ruffle-options.txt, default 8192)
 +    // the window is restarted once the account is out of combat (or after 10 minutes regardless).
 +
 +    private System.Threading.Timer? _healthTimer;
@@ -1183,7 +1183,7 @@ index 0000000..5914edb
 +    private DateTime _overLimitSince = DateTime.MinValue;
 +    private DateTime _lastMemoryRestart = DateTime.MinValue;
 +    private bool _loggedTooSoon;
-+    private static long _memoryLimitMb = 4000;
++    private static long _memoryLimitMb = 8192;
 +
 +    private void StartHealthTimer()
 +    {
