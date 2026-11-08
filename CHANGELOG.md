@@ -1,6 +1,11 @@
 # Changelog
 
-## v1.0.6 (2026-11-08) - hotfix: 8192 MB memory restart
+## v1.0.51 (2026-11-08) - memory restart switch and 8192 MB default
+
+- New **Memory** tab in the Watch Dog window: a switch to turn the game window's memory restarts off completely (the memory limit and the "PC low on RAM" rule), for PCs with little RAM that would rather run at 100% memory use than be restarted and logged back in. Saved as `SKUA_MEMORY_LIMIT_MB=off` in `ruffle-options.txt` (also `myalt: SKUA_MEMORY_LIMIT_MB=off` for one account); it takes effect within about 30 seconds.
+- The default memory limit is now **8192 MB** (4000 MB in v1.0.5, 1650 MB in v1.0.4). A window that stops answering is still restarted. See the [release notes](docs/RELEASE-v1.0.51.md).
+
+## v1.0.6 (2026-11-08) - hotfix: 8192 MB memory restart (never published; included in v1.0.51)
 
 - The game window now restarts for memory at **8192 MB** (4000 MB in v1.0.5, 1650 MB in v1.0.4), so busy windows are no longer restarted and logged back in over and over. `SKUA_MEMORY_LIMIT_MB` still overrides it. Nothing else changed since v1.0.5. See the [release notes](docs/RELEASE-v1.0.6.md).
 

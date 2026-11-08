@@ -409,6 +409,80 @@ index 0000000..1fbecc5
 +    /// <inheritdoc cref="TabHostMutexName"/>
 +    public static string TabHostPipeName => UseRuffle ? "VibeSkuaRuffleTabHostPipe" : "VibeSkuaTabHostPipe";
 +}
+diff --git a/Skua.App.Avalonia/Flash/MemoryRestartSetting.cs b/Skua.App.Avalonia/Flash/MemoryRestartSetting.cs
+new file mode 100644
+index 0000000..337b9bb
+--- /dev/null
++++ b/Skua.App.Avalonia/Flash/MemoryRestartSetting.cs
+@@ -0,0 +1,68 @@
++using System;
++using System.Collections.Generic;
++using System.IO;
++using System.Linq;
++
++namespace Skua.App.Avalonia.Flash;
++
++/// <summary>
++/// The switch for the game window's memory restarts (over the memory limit, or the PC low on RAM). It lives in ruffle-options.txt as
++/// <c>SKUA_MEMORY_LIMIT_MB=off</c> (also 0, none, unlimited, never or disabled); the same line for one account is
++/// <c>myalt: SKUA_MEMORY_LIMIT_MB=off</c>. Off, the game window is never restarted for memory, however much it uses.
++/// </summary>
++public static class MemoryRestartSetting
++{
++    private static string Path_ => Path.Combine(AppContext.BaseDirectory, "ruffle-options.txt");
++
++    /// <summary>Whether this value of SKUA_MEMORY_LIMIT_MB means "no memory restarts".</summary>
++    public static bool IsOffValue(string? value)
++    {
++        string v = (value ?? "").Trim().Trim('"');
++        return v.Equals("off", StringComparison.OrdinalIgnoreCase) || v.Equals("0") || v.Equals("none", StringComparison.OrdinalIgnoreCase)
++            || v.Equals("unlimited", StringComparison.OrdinalIgnoreCase) || v.Equals("never", StringComparison.OrdinalIgnoreCase)
++            || v.Equals("disabled", StringComparison.OrdinalIgnoreCase) || v.Equals("infinite", StringComparison.OrdinalIgnoreCase);
++    }
++
++    private static bool IsGlobalLimitLine(string raw)
++    {
++        string line = raw.Trim();
++        if (line.Length == 0 || line.StartsWith('#') || line.StartsWith('-'))
++            return false;
++        int equals = line.IndexOf('=');
++        int colon = line.IndexOf(':');
++        if (equals <= 0 || (colon >= 0 && colon < equals))
++            return false;
++        return line[..equals].Trim().Equals("SKUA_MEMORY_LIMIT_MB", StringComparison.Ordinal);
++    }
++
++    /// <summary>Whether the line for everyone switches the memory restarts off.</summary>
++    public static bool GlobalOff()
++    {
++        try
++        {
++            return File.Exists(Path_) && File.ReadAllLines(Path_).Where(IsGlobalLimitLine)
++                .Select(l => l[(l.IndexOf('=') + 1)..]).LastOrDefault() is { } value && IsOffValue(value);
++        }
++        catch
++        {
++            return false;
++        }
++    }
++
++    /// <summary>Switches the memory restarts off (or on again) for everyone: the line goes near the top, so a line for one account still wins.</summary>
++    public static void SetGlobalOff(bool off)
++    {
++        List<string> lines = File.Exists(Path_) ? File.ReadAllLines(Path_).ToList() : new();
++        lines.RemoveAll(IsGlobalLimitLine);
++        if (off)
++        {
++            int at = 0;
++            while (at < lines.Count && lines[at].TrimStart().StartsWith('#'))
++                at++;
++            lines.Insert(at, "SKUA_MEMORY_LIMIT_MB=off");
++        }
++        string temp = Path_ + ".tmp";
++        File.WriteAllLines(temp, lines);
++        File.Move(temp, Path_, true);
++    }
++}
 diff --git a/Skua.App.Avalonia/Flash/RuffleControl.cs b/Skua.App.Avalonia/Flash/RuffleControl.cs
 new file mode 100644
 index 0000000..1626834
@@ -866,10 +940,10 @@ index 0000000..adcef23
 +#endif
 diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 new file mode 100644
-index 0000000..046f84d
+index 0000000..70206fc
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
-@@ -0,0 +1,1045 @@
+@@ -0,0 +1,1069 @@
 +using Skua.Core.Interfaces;
 +using System;
 +using System.Xml.Linq;
@@ -1001,6 +1075,7 @@ index 0000000..046f84d
 +        // Read again at every start, so editing ruffle-options.txt takes effect with the next restart.
 +        _memoryLimitMb = startInfo.Environment.TryGetValue("SKUA_MEMORY_LIMIT_MB", out string? limit)
 +            && long.TryParse(limit, out long limitMb) && limitMb > 0 ? limitMb : 8192;
++        _memoryRestartOff = startInfo.Environment.TryGetValue("SKUA_MEMORY_LIMIT_MB", out string? offValue) && MemoryRestartSetting.IsOffValue(offValue);
 +        StartHealthTimer();
 +
 +        try
@@ -1184,6 +1259,23 @@ index 0000000..046f84d
 +    private DateTime _lastMemoryRestart = DateTime.MinValue;
 +    private bool _loggedTooSoon;
 +    private static long _memoryLimitMb = 8192;
++    private static bool _memoryRestartOff;
++
++    /// <summary>SKUA_MEMORY_LIMIT_MB=off in ruffle-options.txt (for everyone or this account), read again at every check so the switch in the Watch Dog window works at once.</summary>
++    private static bool MemoryRestartOff()
++    {
++        try
++        {
++            var probe = new ProcessStartInfo();
++            probe.Environment.Remove("SKUA_MEMORY_LIMIT_MB");
++            ApplyRuffleOptions(probe);
++            return probe.Environment.TryGetValue("SKUA_MEMORY_LIMIT_MB", out string? value) && MemoryRestartSetting.IsOffValue(value);
++        }
++        catch
++        {
++            return _memoryRestartOff;
++        }
++    }
 +
 +    private void StartHealthTimer()
 +    {
@@ -1212,6 +1304,12 @@ index 0000000..046f84d
 +                return;
 +            }
 +
++            // "SKUA_MEMORY_LIMIT_MB=off": never restart for memory (the limit and the low-RAM rule); a frozen window is still restarted above.
++            if (MemoryRestartOff())
++            {
++                _overLimitSince = DateTime.MinValue;
++                return;
++            }
 +            process.Refresh();
 +            long committedMb = process.PrivateMemorySize64 >> 20;
 +            // Also when the whole PC is running out of memory: the biggest game window goes first.
@@ -3621,10 +3719,10 @@ index 0000000..9688932
 +}
 diff --git a/Skua.App.Avalonia/ViewModels/Options/WatchDogViewModel.cs b/Skua.App.Avalonia/ViewModels/Options/WatchDogViewModel.cs
 new file mode 100644
-index 0000000..6b4cf79
+index 0000000..1d2c6fd
 --- /dev/null
 +++ b/Skua.App.Avalonia/ViewModels/Options/WatchDogViewModel.cs
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,103 @@
 +using CommunityToolkit.Mvvm.ComponentModel;
 +using CommunityToolkit.Mvvm.Input;
 +using Skua.Core.Scripts;
@@ -3642,6 +3740,18 @@ index 0000000..6b4cf79
 +    }
 +
 +    public ScriptOption Options { get; }
++
++    /// <summary>Restart the game window when it uses too much memory or the PC is low on RAM (ruffle-options.txt: SKUA_MEMORY_LIMIT_MB=off turns it off).</summary>
++    public bool RestartForMemory
++    {
++        get => !Flash.MemoryRestartSetting.GlobalOff();
++        set
++        {
++            try { Flash.MemoryRestartSetting.SetGlobalOff(!value); }
++            catch { }
++            OnPropertyChanged();
++        }
++    }
 +
 +    /// <summary>The accounts on this PC that run a Watch Dog, refreshed while the window is open.</summary>
 +    public ObservableCollection<RescueAccountRow> Accounts { get; } = new();
@@ -7199,10 +7309,10 @@ index 0000000..cad9570
 +}
 diff --git a/Skua.App.Avalonia/Views/WatchDogView.axaml b/Skua.App.Avalonia/Views/WatchDogView.axaml
 new file mode 100644
-index 0000000..81cca39
+index 0000000..5a48491
 --- /dev/null
 +++ b/Skua.App.Avalonia/Views/WatchDogView.axaml
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,98 @@
 +<UserControl xmlns="https://github.com/avaloniaui"
 +             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 +             xmlns:vms="clr-namespace:Skua.App.Avalonia.ViewModels.Options"
@@ -7258,6 +7368,15 @@ index 0000000..81cca39
 +                           Value="{Binding Options.RescueHoldLimitMinutes, Mode=TwoWay}" />
 +          </Grid>
 +          <TextBlock Text="Helpers use the class and skill mode of the Boss selection in their CoreBots options (and its gear, when enabled) and put their own setup back afterwards. A helper that dies too often without a kill stops attacking, leaves combat and restores its setup. Helpers stay in the map until the caller leaves it, or until the hold limit passes with no kill or death. Defaults: cooldown on, 10 minutes, 5 deaths, Boss setup on, hold limit 30 minutes."
++                     TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++        </StackPanel>
++      </TabItem>
++      <TabItem Header="Memory">
++        <StackPanel Margin="14" Spacing="10">
++          <CheckBox Content="Restart the game window when it uses too much memory or the PC is low on RAM" IsChecked="{Binding RestartForMemory, Mode=TwoWay}" />
++          <TextBlock Text="On (default): a game window above its memory limit (8192 MB) is restarted when its account is out of combat, and so is the biggest game window when the whole PC is nearly out of memory; the account then logs back in. Off: the game window is never restarted for memory, however much it uses. On a PC with little RAM (for example 4 GB) that means it can run at 100% memory use and slow down or freeze, but it is not restarted and logged back in over and over. A window that stops answering is still restarted either way."
++                     TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++          <TextBlock Text="Saved as SKUA_MEMORY_LIMIT_MB=off in ruffle-options.txt, for every account. To change the limit instead, or to switch it off for one account only, edit that file (for example myalt: SKUA_MEMORY_LIMIT_MB=off or SKUA_MEMORY_LIMIT_MB=6000). It takes effect within about 30 seconds."
 +                     TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
 +        </StackPanel>
 +      </TabItem>

@@ -143,3 +143,7 @@ stay paused, and idle accounts return idle. Manual stop/logout/new-script action
 The standalone Watch Dog plugin exposes the same live controls under Plugins → Rescue Allies. Shared values
 and exclusions are saved in `%APPDATA%\Skua\WatchDog\rescue-settings.json`. All participating clients need
 the updated code loaded; restart once after installation. Settings apply immediately without Save Options.
+
+## Memory restarts
+
+The game window is restarted for memory when it uses more than 8192 MB (`SKUA_MEMORY_LIMIT_MB` in `ruffle-options.txt` sets another limit) and when the whole PC is nearly out of memory and it is the biggest game window. To turn both off, use the **Memory** tab of the Watch Dog window, or put `SKUA_MEMORY_LIMIT_MB=off` in `ruffle-options.txt` (for one account: `myalt: SKUA_MEMORY_LIMIT_MB=off`). A window that stops answering is still restarted.
