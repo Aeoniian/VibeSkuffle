@@ -1,6 +1,24 @@
-"""Build a clean portable release from Build/. No account settings or runtime logs are copied."""
+"""Build a clean portable release from Build/. No account settings or runtime logs are copied.
+
+The package is tidy: its top folder holds only `VibeSkuffle.exe` and `VibeSkuffle.Manager.exe`; everything else (the program files,
+Mugetsu, plugins, the readme, the update manifest) is in a folder called `source`. The two top-level exes are the normal ones with the
+path of the program they start rewritten to `source/VibeSkuffle.dll` (the apphost's own relative-path field), so the program itself runs
+exactly as before, from `source`, and its updater keeps working inside that folder."""
 import argparse, hashlib, json, re, shutil, subprocess, sys, zipfile
 from pathlib import Path
+
+def write_launcher(apphost: Path, target: Path, relative_dll: str):
+    """Copy a built apphost and rewrite the relative path of the .NET program it starts (a 1024 byte field right after the name)."""
+    data=bytearray(apphost.read_bytes())
+    name=apphost.stem+'.dll'
+    marker=name.encode('utf-8')+b'\0'
+    at=data.find(marker)
+    if at<0 or data.count(marker)!=1: raise RuntimeError('Could not find the program path inside '+apphost.name)
+    new=relative_dll.encode('utf-8')
+    if len(new)>1000: raise RuntimeError('Program path too long')
+    if any(data[at+len(marker):at+1024]): raise RuntimeError('Unexpected data after the program path in '+apphost.name)
+    data[at:at+1024]=new+bytes(1024-len(new))
+    target.write_bytes(bytes(data))
 
 def main():
     parser=argparse.ArgumentParser()
@@ -11,8 +29,8 @@ def main():
     args=parser.parse_args()
     if not re.fullmatch(r'v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?',args.version): parser.error('Invalid release version')
     root=args.root.resolve(); build=root/'VibeSkua/Build'; templates=args.templates or root/'release-template'
-    package_name=f'VibeSkuffle-{args.version}-win-x64'; stage=root/'out/release-staging'/package_name
-    if stage.exists(): raise SystemExit('Staging folder already exists: '+str(stage))
+    package_name=f'VibeSkuffle-{args.version}-win-x64'; outer=root/'out/release-staging'/package_name; stage=outer/'source'
+    if outer.exists(): raise SystemExit('Staging folder already exists: '+str(outer))
     stage.mkdir(parents=True)
     def copy(source,relative):
         target=stage/relative; target.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(source,target)
@@ -61,12 +79,15 @@ def main():
     manifest=json.loads((stage/'vibeskuffle-update.json').read_text())
     for required in ['VibeSkuffle.exe','VibeSkuffle.Manager.exe','ruffle/Mugetsu.exe','plugins/ButlerV5.dll','plugins/Skua.Plugin.DailyTracker.dll','plugins/Skua.Plugin.Cosmetics.dll','client-update.ps1']:
         if required not in manifest['Files']: raise RuntimeError('Missing release application file: '+required)
+    # The two exes at the top: the normal apphosts, pointed at the program in source/.
+    for exe,dll in [('VibeSkuffle.exe','VibeSkuffle.dll'),('VibeSkuffle.Manager.exe','VibeSkuffle.Manager.dll')]:
+        write_launcher(stage/exe,outer/exe,'source/'+dll)
     output=args.output or root/'out/releases'; output.mkdir(parents=True,exist_ok=True)
     archive=output/(package_name+'.zip')
     if archive.exists(): raise SystemExit('Archive already exists: '+str(archive))
     with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as package:
-        for file in sorted(stage.rglob('*')):
-            if file.is_file(): package.write(file,Path(package_name)/file.relative_to(stage))
+        for file in sorted(outer.rglob('*')):
+            if file.is_file(): package.write(file,Path(package_name)/file.relative_to(outer))
     digest=hashlib.sha256(archive.read_bytes()).hexdigest()
     checksum=output/(package_name+'.zip.sha256'); checksum.write_text(f'{digest}  {archive.name}\n',encoding='ascii')
     print(json.dumps({'archive':str(archive),'sha256':digest,'bytes':archive.stat().st_size,'application_files':len(manifest['Files'])},indent=2))

@@ -163,7 +163,7 @@ index 56cc563..3710119 100644
              new("Combat", new List<MainMenuItemViewModel>()
              {
 diff --git a/Skua.App.Avalonia/AppStartup/Options.cs b/Skua.App.Avalonia/AppStartup/Options.cs
-index db31d80..b3c3bef 100644
+index db31d80..f51f50f 100644
 --- a/Skua.App.Avalonia/AppStartup/Options.cs
 +++ b/Skua.App.Avalonia/AppStartup/Options.cs
 @@ -17,51 +17,77 @@ namespace Skua.App.Avalonia.AppStartup;
@@ -210,7 +210,7 @@ index db31d80..b3c3bef 100644
 +        foreach ((string name, Type type) in source.Properties)
          {
 -            if (pi.Name is nameof(IScriptOption.OptionDictionary) or nameof(ObservableRecipient.IsActive) or nameof(IScriptOption.GuildColor) or nameof(IScriptOption.NameColor) or "IsIpcMessageProcessing" or nameof(IScriptOption.ReloginTryDelay) or nameof(IScriptOption.UseFunctionBasedSkills) or nameof(IScriptOption.ReloginServer))
-+            if (name is nameof(ScriptOption.RescueDelayMinutes) or nameof(ScriptOption.RescueDeathsBeforeCalling) or nameof(IScriptOption.OptionDictionary) or nameof(ObservableRecipient.IsActive) or nameof(IScriptOption.GuildColor) or nameof(IScriptOption.NameColor) or "IsIpcMessageProcessing" or nameof(IScriptOption.ReloginTryDelay) or nameof(IScriptOption.UseFunctionBasedSkills) or nameof(IScriptOption.ReloginServer))
++            if (name is nameof(ScriptOption.RescueDelayMinutes) or nameof(ScriptOption.RescueDeathsBeforeCalling) or nameof(ScriptOption.RescueCooldownEnabled) or nameof(ScriptOption.RescueCooldownMinutes) or nameof(ScriptOption.RescueHelperDeathLimit) or nameof(ScriptOption.RescueHoldLimitMinutes) or nameof(ScriptOption.RescueUseBossLoadout) or nameof(IScriptOption.OptionDictionary) or nameof(ObservableRecipient.IsActive) or nameof(IScriptOption.GuildColor) or nameof(IScriptOption.NameColor) or "IsIpcMessageProcessing" or nameof(IScriptOption.ReloginTryDelay) or nameof(IScriptOption.UseFunctionBasedSkills) or nameof(IScriptOption.ReloginServer))
 +                continue;
 +            string binding = name;
 +            if (binding == nameof(IScriptOption.RescueAllies))
@@ -866,7 +866,7 @@ index 0000000..adcef23
 +#endif
 diff --git a/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 new file mode 100644
-index 0000000..f63f7d1
+index 0000000..5914edb
 --- /dev/null
 +++ b/Skua.App.Avalonia/Flash/RuffleFlashUtil.cs
 @@ -0,0 +1,1045 @@
@@ -1000,7 +1000,7 @@ index 0000000..f63f7d1
 +        ApplyRuffleOptions(startInfo);
 +        // Read again at every start, so editing ruffle-options.txt takes effect with the next restart.
 +        _memoryLimitMb = startInfo.Environment.TryGetValue("SKUA_MEMORY_LIMIT_MB", out string? limit)
-+            && long.TryParse(limit, out long limitMb) && limitMb > 0 ? limitMb : 1650;
++            && long.TryParse(limit, out long limitMb) && limitMb > 0 ? limitMb : 4000;
 +        StartHealthTimer();
 +
 +        try
@@ -1174,7 +1174,7 @@ index 0000000..f63f7d1
 +    // ---- Health check (week-long runs) ----------------------------------------------------------------
 +    // Every 30 s: a quick call to the game. Three unanswered in a row (about a minute and a half
 +    // frozen) and the game window is restarted; the login watchdog then logs back in and restarts the
-+    // script. Also a memory safety net: past SKUA_MEMORY_LIMIT_MB (ruffle-options.txt, default 1650)
++    // script. Also a memory safety net: past SKUA_MEMORY_LIMIT_MB (ruffle-options.txt, default 4000)
 +    // the window is restarted once the account is out of combat (or after 10 minutes regardless).
 +
 +    private System.Threading.Timer? _healthTimer;
@@ -1183,7 +1183,7 @@ index 0000000..f63f7d1
 +    private DateTime _overLimitSince = DateTime.MinValue;
 +    private DateTime _lastMemoryRestart = DateTime.MinValue;
 +    private bool _loggedTooSoon;
-+    private static long _memoryLimitMb = 1650;
++    private static long _memoryLimitMb = 4000;
 +
 +    private void StartHealthTimer()
 +    {
@@ -2173,15 +2173,17 @@ index 0000000..ca8432c
 +    }
 +}
 diff --git a/Skua.App.Avalonia/Services/HotKeyService.cs b/Skua.App.Avalonia/Services/HotKeyService.cs
-index 2935632..2905b4d 100644
+index 2935632..83bb356 100644
 --- a/Skua.App.Avalonia/Services/HotKeyService.cs
 +++ b/Skua.App.Avalonia/Services/HotKeyService.cs
-@@ -205,6 +205,10 @@ public class HotKeyService : IHotKeyService, IDisposable
+@@ -205,6 +205,12 @@ public class HotKeyService : IHotKeyService, IDisposable
  
          if (!HasBinding("OpenBank"))
              hotkeys.Add("OpenBank|F2");
 +        if (!HasBinding("ToggleFullScreen"))
 +            hotkeys.Add("ToggleFullScreen|F11");
++        if (!HasBinding("ToggleGameFullScreen"))
++            hotkeys.Add("ToggleGameFullScreen|Shift+F11");
 +        if (!HasBinding("OpenCommandPalette"))
 +            hotkeys.Add("OpenCommandPalette|Ctrl+K");
      }
@@ -3619,18 +3621,100 @@ index 0000000..9688932
 +}
 diff --git a/Skua.App.Avalonia/ViewModels/Options/WatchDogViewModel.cs b/Skua.App.Avalonia/ViewModels/Options/WatchDogViewModel.cs
 new file mode 100644
-index 0000000..f5b3d0f
+index 0000000..6b4cf79
 --- /dev/null
 +++ b/Skua.App.Avalonia/ViewModels/Options/WatchDogViewModel.cs
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,91 @@
++using CommunityToolkit.Mvvm.ComponentModel;
++using CommunityToolkit.Mvvm.Input;
 +using Skua.Core.Scripts;
 +using Skua.Shared.Avalonia.ViewModels;
++using System.Collections.ObjectModel;
++using System.Linq;
 +
 +namespace Skua.App.Avalonia.ViewModels.Options;
 +
-+public sealed class WatchDogViewModel(ScriptOption options) : BotControlViewModelBase("Watch Dog", 620, 460)
++public sealed partial class WatchDogViewModel : BotControlViewModelBase
 +{
-+    public ScriptOption Options { get; } = options;
++    public WatchDogViewModel(ScriptOption options) : base("Watch Dog", 680, 560)
++    {
++        Options = options;
++    }
++
++    public ScriptOption Options { get; }
++
++    /// <summary>The accounts on this PC that run a Watch Dog, refreshed while the window is open.</summary>
++    public ObservableCollection<RescueAccountRow> Accounts { get; } = new();
++
++    [ObservableProperty]
++    private string _accountsNote = "Watch Dog must be running on each account (VibeSkuffle has it built in). Only this one window needs to be open.";
++
++    [ObservableProperty]
++    private bool _hasNoAccounts = true;
++
++    public void RefreshAccounts()
++    {
++        var list = Options.RescueAccounts();
++        // Keep the rows that are still there, so a checkbox being clicked is not rebuilt under the mouse.
++        foreach (RescueAccountRow gone in Accounts.Where(r => list.All(a => !a.Account.Equals(r.Account, System.StringComparison.OrdinalIgnoreCase))).ToList())
++            Accounts.Remove(gone);
++        foreach (ScriptOption.RescueAccountInfo info in list)
++        {
++            RescueAccountRow? row = Accounts.FirstOrDefault(r => r.Account.Equals(info.Account, System.StringComparison.OrdinalIgnoreCase));
++            if (row is null)
++                Accounts.Add(row = new RescueAccountRow(this, info.Account));
++            row.Update(info);
++        }
++        HasNoAccounts = Accounts.Count == 0;
++    }
++
++    internal void SetNote(string text) => AccountsNote = text;
++}
++
++/// <summary>One account of the Accounts tab: where it is, what it is doing, whether it may help, and a button to ask for help for it.</summary>
++public sealed partial class RescueAccountRow : ObservableObject
++{
++    private readonly WatchDogViewModel _owner;
++    private bool _updating;
++
++    public RescueAccountRow(WatchDogViewModel owner, string account)
++    {
++        _owner = owner;
++        Account = account;
++    }
++
++    public string Account { get; }
++
++    [ObservableProperty]
++    private string _where = "";
++
++    [ObservableProperty]
++    private string _status = "";
++
++    [ObservableProperty]
++    private bool _canRequest;
++
++    [ObservableProperty]
++    private bool _canHelp = true;
++
++    internal void Update(ScriptOption.RescueAccountInfo info)
++    {
++        _updating = true;
++        Where = string.IsNullOrWhiteSpace(info.Map) ? info.Server : $"{info.Server} · {info.Map}";
++        Status = info.Status;
++        CanRequest = info.CanRequest;
++        CanHelp = info.CanHelp;
++        _updating = false;
++    }
++
++    partial void OnCanHelpChanged(bool value)
++    {
++        if (!_updating)
++            _owner.Options.SetAccountCanHelp(Account, value);
++    }
++
++    [RelayCommand]
++    private void RequestHelp() => _owner.SetNote(_owner.Options.RequestRescueHelpFor(Account));
 +}
 diff --git a/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs b/Skua.App.Avalonia/ViewModels/Packets/PacketInterceptorViewModel.cs
 index 9f688a5..04daebb 100644
@@ -4429,10 +4513,27 @@ index b3c6c7b..506b7a1 100644
        <Button Grid.Column="3" Classes="skua-button skua-primary w112" Command="{Binding SaveOptionsCommand}" ToolTip.Tip="Keep these options for next time">
          <StackPanel Orientation="Horizontal" Spacing="6">
 diff --git a/Skua.App.Avalonia/Views/MainWindow.axaml.cs b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
-index e242ea8..fcc9285 100644
+index e242ea8..7a26ecf 100644
 --- a/Skua.App.Avalonia/Views/MainWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/MainWindow.axaml.cs
-@@ -105,6 +105,73 @@ public partial class MainWindow : Window
+@@ -102,9 +102,90 @@ public partial class MainWindow : Window
+     private DispatcherTimer? _tabTitleSyncTimer;
+     private bool _isFlashLoaded;
+     private bool _isTitleBarPermanentlyHidden = false;
++    private bool _gameOnly;
++    private bool _gameOnlySetFullScreen;
++
++    /// <summary>Game-only full screen: this client's menu bar and title bar are hidden (inside a tab window the tab window hides its own).</summary>
++    private void ApplyGameOnly(bool on)
++    {
++        _gameOnly = on;
++        var topNav = this.FindControl<global::Avalonia.Controls.Control>("TopNavBorder");
++        if (topNav != null)
++            topNav.IsVisible = !on;
++        var titleBar = this.FindControl<global::Avalonia.Controls.Control>("TitleBar");
++        if (titleBar != null && !_isTitleBarPermanentlyHidden)
++            titleBar.IsVisible = !on;
++    }
      private int _preThrottleFPS = -1;
      private string? _preThrottleQuality = null;
  
@@ -4506,7 +4607,7 @@ index e242ea8..fcc9285 100644
      public void HideTitleBar()
      {
          _isTitleBarPermanentlyHidden = true;
-@@ -120,6 +187,25 @@ public partial class MainWindow : Window
+@@ -120,6 +201,25 @@ public partial class MainWindow : Window
      public MainWindow()
      {
          InitializeComponent();
@@ -4532,7 +4633,7 @@ index e242ea8..fcc9285 100644
          _mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
          _mainMenuVm = Ioc.Default.GetRequiredService<MainMenuViewModel>();
          _flash = Ioc.Default.GetRequiredService<IFlashUtil>();
-@@ -157,8 +243,94 @@ public partial class MainWindow : Window
+@@ -157,8 +257,94 @@ public partial class MainWindow : Window
          MainMenuControl.Items.Clear();
          foreach (MainMenuItemViewModel item in _mainMenuVm.MainMenuItems)
              MainMenuControl.Items.Add(CreateMainMenuItem(item, isTopLevel: true));
@@ -4627,7 +4728,7 @@ index e242ea8..fcc9285 100644
      private global::Avalonia.Controls.MenuItem CreateMainMenuItem(IMainMenuItemViewModel viewModel, bool isTopLevel = false)
      {
          global::Avalonia.Controls.MenuItem menuItem = new()
-@@ -219,6 +391,7 @@ public partial class MainWindow : Window
+@@ -219,6 +405,7 @@ public partial class MainWindow : Window
                  "Script Loader" => MaterialIconKind.ScriptOutline,
                  "Scheduler" => MaterialIconKind.CalendarClock,
                  "Game" => MaterialIconKind.GamepadVariantOutline,
@@ -4635,7 +4736,7 @@ index e242ea8..fcc9285 100644
                  "Application" => MaterialIconKind.ApplicationCogOutline,
                  "CoreBots" => MaterialIconKind.RobotOutline,
                  "Application Themes" => MaterialIconKind.PaletteOutline,
-@@ -229,6 +402,7 @@ public partial class MainWindow : Window
+@@ -229,6 +416,7 @@ public partial class MainWindow : Window
                  "Grabber" => MaterialIconKind.HandBackRightOutline,
                  "Current Drops" => MaterialIconKind.GiftOutline,
                  "Junk Items" => MaterialIconKind.DeleteSweepOutline,
@@ -4643,7 +4744,7 @@ index e242ea8..fcc9285 100644
                  "Skills" => MaterialIconKind.LightningBoltOutline,
                  "Stats" => MaterialIconKind.ChartLine,
                  "Runtime" => MaterialIconKind.PlayNetworkOutline,
-@@ -273,6 +447,8 @@ public partial class MainWindow : Window
+@@ -273,6 +461,8 @@ public partial class MainWindow : Window
      private void RegisterMessages()
      {
          WeakReferenceMessenger.Default.Register<MainWindow, FlashChangedMessage<AxShockwaveFlash>>(this, static (r, m) => r.OnFlashControlChanged(m.Flash));
@@ -4652,7 +4753,7 @@ index e242ea8..fcc9285 100644
      }
      #endif
  
-@@ -286,11 +462,27 @@ public partial class MainWindow : Window
+@@ -286,11 +476,27 @@ public partial class MainWindow : Window
          {
              notifyOptions.PropertyChanged += (s, e) =>
              {
@@ -4682,7 +4783,7 @@ index e242ea8..fcc9285 100644
                          if (HeadlessOverlay != null) HeadlessOverlay.IsVisible = isHeadless;
                          if (FlashHost != null) FlashHost.IsVisible = !isHeadless && _isFlashLoaded;
                      });
-@@ -302,6 +494,17 @@ public partial class MainWindow : Window
+@@ -302,6 +508,41 @@ public partial class MainWindow : Window
      private void MainWindow_Opened(object? sender, EventArgs e)
      {
          _startup.Execute();
@@ -4696,11 +4797,35 @@ index e242ea8..fcc9285 100644
 +        });
 +        // A client running by itself (not inside a tab window) switches its own window with F11.
 +        HotKeys.ToggleFullScreenRequested = () => Dispatcher.UIThread.Post(() =>
-+            WindowState = WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen);
++        {
++            if (_gameOnly)
++            {
++                _gameOnlySetFullScreen = false;
++                ApplyGameOnly(false);
++            }
++            WindowState = WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen;
++        });
++        HotKeys.ToggleGameFullScreenRequested = () => Dispatcher.UIThread.Post(() =>
++        {
++            if (!_gameOnly)
++            {
++                _gameOnlySetFullScreen = WindowState != WindowState.FullScreen;
++                if (_gameOnlySetFullScreen)
++                    WindowState = WindowState.FullScreen;
++                ApplyGameOnly(true);
++            }
++            else
++            {
++                ApplyGameOnly(false);
++                if (_gameOnlySetFullScreen && WindowState == WindowState.FullScreen)
++                    WindowState = WindowState.Normal;
++                _gameOnlySetFullScreen = false;
++            }
++        });
          _flash.FlashCall += OnFlashCall;
  
          try
-@@ -326,6 +529,35 @@ public partial class MainWindow : Window
+@@ -326,6 +567,35 @@ public partial class MainWindow : Window
  #endif
          }
  
@@ -4736,7 +4861,7 @@ index e242ea8..fcc9285 100644
          _tabTitleSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
          string lastWrittenUsername = "";
          _tabTitleSyncTimer.Tick += (s, ev) =>
-@@ -374,8 +606,44 @@ public partial class MainWindow : Window
+@@ -374,8 +644,44 @@ public partial class MainWindow : Window
          _tabTitleSyncTimer.Start();
      }
  
@@ -4781,7 +4906,7 @@ index e242ea8..fcc9285 100644
          App.DisposeTrayIcon();
          _tabTitleSyncTimer?.Stop();
          try
-@@ -416,8 +684,11 @@ public partial class MainWindow : Window
+@@ -416,8 +722,11 @@ public partial class MainWindow : Window
                  // Hiding alone leaves the indeterminate animation running at the monitor's refresh rate.
                  LoadingBar.IsIndeterminate = false;
                  LoadingBar.IsVisible = false;
@@ -4795,7 +4920,7 @@ index e242ea8..fcc9285 100644
                  try
                  {
                      FlashHost?.SetScaleMode(false);
-@@ -428,6 +699,106 @@ public partial class MainWindow : Window
+@@ -428,6 +737,106 @@ public partial class MainWindow : Window
          }
      }
  
@@ -4902,7 +5027,21 @@ index e242ea8..fcc9285 100644
  #if IS_WINDOWS
      private IntPtr WindowSubclassProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam, nuint uIdSubclass, IntPtr dwRefData)
      {
-@@ -514,15 +885,43 @@ public partial class MainWindow : Window
+@@ -484,6 +893,13 @@ public partial class MainWindow : Window
+             return result;
+         }
+ 
++        if (uMsg == HotKeys.WM_SKUA_GAMEONLY)
++        {
++            bool on = wParam.ToInt32() == 1;
++            Dispatcher.UIThread.Post(() => ApplyGameOnly(on));
++            return IntPtr.Zero;
++        }
++
+         if (uMsg == WM_SKUA_GRIDVIEW)
+         {
+             Dispatcher.UIThread.Post(() =>
+@@ -514,15 +930,43 @@ public partial class MainWindow : Window
          }
          else if (uMsg == WM_SKUA_LOGIN)
          {
@@ -4950,7 +5089,7 @@ index e242ea8..fcc9285 100644
          else if (uMsg == 0x0400 + 448) // WM_SKUA_LOGOUT
          {
              Ioc.Default.GetRequiredService<IScriptServers>().Logout();
-@@ -673,6 +1072,15 @@ public partial class MainWindow : Window
+@@ -673,6 +1117,15 @@ public partial class MainWindow : Window
                      }
                      break;
              }
@@ -4966,7 +5105,7 @@ index e242ea8..fcc9285 100644
              return IntPtr.Zero;
          }
          else if (uMsg == WM_SKUA_ARMY_SCHEDULER)
-@@ -765,46 +1173,14 @@ public partial class MainWindow : Window
+@@ -765,46 +1218,14 @@ public partial class MainWindow : Window
          }
          else if (uMsg == 0x0400 + 452) // WM_SKUA_THROTTLE
          {
@@ -5758,10 +5897,10 @@ index 0000000..a56852c
 +    }
 +}
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
-index 9b6be87..cad1519 100644
+index 9b6be87..c201eba 100644
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml
-@@ -7,15 +7,15 @@
+@@ -7,18 +7,18 @@
          xmlns:controls="clr-namespace:Skua.App.Avalonia.Controls"
          x:Class="Skua.App.Avalonia.Views.TabbedHostWindow"
          Classes="skua"
@@ -5775,11 +5914,15 @@ index 9b6be87..cad1519 100644
          ExtendClientAreaTitleBarHeightHint="32">
 -    <Grid RowDefinitions="32,Auto,*">
 -        <sharedShell:WindowTitleBar x:Name="MainTitleBar" Grid.Row="0" TitleText="VibeSkua" />
-+    <Grid RowDefinitions="32,Auto,Auto,*">
++    <Grid x:Name="RootGrid" RowDefinitions="32,Auto,Auto,*">
 +        <sharedShell:WindowTitleBar x:Name="MainTitleBar" Grid.Row="0" TitleText="VibeSkuffle" />
  
          <!-- Top Tab Bar & Army Bar -->
-         <Border Grid.Row="1"
+-        <Border Grid.Row="1"
++        <Border x:Name="TabBarBorder" Grid.Row="1"
+                 Background="{DynamicResource SkuaSurfaceBrush}"
+                 BorderBrush="{DynamicResource SkuaBorderBrush}"
+                 BorderThickness="0,0,0,1"
 @@ -101,6 +101,28 @@
                                  <Style Selector="TabControl /template/ Rectangle#PART_Separator">
                                      <Setter Property="IsVisible" Value="False" />
@@ -5922,7 +6065,7 @@ index 9b6be87..cad1519 100644
                  <TextBlock Text="Loading Game Instance..." Foreground="{DynamicResource SkuaTextBrush}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,6" />
                  <TextBlock Text="Please wait while the game client initializes" Foreground="{DynamicResource SkuaMutedTextBrush}" FontSize="12" HorizontalAlignment="Center" />
 diff --git a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
-index b76adc5..116678d 100644
+index b76adc5..8cc9b24 100644
 --- a/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 +++ b/Skua.App.Avalonia/Views/TabbedHostWindow.axaml.cs
 @@ -47,6 +47,11 @@ public partial class TabbedHostWindow : Window
@@ -6010,21 +6153,25 @@ index b76adc5..116678d 100644
                              var editBox = headerPanel.Children.OfType<TextBox>().FirstOrDefault();
                              if (titleBlock != null && (titleBlock.Text.StartsWith("User ") || titleBlock.Text.StartsWith("Skua ") || titleBlock.Text != username))
                              {
-@@ -484,6 +517,7 @@ public partial class TabbedHostWindow : Window
+@@ -484,6 +517,8 @@ public partial class TabbedHostWindow : Window
          if (_hostHwnd != IntPtr.Zero)
          {
              HotKeys.HostHwnd = _hostHwnd;
-+            HotKeys.ToggleFullScreenRequested = () => Dispatcher.UIThread.Post(ToggleFullScreen);
++            HotKeys.ToggleFullScreenRequested = () => Dispatcher.UIThread.Post(() => ToggleFullScreen());
++            HotKeys.ToggleGameFullScreenRequested = () => Dispatcher.UIThread.Post(ToggleGameOnly);
              _subclassProc = HostWindowSubclassProc;
              SetWindowSubclass(_hostHwnd, _subclassProc, 1, IntPtr.Zero);
          }
-@@ -613,6 +647,18 @@ public partial class TabbedHostWindow : Window
+@@ -613,6 +648,21 @@ public partial class TabbedHostWindow : Window
              }
          }
  
 +        if (uMsg == HotKeys.WM_SKUA_FULLSCREEN)
 +        {
-+            Dispatcher.UIThread.Post(ToggleFullScreen);
++            if (wParam.ToInt32() == 1)
++                Dispatcher.UIThread.Post(ToggleGameOnly);
++            else
++                Dispatcher.UIThread.Post(() => ToggleFullScreen());
 +            return IntPtr.Zero;
 +        }
 +
@@ -6037,7 +6184,16 @@ index b76adc5..116678d 100644
          if (uMsg == WM_SKUA_CHILD_READY)
          {
              IntPtr childHwnd = wParam;
-@@ -691,6 +737,8 @@ public partial class TabbedHostWindow : Window
+@@ -682,6 +732,8 @@ public partial class TabbedHostWindow : Window
+         {
+             PostMessage(childHwnd, WM_SKUA_GRIDVIEW, new IntPtr(1), IntPtr.Zero);
+         }
++        if (_gameOnly)
++            PostMessage(childHwnd, HotKeys.WM_SKUA_GAMEONLY, new IntPtr(1), IntPtr.Zero);
+ 
+         DoReposition();
+ 
+@@ -691,6 +743,8 @@ public partial class TabbedHostWindow : Window
  
      private void OnWindowClosing(object? sender, WindowClosingEventArgs e)
      {
@@ -6046,7 +6202,7 @@ index b76adc5..116678d 100644
          _isClosing = true;
          App.DisposeTrayIcon();
          try { _pipeCts.Cancel(); } catch { }
-@@ -898,6 +946,31 @@ public partial class TabbedHostWindow : Window
+@@ -898,6 +952,80 @@ public partial class TabbedHostWindow : Window
      private const int WM_SKUA_JUMP_MAP = 0x0400 + 449;
      private const int WM_SKUA_SET_OPTION = 0x0400 + 450;
      private const int WM_SKUA_THROTTLE = 0x0400 + 452;
@@ -6056,9 +6212,18 @@ index b76adc5..116678d 100644
 +
 +    private WindowState _stateBeforeFullScreen = WindowState.Normal;
 +
-+    /// <summary>F11: the tab window goes borderless full screen, and back to what it was.</summary>
-+    private void ToggleFullScreen()
++    private bool _gameOnly;
++    private bool _gameOnlySetFullScreen;
++    private RowDefinitions? _rowsBeforeGameOnly;
++
++    /// <summary>F11: the tab window goes borderless full screen, and back to what it was (it also ends game-only full screen).</summary>
++    private void ToggleFullScreen(bool keepGameOnly = false)
 +    {
++        if (_gameOnly && !keepGameOnly)
++        {
++            _gameOnlySetFullScreen = false;
++            ApplyGameOnly(false);
++        }
 +        if (WindowState == WindowState.FullScreen)
 +        {
 +            WindowState = _stateBeforeFullScreen;
@@ -6066,6 +6231,46 @@ index b76adc5..116678d 100644
 +        }
 +        _stateBeforeFullScreen = WindowState == WindowState.Minimized ? WindowState.Normal : WindowState;
 +        WindowState = WindowState.FullScreen;
++    }
++
++    /// <summary>Shift+F11: full screen with only the game. The title bar, the tab bar, the notices and every client's menu are hidden;
++    /// leaving it puts the window back as it was.</summary>
++    private void ToggleGameOnly()
++    {
++        if (_gameOnly)
++        {
++            ApplyGameOnly(false);
++            if (_gameOnlySetFullScreen && WindowState == WindowState.FullScreen)
++                ToggleFullScreen(keepGameOnly: true);
++            _gameOnlySetFullScreen = false;
++            return;
++        }
++        _gameOnlySetFullScreen = WindowState != WindowState.FullScreen;
++        if (_gameOnlySetFullScreen)
++            ToggleFullScreen(keepGameOnly: true);
++        ApplyGameOnly(true);
++    }
++
++    private void ApplyGameOnly(bool on)
++    {
++        _gameOnly = on;
++        if (on)
++        {
++            _rowsBeforeGameOnly = RootGrid.RowDefinitions;
++            RootGrid.RowDefinitions = new RowDefinitions("0,0,0,*");
++        }
++        else if (_rowsBeforeGameOnly is not null)
++        {
++            RootGrid.RowDefinitions = _rowsBeforeGameOnly;
++            _rowsBeforeGameOnly = null;
++        }
++        MainTitleBar.IsVisible = !on;
++        TabBarBorder.IsVisible = !on;
++        DogNoticePanel.IsVisible = !on && DogNoticePanel.Children.Count > 0;
++        foreach (var info in _tabs.Values)
++            if (info.ChildHwnd != IntPtr.Zero)
++                PostMessage(info.ChildHwnd, HotKeys.WM_SKUA_GAMEONLY, new IntPtr(on ? 1 : 0), IntPtr.Zero);
++        Dispatcher.UIThread.Post(DoReposition, DispatcherPriority.Background);
 +    }
 +
 +    private void PostVisibility(TabInfo info, int state)
@@ -6078,7 +6283,7 @@ index b76adc5..116678d 100644
      private const int WM_SKUA_LOAD_SCRIPT = 0x0400 + 453;
      private const int WM_SKUA_ARMY_SCHEDULER = 0x0400 + 454;
      private const int WM_SKUA_ARMY_SCHEDULER_STOP = 0x0400 + 455;
-@@ -974,6 +1047,23 @@ public partial class TabbedHostWindow : Window
+@@ -974,6 +1102,23 @@ public partial class TabbedHostWindow : Window
  
      private bool _ignoreSelectionChange = false;
  
@@ -6102,7 +6307,7 @@ index b76adc5..116678d 100644
      public void EnterGridView()
      {
          if (_tabs.Count <= 1 || _isTogglingGridView) return;
-@@ -1049,6 +1139,87 @@ public partial class TabbedHostWindow : Window
+@@ -1049,6 +1194,87 @@ public partial class TabbedHostWindow : Window
          }
      }
  
@@ -6190,7 +6395,7 @@ index b76adc5..116678d 100644
      private void GridViewBorder_PointerPressed(object? sender, PointerPressedEventArgs e)
      {
          e.Handled = true;
-@@ -1310,18 +1481,23 @@ public partial class TabbedHostWindow : Window
+@@ -1310,18 +1536,23 @@ public partial class TabbedHostWindow : Window
          string originalHeader = menuItem?.Header?.ToString() ?? "Login All Clients";
          if (menuItem != null) menuItem.IsEnabled = false;
  
@@ -6224,7 +6429,7 @@ index b76adc5..116678d 100644
          }
  
          if (menuItem != null)
-@@ -2121,6 +2297,11 @@ public partial class TabbedHostWindow : Window
+@@ -2121,6 +2352,11 @@ public partial class TabbedHostWindow : Window
  
      private void UpdateGridViewBorderColor()
      {
@@ -6236,7 +6441,7 @@ index b76adc5..116678d 100644
          if (_isGridViewEnabled)
          {
              GridViewBorder[!Border.BackgroundProperty] = new global::Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension("SkuaSelectionBrush");
-@@ -2270,6 +2451,23 @@ public partial class TabbedHostWindow : Window
+@@ -2270,6 +2506,23 @@ public partial class TabbedHostWindow : Window
          }, DispatcherPriority.Render);
      }
  
@@ -6260,7 +6465,7 @@ index b76adc5..116678d 100644
      private void DoReposition()
      {
          if (!IsLoaded || _isClosing || _isDraggingWindow) return;
-@@ -2302,9 +2500,19 @@ public partial class TabbedHostWindow : Window
+@@ -2302,9 +2555,19 @@ public partial class TabbedHostWindow : Window
  
              if (WindowState == WindowState.Minimized || !IsVisible)
              {
@@ -6283,7 +6488,7 @@ index b76adc5..116678d 100644
                  return;
              }
  
-@@ -2361,26 +2569,27 @@ public partial class TabbedHostWindow : Window
+@@ -2361,26 +2624,27 @@ public partial class TabbedHostWindow : Window
              if (_isGridViewEnabled)
              {
                  int n = activeWindows.Count;
@@ -6322,7 +6527,7 @@ index b76adc5..116678d 100644
                      if (activeWindows[i].IsThrottled)
                      {
                          activeWindows[i].IsThrottled = false;
-@@ -2408,23 +2617,26 @@ public partial class TabbedHostWindow : Window
+@@ -2408,23 +2672,26 @@ public partial class TabbedHostWindow : Window
                  }
                  HotKeys.ActiveChildHwnd = activeChildHwnd;
  
@@ -6355,7 +6560,7 @@ index b76adc5..116678d 100644
                      if (activeInfo != null && activeInfo.IsThrottled)
                      {
                          activeInfo.IsThrottled = false;
-@@ -2439,6 +2651,8 @@ public partial class TabbedHostWindow : Window
+@@ -2439,6 +2706,8 @@ public partial class TabbedHostWindow : Window
                      TabInfo info = kvp.Value;
                      if (info.ChildHwnd == IntPtr.Zero) continue;
  
@@ -6364,7 +6569,7 @@ index b76adc5..116678d 100644
                      if (!info.IsThrottled)
                      {
                          info.IsThrottled = true;
-@@ -2559,6 +2773,86 @@ public partial class TabbedHostWindow : Window
+@@ -2559,6 +2828,86 @@ public partial class TabbedHostWindow : Window
              InstancesTabControl.SelectedItem = remaining;
      }
  
@@ -6451,7 +6656,7 @@ index b76adc5..116678d 100644
      public void AddNewInstance(string rawArgs)
      {
          AddNewInstance(ParseRawCommandLine(rawArgs));
-@@ -2572,7 +2866,7 @@ public partial class TabbedHostWindow : Window
+@@ -2572,7 +2921,7 @@ public partial class TabbedHostWindow : Window
          var currentTitles = InstancesTabControl.Items.OfType<TabItem>()
              .Select(t => t.Header as StackPanel)
              .Where(p => p != null)
@@ -6460,7 +6665,7 @@ index b76adc5..116678d 100644
              .Where(t => t != null && (t.StartsWith("User ") || t.StartsWith("Skua ")))
              .Select(t =>
              {
-@@ -2649,27 +2943,45 @@ public partial class TabbedHostWindow : Window
+@@ -2649,27 +2998,45 @@ public partial class TabbedHostWindow : Window
              CornerRadius = new CornerRadius(9),
              VerticalAlignment = VerticalAlignment.Center
          };
@@ -6519,7 +6724,7 @@ index b76adc5..116678d 100644
          Action closeEditMode = () =>
          {
              if (!editTitle.IsVisible) return;
-@@ -2732,6 +3044,8 @@ public partial class TabbedHostWindow : Window
+@@ -2732,6 +3099,8 @@ public partial class TabbedHostWindow : Window
          }, DispatcherPriority.Background);
  
          _tabs[newTab] = info;
@@ -6528,7 +6733,7 @@ index b76adc5..116678d 100644
  
          EnqueueSpawn(() =>
          {
-@@ -2767,6 +3081,17 @@ public partial class TabbedHostWindow : Window
+@@ -2767,6 +3136,17 @@ public partial class TabbedHostWindow : Window
                  {
                      if (!_isClosing)
                      {
@@ -6546,7 +6751,7 @@ index b76adc5..116678d 100644
                          CloseTab(newTab);
                      }
                  });
-@@ -2791,13 +3116,9 @@ public partial class TabbedHostWindow : Window
+@@ -2791,13 +3171,9 @@ public partial class TabbedHostWindow : Window
              }
  
              info.Process = p;
@@ -6563,7 +6768,7 @@ index b76adc5..116678d 100644
              HotKeys.RegisterSkuaPid((uint)p.Id);
  
              int pid = p.Id;
-@@ -2861,6 +3182,26 @@ public partial class TabbedHostWindow : Window
+@@ -2861,6 +3237,26 @@ public partial class TabbedHostWindow : Window
          ContextMenu ctx = new ContextMenu();
          MenuItem closeItem = new MenuItem { Header = "Close Tab" };
          closeItem.Click += (s, ev) => CloseTab(newTab);
@@ -6590,7 +6795,7 @@ index b76adc5..116678d 100644
          MenuItem closeOthersItem = new MenuItem { Header = "Close Other Tabs" };
          closeOthersItem.Click += (s, ev) =>
          {
-@@ -2874,6 +3215,21 @@ public partial class TabbedHostWindow : Window
+@@ -2874,6 +3270,21 @@ public partial class TabbedHostWindow : Window
              var toRemove = InstancesTabControl.Items.OfType<TabItem>().Where((t, i) => i > idx && t.Header is StackPanel).ToList();
              foreach (var tab in toRemove) CloseTab(tab);
          };
@@ -6612,7 +6817,7 @@ index b76adc5..116678d 100644
          ctx.Items.Add(closeItem);
          ctx.Items.Add(closeOthersItem);
          ctx.Items.Add(closeRightItem);
-@@ -2899,7 +3255,16 @@ public partial class TabbedHostWindow : Window
+@@ -2899,7 +3310,16 @@ public partial class TabbedHostWindow : Window
          newTab.ContextMenu = ctx;
  
          Point startPoint = new Point();
@@ -6630,7 +6835,7 @@ index b76adc5..116678d 100644
          {
              var prop = ev.GetCurrentPoint(headerPanel).Properties;
              if (prop.IsRightButtonPressed)
-@@ -2912,21 +3277,7 @@ public partial class TabbedHostWindow : Window
+@@ -2912,21 +3332,7 @@ public partial class TabbedHostWindow : Window
                  return;
  
              startPoint = ev.GetPosition(null);
@@ -6653,7 +6858,7 @@ index b76adc5..116678d 100644
              ev.Handled = true;
          };
  
-@@ -2940,8 +3291,8 @@ public partial class TabbedHostWindow : Window
+@@ -2940,8 +3346,8 @@ public partial class TabbedHostWindow : Window
  
          headerPanel.PointerMoved += async (s, ev) =>
          {
@@ -6664,7 +6869,7 @@ index b76adc5..116678d 100644
              if (ev.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
              {
                  Point mousePos = ev.GetPosition(null);
-@@ -2950,10 +3301,34 @@ public partial class TabbedHostWindow : Window
+@@ -2950,10 +3356,34 @@ public partial class TabbedHostWindow : Window
                  {
                      var dragData = new global::Avalonia.Input.DataObject();
                      dragData.Set("TabItem", newTab);
@@ -6700,7 +6905,7 @@ index b76adc5..116678d 100644
  
          newTab.AddHandler(DragDrop.DropEvent, (s, ev) =>
          {
-@@ -2962,10 +3337,24 @@ public partial class TabbedHostWindow : Window
+@@ -2962,10 +3392,24 @@ public partial class TabbedHostWindow : Window
                  TabItem? droppedTab = ev.Data.Get("TabItem") as TabItem;
                  if (droppedTab != null && droppedTab != newTab)
                  {
@@ -6728,7 +6933,7 @@ index b76adc5..116678d 100644
                  }
              }
          });
-@@ -2973,6 +3362,46 @@ public partial class TabbedHostWindow : Window
+@@ -2973,6 +3417,46 @@ public partial class TabbedHostWindow : Window
          #endregion Tab Interactions
      }
  
@@ -6775,7 +6980,7 @@ index b76adc5..116678d 100644
      #region Group Assignment Helper
  
      private string? GetTabLoggedInUsername(TabItem tab, TabInfo? info, string currentTitle)
-@@ -3130,4 +3559,4 @@ public partial class TabbedHostWindow : Window
+@@ -3130,4 +3614,4 @@ public partial class TabbedHostWindow : Window
      #endregion Group Assignment Helper
  
      #endregion Tab Management
@@ -6994,10 +7199,10 @@ index 0000000..cad9570
 +}
 diff --git a/Skua.App.Avalonia/Views/WatchDogView.axaml b/Skua.App.Avalonia/Views/WatchDogView.axaml
 new file mode 100644
-index 0000000..37575b1
+index 0000000..81cca39
 --- /dev/null
 +++ b/Skua.App.Avalonia/Views/WatchDogView.axaml
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,89 @@
 +<UserControl xmlns="https://github.com/avaloniaui"
 +             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 +             xmlns:vms="clr-namespace:Skua.App.Avalonia.ViewModels.Options"
@@ -7034,17 +7239,65 @@ index 0000000..37575b1
 +          </Grid>
 +          <TextBlock Text="Defaults: 15 minutes or 10 deaths. Changes apply to the current streak on the next watchdog check. Existing rescue calls continue until a kill or another normal stop condition."
 +                     TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++          <TextBlock Text="Helper rules" FontWeight="SemiBold" Margin="0,8,0,0" />
++          <CheckBox Content="Wait before helping the same account again" IsChecked="{Binding Options.RescueCooldownEnabled, Mode=TwoWay}" />
++          <Grid ColumnDefinitions="*,140" ColumnSpacing="12" IsVisible="{Binding Options.RescueCooldownEnabled}">
++            <TextBlock Text="Cooldown (minutes)" VerticalAlignment="Center" />
++            <NumericUpDown Grid.Column="1" Minimum="1" Maximum="30" Increment="1" FormatString="0"
++                           Value="{Binding Options.RescueCooldownMinutes, Mode=TwoWay}" />
++          </Grid>
++          <Grid ColumnDefinitions="*,140" ColumnSpacing="12">
++            <TextBlock Text="Helper deaths without a kill before it gives up" VerticalAlignment="Center" />
++            <NumericUpDown Grid.Column="1" Minimum="1" Maximum="100" Increment="1" FormatString="0"
++                           Value="{Binding Options.RescueHelperDeathLimit, Mode=TwoWay}" />
++          </Grid>
++          <CheckBox Content="Helpers use their CoreBots Boss class and gear" IsChecked="{Binding Options.RescueUseBossLoadout, Mode=TwoWay}" />
++          <Grid ColumnDefinitions="*,140" ColumnSpacing="12">
++            <TextBlock Text="Release helpers after this many minutes without a kill or death (0 = no limit)" TextWrapping="Wrap" VerticalAlignment="Center" />
++            <NumericUpDown Grid.Column="1" Minimum="0" Maximum="240" Increment="5" FormatString="0"
++                           Value="{Binding Options.RescueHoldLimitMinutes, Mode=TwoWay}" />
++          </Grid>
++          <TextBlock Text="Helpers use the class and skill mode of the Boss selection in their CoreBots options (and its gear, when enabled) and put their own setup back afterwards. A helper that dies too often without a kill stops attacking, leaves combat and restores its setup. Helpers stay in the map until the caller leaves it, or until the hold limit passes with no kill or death. Defaults: cooldown on, 10 minutes, 5 deaths, Boss setup on, hold limit 30 minutes."
++                     TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
 +        </StackPanel>
++      </TabItem>
++      <TabItem Header="Accounts">
++        <Grid Margin="14" RowDefinitions="Auto,*,Auto" RowSpacing="10">
++          <TextBlock Text="Accounts running Watch Dog on this PC. Request help asks that account to call for helpers in its current map; helpers stay until it leaves the map." TextWrapping="Wrap" />
++          <Grid Grid.Row="1">
++            <TextBlock Text="No account has reported yet." IsVisible="{Binding HasNoAccounts}" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++            <ScrollViewer VerticalScrollBarVisibility="Auto">
++              <ItemsControl ItemsSource="{Binding Accounts}">
++                <ItemsControl.ItemTemplate>
++                  <DataTemplate x:DataType="vms:RescueAccountRow">
++                    <Border Background="{DynamicResource SkuaSurfaceBrush}" BorderBrush="{DynamicResource SkuaBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,6">
++                      <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10">
++                        <TextBlock Text="{Binding Account}" FontWeight="SemiBold" />
++                        <TextBlock Grid.Row="1" Text="{Binding Where}" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" TextTrimming="CharacterEllipsis" />
++                        <TextBlock Grid.Column="1" Grid.RowSpan="2" Text="{Binding Status}" VerticalAlignment="Center" FontSize="12" />
++                        <StackPanel Grid.Column="2" Grid.RowSpan="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
++                          <CheckBox Content="Can help" IsChecked="{Binding CanHelp, Mode=TwoWay}" />
++                          <Button Classes="skua-button small" Content="Request help" Command="{Binding RequestHelpCommand}" IsEnabled="{Binding CanRequest}" />
++                        </StackPanel>
++                      </Grid>
++                    </Border>
++                  </DataTemplate>
++                </ItemsControl.ItemTemplate>
++              </ItemsControl>
++            </ScrollViewer>
++          </Grid>
++          <TextBlock Grid.Row="2" Text="{Binding AccountsNote}" TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource SkuaMutedTextBrush}" />
++        </Grid>
 +      </TabItem>
 +    </TabControl>
 +  </Grid>
 +</UserControl>
 diff --git a/Skua.App.Avalonia/Views/WatchDogView.axaml.cs b/Skua.App.Avalonia/Views/WatchDogView.axaml.cs
 new file mode 100644
-index 0000000..5057280
+index 0000000..eeb8581
 --- /dev/null
 +++ b/Skua.App.Avalonia/Views/WatchDogView.axaml.cs
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,22 @@
 +using Avalonia.Controls;
 +using Avalonia.Threading;
 +using WatchDog.Shared;
@@ -7061,7 +7314,11 @@ index 0000000..5057280
 +        AttachedToVisualTree += (_, _) => { RefreshStatus(); _statusTimer.Start(); };
 +        DetachedFromVisualTree += (_, _) => _statusTimer.Stop();
 +    }
-+    private void RefreshStatus() => this.FindControl<TextBlock>("RescueLiveStatus")!.Text = RescueStatus.Describe(RescueStatus.Latest, System.DateTime.UtcNow);
++    private void RefreshStatus()
++    {
++        this.FindControl<TextBlock>("RescueLiveStatus")!.Text = RescueStatus.Describe(RescueStatus.Latest, System.DateTime.UtcNow);
++        (DataContext as ViewModels.Options.WatchDogViewModel)?.RefreshAccounts();
++    }
 +}
 diff --git a/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs b/Skua.Core.Interfaces/Flash/IRestartableGamePlayer.cs
 new file mode 100644
@@ -7405,10 +7662,10 @@ index f928a06..2765fb6 100644
      public override string ToString()
      {
 diff --git a/Skua.Core/AppStartup/HotKeys.cs b/Skua.Core/AppStartup/HotKeys.cs
-index 7b78a10..ce13d10 100644
+index 7b78a10..1d5d1cc 100644
 --- a/Skua.Core/AppStartup/HotKeys.cs
 +++ b/Skua.Core/AppStartup/HotKeys.cs
-@@ -110,7 +110,10 @@ public class HotKeys
+@@ -110,7 +110,11 @@ public class HotKeys
          "ToggleUntargetDead",
          "ToggleUntargetSelf",
          "PlayerRest",
@@ -7416,20 +7673,22 @@ index 7b78a10..ce13d10 100644
 +        "RejectAllDrops",
 +        // New actions go at the end: the position in this list is the id sent between processes.
 +        "ToggleFullScreen",
-+        "OpenCommandPalette"
++        "OpenCommandPalette",
++        "ToggleGameFullScreen"
      };
  
      public static int GetActionId(string actionName) => _actionList.IndexOf(actionName);
-@@ -149,6 +152,8 @@ public class HotKeys
+@@ -149,6 +153,9 @@ public class HotKeys
              "ToggleHidePlayers" => "When enabled, all player avatars are hidden to reduce lag.",
              "ToggleInfiniteRange" => "Allows you to attack targets from any range without moving.",
              "ToggleLagKiller" => "Disables drawing the world to reduce lag and CPU usage.",
 +            "ToggleFullScreen" => "Switches the client window to borderless full screen and back.",
++            "ToggleGameFullScreen" => "Full screen with only the game: the title bar, tabs and menu are hidden. Press it again (or the Full Screen key) to leave.",
 +            "OpenCommandPalette" => "Opens a search box that finds any tool or helper of the main menu and opens it.",
              "ToggleHeadlessMode" => "Suspends DWM repaints and hides the game renderer completely to drastically drop CPU/GPU usage.",
              "ToggleMagnetise" => "When enabled, this will cause all targeted monsters to teleport directly to you.",
              "ToggleRestPackets" => "A rest packet will be sent every second, causing the player to heal when not in combat.",
-@@ -228,6 +233,29 @@ public class HotKeys
+@@ -228,6 +235,43 @@ public class HotKeys
      public const int WM_SKUA_RELOAD_HOTKEYS = 0x0400 + 461;
      public const int WM_SKUA_EXECUTE_HOTKEY = 0x0400 + 462;
      public const int WM_SKUA_LOAD_SCRIPT_ALL = 0x0400 + 463;
@@ -7439,8 +7698,22 @@ index 7b78a10..ce13d10 100644
 +    /// <summary>Set by the window that owns this process (the tab window, or a client running by itself); switches it to full screen and back.</summary>
 +    public static Action? ToggleFullScreenRequested { get; set; }
 +
++    /// <summary>Set by the window that owns this process; switches it to game-only full screen (no title bar, tabs or menu) and back.</summary>
++    public static Action? ToggleGameFullScreenRequested { get; set; }
++
++    /// <summary>Tells a client (inside a tab window) to hide or show its own menu bar for game-only full screen.</summary>
++    public const int WM_SKUA_GAMEONLY = 0x0400 + 468;
++
 +    /// <summary>Set by the client window: opens the command palette (Ctrl+K).</summary>
 +    public static Action? OpenCommandPaletteRequested { get; set; }
++
++    private static void ToggleGameFullScreen()
++    {
++        if (HostHwnd != IntPtr.Zero && !IsHostProcess)
++            PostMessage(HostHwnd, WM_SKUA_FULLSCREEN, new IntPtr(1), IntPtr.Zero);
++        else
++            ToggleGameFullScreenRequested?.Invoke();
++    }
 +
 +    private static void ToggleFullScreen()
 +    {
@@ -7459,7 +7732,7 @@ index 7b78a10..ce13d10 100644
  
      private static readonly HashSet<uint> _skuaPids = new() { (uint)Environment.ProcessId };
  
-@@ -287,7 +315,7 @@ public class HotKeys
+@@ -287,7 +331,7 @@ public class HotKeys
  
              try
              {
@@ -7468,16 +7741,17 @@ index 7b78a10..ce13d10 100644
                  foreach (var p in skuaProcesses)
                      pids.Add((uint)p.Id);
              }
-@@ -401,6 +429,8 @@ public class HotKeys
+@@ -401,6 +445,9 @@ public class HotKeys
          _hotkeyRegistry["ToggleLagKiller"] = new RelayCommand(() => ExecuteOrForward("ToggleLagKiller", ToggleLagKillerLocal));
  
          // Custom Vast Actions
 +        _hotkeyRegistry["ToggleFullScreen"] = new RelayCommand(ToggleFullScreen);
++        _hotkeyRegistry["ToggleGameFullScreen"] = new RelayCommand(ToggleGameFullScreen);
 +        _hotkeyRegistry["OpenCommandPalette"] = new RelayCommand(() => ExecuteOrForward("OpenCommandPalette", () => OpenCommandPaletteRequested?.Invoke()));
          _hotkeyRegistry["ToggleHeadlessMode"] = new RelayCommand(() => ExecuteOrForward("ToggleHeadlessMode", () => Ioc.Default.GetRequiredService<IScriptOption>().HeadlessMode ^= true));
          _hotkeyRegistry["ToggleStreamerMode"] = new RelayCommand(() => ExecuteOrForward("ToggleStreamerMode", () => Ioc.Default.GetRequiredService<IScriptOption>().StreamerMode ^= true));
          _hotkeyRegistry["ToggleHidePlayers"] = new RelayCommand(() => ExecuteOrForward("ToggleHidePlayers", () => Ioc.Default.GetRequiredService<IScriptOption>().HidePlayers ^= true));
-@@ -414,7 +444,7 @@ public class HotKeys
+@@ -414,7 +461,7 @@ public class HotKeys
          // Army Control
          _hotkeyRegistry["ArmyStartScripts"] = new RelayCommand(() => ExecuteOrForward("ArmyStartScripts", () => BroadcastArmyMessage(0x0400 + 450, 99, 1)));
          _hotkeyRegistry["ArmyStopScripts"] = new RelayCommand(() => ExecuteOrForward("ArmyStopScripts", () => BroadcastArmyMessage(0x0400 + 450, 99, 0)));
@@ -7486,7 +7760,7 @@ index 7b78a10..ce13d10 100644
          _hotkeyRegistry["ArmyLogoutAll"] = new RelayCommand(() => ExecuteOrForward("ArmyLogoutAll", () => BroadcastArmyMessage(0x0400 + 448, 0, 0)));
          _hotkeyRegistry["ArmyLoadScriptAll"] = new RelayCommand(ArmyLoadScriptAllLocal);
          
-@@ -571,19 +601,142 @@ public class HotKeys
+@@ -571,19 +618,142 @@ public class HotKeys
          options.LagKiller = !options.LagKiller;
      }
  
@@ -7713,10 +7987,10 @@ index 640dc22..899ce00 100644
      private void PlayerDead(ScriptCombat recipient, PlayerDeathMessage message)
 diff --git a/Skua.Core/Scripts/ScriptDrop.ACBanking.cs b/Skua.Core/Scripts/ScriptDrop.ACBanking.cs
 new file mode 100644
-index 0000000..662fb7a
+index 0000000..a0dfba2
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptDrop.ACBanking.cs
-@@ -0,0 +1,206 @@
+@@ -0,0 +1,239 @@
 +using Skua.Core.Interfaces;
 +using Skua.Core.Models.Items;
 +
@@ -7824,10 +8098,12 @@ index 0000000..662fb7a
 +            if (drops.Length > 0)
 +            {
 +                if (!_bank.Value.Loaded) _bank.Value.Load(true);
-+                ItemBase[] already = drops.Where(d => !d.Temp && d.MaxStack <= 1 && _bank.Value.Contains(d.ID)).ToArray();
++                ItemBase[] already = drops.Where(d => CannotTake(d) is not null).ToArray();
 +                if (already.Length > 0 && RejectDrops(already))
 +                {
 +                    rejected.AddRange(already.Select(d => d.Name));
++                    foreach (ItemBase d in already)
++                        _pickupAttempts.Remove(d.ID);
 +                    drops = drops.Where(d => already.All(a => a.ID != d.ID)).ToArray();
 +                }
 +            }
@@ -7859,6 +8135,7 @@ index 0000000..662fb7a
 +                    InventoryItem? item = Inventory.Items.FirstOrDefault(i => i.ID == s.Drop.ID);
 +                    if (item == null || item.Quantity <= s.Before) return false;
 +                    _pendingBank[s.Drop.ID] = (s.Drop.Name, 0);
++                    _pickupAttempts.Remove(s.Drop.ID);
 +                    return true;
 +                });
 +                if (sent.Count > 0) await Task.Delay(40, token);
@@ -7895,7 +8172,7 @@ index 0000000..662fb7a
 +            }
 +            OnPropertyChanged(nameof(CurrentDropInfos));
 +            OnPropertyChanged(nameof(CurrentDrops));
-+            return (rejected.Count > 0 ? $"Rejected (already in the bank): {string.Join(", ", rejected)}. " : "") +
++            return (rejected.Count > 0 ? $"Rejected (full stack or already owned): {string.Join(", ", rejected)}. " : "") +
 +                (banked.Count > 0 ? $"Banked: {string.Join(", ", banked)}. " : "") +
 +                (failed.Count > 0 ? $"Not banked: {string.Join(", ", failed.Distinct())}. Check inventory/bank space and item restrictions." :
 +                _pendingBank.Count > 0 ? "Remaining items queued until out of combat." : banked.Count == 0 && rejected.Count == 0 ? "No eligible AC drops." : "");
@@ -7908,6 +8185,36 @@ index 0000000..662fb7a
 +            _bankGate.Release();
 +        }
 +    }
++
++    /// <summary>
++    /// Why an AC drop would be refused by the server, or null when it can be taken: a stack that is already full, or an item that can only
++    /// be owned once (stack size 1) and is already in the inventory or in the bank. Trying anyway only makes the game print red
++    /// "You already have a full stack of that item" messages, so such drops are rejected instead of picked up.
++    /// </summary>
++    private string? CannotTake(ItemBase drop)
++    {
++        if (drop.Temp)
++            return null;
++        InventoryItem? owned = Inventory.Items.FirstOrDefault(i => i.ID == drop.ID);
++        int max = owned is { MaxStack: > 0 } ? owned.MaxStack : drop.MaxStack;
++        if (owned != null && max > 1 && owned.Quantity >= max)
++            return "full stack";
++        if (max != 1)
++            return null;
++        if (owned != null)
++            return "already owned";
++        if (!_bank.Value.Loaded)
++        {
++            // Reading the bank is slow and can fail: not more than once a minute.
++            if (DateTime.UtcNow - _bankLoadTried < TimeSpan.FromMinutes(1))
++                return null;
++            _bankLoadTried = DateTime.UtcNow;
++            _bank.Value.Load(true);
++        }
++        return _bank.Value.Contains(drop.ID) ? "already in the bank" : null;
++    }
++
++    private DateTime _bankLoadTried = DateTime.MinValue;
 +
 +    /// <summary>Rejects just these drops and leaves every other drop where it is (the game only offers "reject all except these names").</summary>
 +    private bool RejectDrops(ItemBase[] items)
@@ -7924,7 +8231,7 @@ index 0000000..662fb7a
 +    private bool SafeToBank(string account) => SafeAccount(account) && Player.Playing && !Player.InCombat;
 +}
 diff --git a/Skua.Core/Scripts/ScriptDrop.cs b/Skua.Core/Scripts/ScriptDrop.cs
-index 3fae4a8..ca3912e 100644
+index 3fae4a8..bc582a1 100644
 --- a/Skua.Core/Scripts/ScriptDrop.cs
 +++ b/Skua.Core/Scripts/ScriptDrop.cs
 @@ -18,7 +18,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
@@ -7956,7 +8263,33 @@ index 3fae4a8..ca3912e 100644
          if (!drop.Temp && !Inventory.HasSpaceFor(drop))
              return false;
          // The automatic loop only re-sends a refused drop once a slot has freed up; an explicit pickup always retries.
-@@ -165,6 +171,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -149,7 +155,24 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+ 
+     public void PickupACItems()
+     {
+-        PickupEach(CurrentDropInfos.Where(d => d.Coins));
++        ItemBase[] ac = CurrentDropInfos.Where(d => d.Coins).ToArray();
++        if (ac.Length == 0)
++            return;
++        // The same rule as "Pickup AC Drops And Send To Bank": a drop the server would refuse (a full stack, or an item that can only be
++        // owned once and is already in the inventory or bank) is rejected, not asked for again and again. A drop that was refused for
++        // lack of space waits until a slot has freed up, even when a script calls this over and over.
++        ItemBase[] refused = ac.Where(d => CannotTake(d) is not null).ToArray();
++        if (refused.Length > 0)
++            RejectDrops(refused);
++        PickupEach(ac.Where(d => refused.All(r => r.ID != d.ID) && !WaitingForSlot(d)));
++    }
++
++    private bool WaitingForSlot(ItemBase drop)
++    {
++        if (!_refusedIDs.TryGetValue(drop.ID, out (int Bag, int Misc) refused))
++            return false;
++        (int bag, int misc) = FreeSlots();
++        return bag <= refused.Bag && misc <= refused.Misc;
+     }
+ 
+     public void PickupAll(bool skipWait = false)
+@@ -165,6 +188,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      {
          if (Options.AcceptACDrops)
              PickupACItems();
@@ -7965,7 +8298,7 @@ index 3fae4a8..ca3912e 100644
          RejectExceptCore(names);
      }
  
-@@ -172,6 +180,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -172,6 +197,8 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      {
          if (Options.AcceptACDrops)
              PickupACItems();
@@ -7974,7 +8307,7 @@ index 3fae4a8..ca3912e 100644
          IEnumerable<string> items = CurrentDropInfos.Where(d => ids.Contains(d.ID)).Select(d => d.Name);
          RejectExceptCore(items);
      }
-@@ -186,7 +196,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -186,7 +213,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      private void RejectExceptCore(IEnumerable<string> names)
      {
          HashSet<string> keep = new(names, StringComparer.OrdinalIgnoreCase);
@@ -7983,7 +8316,7 @@ index 3fae4a8..ca3912e 100644
              keep.UnionWith(CurrentDropInfos.Where(d => d.Coins).Select(d => d.Name));
          if (!Flash.Call<bool>("rejectExcept", keep.Join(',').ToLowerInvariant()))
              return;
-@@ -314,7 +324,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -314,7 +341,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
                  if (pickupNames.Length > 0)
                      Pickup(pickupNames);
  
@@ -7992,7 +8325,7 @@ index 3fae4a8..ca3912e 100644
                      RejectExcept(BuildRejectElseWhitelist(pickupNames, pickupIDs));
              }
              catch (OperationCanceledException) when (token.IsCancellationRequested)
-@@ -375,6 +385,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -375,6 +402,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
  
      private void ClearDrops(ScriptDrop recipient, LogoutMessage message)
      {
@@ -8000,7 +8333,7 @@ index 3fae4a8..ca3912e 100644
          recipient._refusedIDs.Clear();
          recipient._currentDropInfos.Clear();
          recipient.OnPropertyChanged(nameof(recipient.CurrentDropInfos));
-@@ -413,6 +424,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -413,6 +441,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      {
          if (_disposed) return;
          _disposed = true;
@@ -8008,7 +8341,7 @@ index 3fae4a8..ca3912e 100644
  
          try
          {
-@@ -441,6 +453,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
+@@ -441,6 +470,7 @@ public partial class ScriptDrop : ObservableRecipient, IScriptDrop, IAsyncDispos
      {
          if (_disposed) return;
          _disposed = true;
@@ -8018,10 +8351,10 @@ index 3fae4a8..ca3912e 100644
          {
 diff --git a/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
 new file mode 100644
-index 0000000..99e2f00
+index 0000000..230f518
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.LoginWatchdog.cs
-@@ -0,0 +1,811 @@
+@@ -0,0 +1,823 @@
 +using Skua.Core.Interfaces;
 +using Skua.Core.Services;
 +
@@ -8051,7 +8384,7 @@ index 0000000..99e2f00
 +    private int _wdOutSince;
 +    private int _wdWaitSince;          // when a re-login started waiting (blank screen, nothing moving)
 +    private const int WatchdogLoginTimeoutMs = 300000;
-+    private bool _wdWasInGame;
++    private volatile bool _wdWasInGame;
 +    private volatile bool _wdReturnToRoom;
 +    private string? _wdLastRoom, _wdLastCell, _wdLastPad;
 +    private int _wdServerCheck;
@@ -8197,11 +8530,23 @@ index 0000000..99e2f00
 +            return;
 +        }
 +
++        // AQW reports a dead character as not Playing even though it remains logged in and may still be in the same
++        // loaded map. Keep an active rescue request alive across that temporary state.
++        if (MaintainRescueCallDuringDeath(Environment.TickCount))
++            return;
++
 +        // Just left the game. A script that was running then is started again once it's back in, however it
 +        // gets back (crash, freeze, memory restart, disconnect, stuck login); unless someone logged out on purpose.
 +        if (_wdWasInGame)
 +        {
 +            _wdWasInGame = false;
++            Interlocked.Exchange(ref _rsManualRequest, 0);
++            if (_rsCalling || _rsHoldingHelpers)
++            {
++                _rsCalling = false;
++                _rsHoldingHelpers = false;
++                ClearRescueCall();
++            }
 +            if (_wdScriptWhenInGame || ScriptRanRecently)
 +                _wdRestartScript = true;
 +            WdLog($" left the game; script running when last in game: {_wdScriptWhenInGame}, running recently: {ScriptRanRecently}, will restart it: {_wdRestartScript && !Servers.UserLoggedOut}.");
@@ -8835,10 +9180,10 @@ index 0000000..99e2f00
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.Rescue.cs b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
 new file mode 100644
-index 0000000..2e533d6
+index 0000000..82fa693
 --- /dev/null
 +++ b/Skua.Core/Scripts/ScriptInterface.Rescue.cs
-@@ -0,0 +1,399 @@
+@@ -0,0 +1,624 @@
 +using Skua.Core.Interfaces;
 +using WatchDog.Shared;
 +
@@ -8846,28 +9191,31 @@ index 0000000..2e533d6
 +
 +/// <summary>
 +/// Rescue: when an account running a script keeps dying without killing anything (10 deaths in a row, or 15
-+/// minutes of only deaths), it asks for help. Every eligible account on the same server (including idle accounts)
-+/// and has the shared Rescue Allies switch turned on pauses its script, goes to that room and cell, fights there, and once the
-+/// stuck account gets a kill (it got past) goes back to where it was and starts its own script again.
++/// minutes of only deaths), it asks for help. Eligible accounts help in its map and cell until it leaves the map
++/// or the helper dies 10 times without a kill, then restore their original state.
 +/// </summary>
 +/// <remarks>
 +/// The accounts talk through small files in %TEMP%\VibeSkuaTabs\rescue (one per account asking for help,
-+/// refreshed every 15 seconds; a file older than a minute counts as finished). Helpers give up after 20
-+/// minutes, and help the same account again at the earliest 10 minutes after the last rescue ended.
++/// refreshed every 15 seconds; a file older than a minute counts as finished). A helper can help the same account
++/// again after the optional shared cooldown (10 minutes by default).
 +/// </remarks>
 +public partial class ScriptInterface
 +{
 +    private const int RescueStaleMs = 60000;
-+    private const int RescueGiveUpMs = 20 * 60000;
-+    private const int RescueCooldownMs = 10 * 60000;
 +
 +    private static string RescueDir => Environment.GetEnvironmentVariable("WATCHDOG_RESCUE_CALL_ROOT") ?? Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", "rescue");
 +
 +    // The account that needs help.
 +    private int _rsLastDeaths = -1, _rsLastKills = -1, _rsDeathStreak, _rsStreakSince;
-+    private bool _rsCalling;
++    private volatile bool _rsCalling;
++    private volatile bool _rsHoldingHelpers;
++    private int _rsHoldActive;
++    private string _rsCallRoom = "";
++    private int _rsManualRequest;
 +    private string _rsOwner = "";
 +    private int _rsCallWritten;
++    private int _rsDeadSince;
++    private int _rsDeadStatusWritten;
 +
 +    // An account helping.
 +    private volatile string? _rsHelping;
@@ -8881,19 +9229,37 @@ index 0000000..2e533d6
 +
 +
 +    private volatile string _rsPhase = "", _rsOutcome = "", _rsScanStatus = "Waiting for the next scan.";
++
++    internal string RequestManualRescue()
++    {
++        if (!RescueEnabled) return "Turn on Rescue Allies for all accounts first.";
++        if (!_wdWasInGame) return "Log in and enter a map before requesting help.";
++        if (RescueActive) return "This account is already helping someone else.";
++        if (_wdBusy || _wdRestarting != 0) return "Wait for account recovery to finish before requesting help.";
++        if (_rsCalling || _rsHoldingHelpers) return "Help is already requested for this map.";
++        if (Interlocked.CompareExchange(ref _rsManualRequest, 1, 0) != 0)
++            return "Your help request is already queued.";
++        return "Manual help request queued.";
++    }
++
 +    private void PublishRescueStatus()
 +    {
 +        try
 +        {
 +            int now = Environment.TickCount;
-+            int[] cooldowns;
-+            lock (_rsLastHelped) cooldowns = _rsLastHelped.Values.Select(v => Math.Max(0, (RescueCooldownMs - unchecked(now-v) + 999)/1000)).Where(v => v > 0).OrderBy(v => v).ToArray();
 +            var store = SharedRescueSettings.Instance;
++            int cooldownMs = store.CooldownMinutes * 60000;
++            int[] cooldowns;
++            lock (_rsLastHelped) cooldowns = store.CooldownEnabled
++                ? _rsLastHelped.Values.Select(v => Math.Max(0, (cooldownMs - unchecked(now-v) + 999)/1000)).Where(v => v > 0).OrderBy(v => v).ToArray()
++                : [];
 +            bool requesting = Manager.ScriptRunning && !(Manager is IScriptManager sm && sm.ScriptPaused) && !RescueActive;
-+            string helper = RescueActive ? "Helping an account." : _rsCalling ? "Requesting help." : Auto.IsRunning ? "Manual auto attack/hunt is active." : (_wdBusy || _waitForLogin || _wdRestarting != 0) ? "Recovery is in progress." : _rsScanStatus;
-+            RescueStatus.Publish(new RescueStatusSnapshot(DateTime.UtcNow, RescueEnabled, RescueAllowed,
++            string helper = RescueActive ? "Helping an account." : _rsCalling ? "Requesting help." : _rsHoldingHelpers ? "Helpers are staying in this map." : Auto.IsRunning ? "Manual auto attack/hunt is active." : (_wdBusy || _waitForLogin || _wdRestarting != 0) ? "Recovery is in progress." : _rsScanStatus;
++            RescueStatusSnapshot status = new(DateTime.UtcNow, RescueEnabled, RescueAllowed,
 +                _rsDeathStreak, _rsStreakSince == 0 ? 0 : unchecked(now-_rsStreakSince), store.DelayMinutes,
-+                store.DeathsBeforeRescue, requesting, _rsCalling, helper, _rsPhase, _rsOutcome, cooldowns));
++                store.DeathsBeforeRescue, store.CooldownEnabled, requesting, _rsCalling || _rsHoldingHelpers, helper, _rsPhase, _rsOutcome, cooldowns);
++            RescueStatus.Publish(status);
++            RescueAccountHub.Publish(OwnName, RescueSession.ServerName(Flash), Map.FullName, Player.Cell, status);
 +        }
 +        catch { } // Diagnostics must never interfere with rescue.
 +    }
@@ -8979,27 +9345,55 @@ index 0000000..2e533d6
 +        {
 +            int now = Environment.TickCount;
 +            if (Options is ScriptOption concrete) concrete.BindRescueAccount(OwnName);
++            if (_rsDeadSince != 0)
++            {
++                _rsDeadSince = 0;
++                _rsCallWritten = 0; // Publish the respawned caller's current cell immediately.
++                _rsDeadStatusWritten = 0;
++            }
 +            string owner = OwnName;
 +            if (!string.Equals(owner, _rsOwner, StringComparison.OrdinalIgnoreCase))
 +            {
-+                if (_rsCalling && _rsOwner.Length > 0)
++                if ((_rsCalling || _rsHoldingHelpers) && _rsOwner.Length > 0)
 +                    try { File.Delete(RescueFile(_rsOwner)); } catch { }
-+                _rsOwner = owner; _rsCalling = false; _rsDeathStreak = 0; _rsStreakSince = 0; _rsLastDeaths = -1;
++                Interlocked.Exchange(ref _rsManualRequest, 0);
++                _rsOwner = owner; _rsCalling = false; _rsHoldingHelpers = false; _rsCallRoom = ""; _rsDeathStreak = 0; _rsStreakSince = 0; _rsLastDeaths = -1;
 +                lock (_rsLastHelped) _rsLastHelped.Clear();
 +                _rsOutcome = ""; _rsScanStatus = "Waiting for the next scan.";
 +            }
++            bool remoteHelpRequested = RescueAccountHub.ConsumeManualHelpRequest(owner);
 +            if (!RescueEnabled)
 +            {
-+                if (_rsCalling) { _rsCalling = false; ClearRescueCall(); }
++                Interlocked.Exchange(ref _rsManualRequest, 0);
++                if (_rsCalling || _rsHoldingHelpers) { _rsCalling = false; _rsHoldingHelpers = false; ClearRescueCall(); }
 +                _rsDeathStreak = 0; _rsStreakSince = 0; _rsLastDeaths = -1;
 +                return;
 +            }
++
++            if (remoteHelpRequested)
++            {
++                string result = RequestManualRescue();
++                WdLog($" received a manual help request from the Watch Dog account selector: {result}");
++            }
++
++            if (Interlocked.Exchange(ref _rsManualRequest, 0) != 0)
++            {
++                _rsCalling = true;
++                _rsHoldingHelpers = false;
++                _rsCallRoom = Map.FullName;
++                _rsCallWritten = 0;
++                _rsDeathStreak = 0;
++                _rsStreakSince = 0;
++                WdLog($" manually requested Rescue Allies help in {Map.FullName} ({Player.Cell}).");
++            }
++
 +            int deaths = Stats.Deaths, kills = Stats.Kills;
 +            if (_rsLastDeaths < 0)
 +            {
 +                _rsLastDeaths = deaths;
 +                _rsLastKills = kills;
 +            }
++            bool rsActivity = kills != _rsLastKills || deaths > _rsLastDeaths;
 +            if (kills != _rsLastKills)
 +            {
 +                _rsDeathStreak = 0;
@@ -9007,8 +9401,9 @@ index 0000000..2e533d6
 +                if (_rsCalling)
 +                {
 +                    _rsCalling = false;
-+                    ClearRescueCall();
-+                    WdLog(" got a kill; the accounts helping can go back to what they were doing.");
++                    _rsHoldingHelpers = true;
++                    _rsCallRoom = Map.FullName;
++                    WdLog(" got a kill; helpers will stay until this account leaves the map.");
 +                }
 +            }
 +            else if (deaths > _rsLastDeaths)
@@ -9025,7 +9420,8 @@ index 0000000..2e533d6
 +                if (_rsCalling)
 +                {
 +                    _rsCalling = false;
-+                    ClearRescueCall();
++                    _rsHoldingHelpers = true;
++                    _rsCallRoom = Map.FullName;
 +                }
 +                _rsDeathStreak = 0;
 +                _rsStreakSince = 0;
@@ -9037,14 +9433,39 @@ index 0000000..2e533d6
 +                if (stuck && !_rsCalling)
 +                {
 +                    _rsCalling = true;
++                    _rsHoldingHelpers = false;
++                    _rsCallRoom = Map.FullName;
 +                    _rsCallWritten = 0;
 +                    WdLog($" died {_rsDeathStreak} times without a kill in {Math.Max(1, (now - _rsStreakSince) / 60000)} minute(s) in {Map.FullName} ({Player.Cell}); asking the other accounts for help (Rescue Allies).");
 +                }
-+                if (_rsCalling && (_rsCallWritten == 0 || now - _rsCallWritten > 15000))
++            }
++
++            if (_rsHoldingHelpers)
++            {
++                if (_rsHoldActive == 0 || rsActivity) _rsHoldActive = now | 1;
++                int holdLimit = SharedRescueSettings.Instance.HoldLimitMinutes;
++                if (holdLimit > 0 && unchecked(now - _rsHoldActive) >= holdLimit * 60000)
 +                {
-+                    _rsCallWritten = now;
-+                    WriteRescueCall();
++                    _rsHoldingHelpers = false;
++                    _rsHoldActive = 0;
++                    _rsCallWritten = 0;
++                    ClearRescueCall();
++                    WdLog($" no kill or death for {holdLimit} minute(s); helpers are released (hold limit).");
 +                }
++            }
++            else _rsHoldActive = 0;
++
++            if (_rsHoldingHelpers && !string.Equals(Map.FullName, _rsCallRoom, StringComparison.OrdinalIgnoreCase))
++            {
++                _rsHoldingHelpers = false;
++                _rsCallWritten = 0;
++                ClearRescueCall();
++                WdLog(" left the rescue map; helpers can return to their original state.");
++            }
++            if ((_rsCalling || _rsHoldingHelpers) && (_rsCallWritten == 0 || now - _rsCallWritten > 15000))
++            {
++                _rsCallWritten = now;
++                WriteRescueCall();
 +            }
 +
 +            if (_rsScanAt == 0 || now - _rsScanAt > 5000)
@@ -9055,6 +9476,97 @@ index 0000000..2e533d6
 +        }
 +        catch { }
 +        finally { PublishRescueStatus(); }
++    }
++
++    /// <summary>
++    /// Keeps a caller's rescue lease alive while AQW temporarily reports the dead avatar as not Playing.
++    /// A real logout ends it immediately; an unloaded dead world gets a bounded grace period.
++    /// </summary>
++    private bool MaintainRescueCallDuringDeath(int now)
++    {
++        if (!_rsCalling && !_rsHoldingHelpers)
++        {
++            _rsDeadSince = 0;
++            return false;
++        }
++
++        try
++        {
++            if (!RescueEnabled)
++            {
++                _rsCalling = false; _rsHoldingHelpers = false; _rsCallWritten = 0; _rsDeadSince = 0;
++                ClearRescueCall();
++                return false;
++            }
++            if (!Player.LoggedIn || Player.Alive)
++            {
++                _rsDeadSince = 0;
++                return false;
++            }
++
++            if (_rsDeadSince == 0) _rsDeadSince = now | 1;
++            bool worldLoaded = Flash.IsWorldLoaded;
++            if (worldLoaded)
++            {
++                string currentRoom = Map.FullName;
++                if (!string.IsNullOrWhiteSpace(currentRoom) && !string.IsNullOrWhiteSpace(_rsCallRoom) &&
++                    !string.Equals(currentRoom, _rsCallRoom, StringComparison.OrdinalIgnoreCase))
++                {
++                    _rsCalling = false; _rsHoldingHelpers = false; _rsCallWritten = 0; _rsDeadSince = 0;
++                    ClearRescueCall();
++                    WdLog(" left the rescue map while dead; helpers can return to their original state.");
++                    return false;
++                }
++            }
++            else if (unchecked(now - _rsDeadSince) >= RescueStaleMs)
++            {
++                _rsCalling = false; _rsHoldingHelpers = false; _rsCallWritten = 0; _rsDeadSince = 0;
++                ClearRescueCall();
++                WdLog(" stayed out of the loaded world after dying; ending the rescue call after the respawn grace period.");
++                return false;
++            }
++
++            if (_rsCallWritten == 0 || unchecked(now - _rsCallWritten) >= 15000)
++            {
++                if (RefreshRescueCallTimestamp(OwnName))
++                    _rsCallWritten = now;
++                else if (worldLoaded && !string.IsNullOrWhiteSpace(Map.FullName))
++                {
++                    WriteRescueCall();
++                    _rsCallWritten = now;
++                }
++            }
++            if (_rsDeadStatusWritten == 0 || unchecked(now - _rsDeadStatusWritten) >= 5000)
++            {
++                if (RescueStatus.Latest is { } latest)
++                {
++                    RescueStatusSnapshot refreshed = latest with { UpdatedUtc = DateTime.UtcNow, Calling = true };
++                    RescueStatus.Publish(refreshed);
++                    RescueCall? call = ReadRescueCall(RescueFile(OwnName));
++                    RescueAccountHub.Publish(OwnName, RescueSession.ServerName(Flash),
++                        call?.Room ?? _rsCallRoom, call?.Cell ?? Player.Cell, refreshed);
++                }
++                _rsDeadStatusWritten = now;
++            }
++            return true;
++        }
++        catch { return false; }
++    }
++
++    private bool RefreshRescueCallTimestamp(string user)
++    {
++        try
++        {
++            string file = RescueFile(user);
++            if (!File.Exists(file)) return false;
++            string[] lines = File.ReadAllLines(file);
++            if (lines.Length < 6) return false;
++            lines[5] = DateTime.UtcNow.Ticks.ToString();
++            File.WriteAllLines(file + ".tmp", lines);
++            File.Move(file + ".tmp", file, true);
++            return true;
++        }
++        catch { return false; }
 +    }
 +
 +    private string OwnName => Servers.CachedUsername ?? Player.Username ?? "";
@@ -9146,9 +9658,14 @@ index 0000000..2e533d6
 +                continue;
 +            if (!call.Server.Equals(server, StringComparison.OrdinalIgnoreCase))
 +            { _rsScanStatus = "An active call is on another server."; continue; } // a different server: can't reach it without logging out
-+            lock (_rsLastHelped)
-+                if (_rsLastHelped.TryGetValue(call.User, out int last) && now - last < RescueCooldownMs)
-+                    continue;
++            SharedRescueSettings store = SharedRescueSettings.Instance;
++            if (store.CooldownEnabled)
++            {
++                int cooldownMs = store.CooldownMinutes * 60000;
++                lock (_rsLastHelped)
++                    if (_rsLastHelped.TryGetValue(call.User, out int last) && now - last < cooldownMs)
++                        continue;
++            }
 +            _rsHelping = call.User; _rsPhase = "Joining rescue"; _rsOutcome = "";
 +            _ = Task.Run(() => RescueAsync(call, file));
 +            return;
@@ -9162,33 +9679,75 @@ index 0000000..2e533d6
 +        try
 +        {
 +            if (Manager is not IScriptManager manager) return;
-+            session = new RescueSession(Player, Map, Combat, Skills, Options, Flash, manager,
++            session = new RescueSession(Player, Map, Combat, Skills, Inventory, Wait,
++                Monsters, (SharedRescueSettings.Instance.UseBossLoadout ? BossRescueLoadout.Read(OwnName) : null), Options, Flash, manager,
 +                () => RescueAllowed && !_disposed, () => Servers.UserLoggedOut, Send);
 +            _rsSession = session;
 +            if (!await session.BeginAsync()) return;
 +            WdLog($" helping {call.User} in {call.Room}; the original script/idle state will be restored afterward.");
 +            if (call.Quests.Count > 0 && (ownQuests = ReadQuestStrings()) is not null)
 +                BorrowQuests(ownQuests, call.Quests);
-+            if (!await JoinForRescue(call.Room, call.Cell, call.Pad, session)) return;
-+            _rsPhase = "Fighting";
-+            int start = Environment.TickCount;
++            int observedDeaths = Stats.Deaths, observedKills = Stats.Kills, deathStreak = 0;
 +            while (session.CanContinue)
 +            {
 +                RescueCall? current = ReadRescueCall(file);
 +                if (current is null) break;
 +                if (!current.User.Equals(call.User, StringComparison.OrdinalIgnoreCase) ||
 +                    !current.Server.Equals(call.Server, StringComparison.OrdinalIgnoreCase)) break;
-+                if (!string.Equals(Map.FullName, current.Room, StringComparison.OrdinalIgnoreCase))
++                if (!string.Equals(current.Room, call.Room, StringComparison.OrdinalIgnoreCase))
++                {
++                    _rsOutcome = $"{call.User} left the rescue map.";
++                    WdLog($" {call.User} left {call.Room}; ending the rescue.");
++                    break;
++                }
++
++                int deaths = Stats.Deaths, kills = Stats.Kills;
++                if (kills != observedKills) deathStreak = 0;
++                if (deaths > observedDeaths)
++                {
++                    deathStreak += deaths - observedDeaths;
++                    observedDeaths = deaths; observedKills = kills;
++                    Combat.CancelAutoAttack();
++                    _rsPhase = "Waiting to respawn";
++                    int helperDeathLimit = SharedRescueSettings.Instance.HelperDeathsWithoutKill;
++                    if (deathStreak >= helperDeathLimit)
++                    {
++                        _rsOutcome = $"Stopped after {deathStreak} deaths without a kill (limit {helperDeathLimit}).";
++                        WdLog($" died {deathStreak} times without a kill while helping {call.User} (helper limit {helperDeathLimit}); ending this rescue.");
++                        break;
++                    }
++                    await Task.Delay(500);
++                    continue;
++                }
++                observedDeaths = deaths; observedKills = kills;
++
++                if (!session.CanAct || !HelperAlive())
++                {
++                    _rsPhase = "Waiting to respawn";
++                    if (!HelperAlive())
++                        try { Flash.CallGameFunction("world.resPlayer"); } catch { }
++                    await Task.Delay(1000);
++                    continue;
++                }
++
++                if (!string.Equals(Map.FullName, call.Room, StringComparison.OrdinalIgnoreCase))
 +                {
 +                    Combat.CancelAutoAttack();
 +                    if (ownQuests is not null && current.Quests.Count > 0)
 +                        BorrowQuests(ReadQuestStrings() ?? ownQuests, current.Quests);
-+                    if (!await JoinForRescue(current.Room, current.Cell, current.Pad, session)) break;
++                    _rsPhase = "Rejoining rescue cell";
++                    if (!await JoinForRescue(call.Room, current.Cell, current.Pad, session))
++                    {
++                        await Task.Delay(500);
++                        continue;
++                    }
++                    _rsPhase = "Fighting";
 +                }
 +                else if (!string.Equals(Player.Cell, current.Cell, StringComparison.OrdinalIgnoreCase))
 +                    Map.Jump(current.Cell, string.IsNullOrWhiteSpace(current.Pad) ? "Left" : current.Pad);
++
++                _rsPhase = "Fighting";
 +                session.Fight();
-+                if (Environment.TickCount - start > RescueGiveUpMs) break;
 +                await Task.Delay(200);
 +            }
 +        }
@@ -9222,11 +9781,12 @@ index 0000000..2e533d6
 +    {
 +        for (int i = 0; i < 3 && session.CanContinue; i++)
 +        {
++            if (!session.CanAct) { await Task.Delay(200); continue; }
 +            try { Map.JoinPacket(room, string.IsNullOrWhiteSpace(cell) ? "Enter" : cell, string.IsNullOrWhiteSpace(pad) ? "Spawn" : pad); }
 +            catch { }
 +            for (int w = 0; w < 20 && session.CanContinue; w++)
 +            {
-+                if (string.Equals(Map.FullName, room, StringComparison.OrdinalIgnoreCase) && Player.Playing && Flash.IsWorldLoaded)
++                if (string.Equals(Map.FullName, room, StringComparison.OrdinalIgnoreCase) && session.CanAct)
 +                {
 +                    if (!string.IsNullOrWhiteSpace(cell) && !string.Equals(Player.Cell, cell, StringComparison.OrdinalIgnoreCase))
 +                        Map.Jump(cell, string.IsNullOrWhiteSpace(pad) ? "Left" : pad);
@@ -9236,6 +9796,16 @@ index 0000000..2e533d6
 +            }
 +        }
 +        return false;
++    }
++
++    private bool HelperAlive()
++    {
++        try
++        {
++            const string hp = "world.myAvatar.objData.intHP";
++            return Flash.IsNull(hp) || Flash.GetGameObject<int>(hp) > 0;
++        }
++        catch { return true; }
 +    }
 +}
 diff --git a/Skua.Core/Scripts/ScriptInterface.cs b/Skua.Core/Scripts/ScriptInterface.cs
@@ -9465,7 +10035,7 @@ index ace088d..3dd7d61 100644
      }
  
 diff --git a/Skua.Core/Scripts/ScriptOption.cs b/Skua.Core/Scripts/ScriptOption.cs
-index 02c915c..b667280 100644
+index 02c915c..b4fa421 100644
 --- a/Skua.Core/Scripts/ScriptOption.cs
 +++ b/Skua.Core/Scripts/ScriptOption.cs
 @@ -26,10 +26,14 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
@@ -9504,7 +10074,7 @@ index 02c915c..b667280 100644
      private bool _acceptAllDrops;
  
      public bool AcceptAllDrops
-@@ -111,6 +129,50 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -111,6 +129,109 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
          }
      }
  
@@ -9537,6 +10107,60 @@ index 02c915c..b667280 100644
 +        get => _rescueSettings?.DeathsBeforeRescue ?? 10;
 +        set { if (!_isInitializing) _rescueSettings?.SetDeathsBeforeRescue(value); }
 +    }
++    /// <summary>Wait before helping the same account again (shared with every client on this PC).</summary>
++    public bool RescueCooldownEnabled
++    {
++        get => _rescueSettings?.CooldownEnabled ?? true;
++        set { if (!_isInitializing) _rescueSettings?.SetCooldownEnabled(value); }
++    }
++    public int RescueCooldownMinutes
++    {
++        get => _rescueSettings?.CooldownMinutes ?? 10;
++        set { if (!_isInitializing) _rescueSettings?.SetCooldownMinutes(value); }
++    }
++    /// <summary>A helper that dies this many times without a kill gives up and restores its own setup.</summary>
++    public int RescueHelperDeathLimit
++    {
++        get => _rescueSettings?.HelperDeathsWithoutKill ?? 5;
++        set { if (!_isInitializing) _rescueSettings?.SetHelperDeathsWithoutKill(value); }
++    }
++    /// <summary>Helpers are released after this many minutes without a kill or death of the caller (0 = no limit).</summary>
++    public int RescueHoldLimitMinutes
++    {
++        get => _rescueSettings?.HoldLimitMinutes ?? 30;
++        set { if (!_isInitializing) _rescueSettings?.SetHoldLimitMinutes(value); }
++    }
++    /// <summary>Helpers switch to the CoreBots Boss class and gear while helping (default on).</summary>
++    public bool RescueUseBossLoadout
++    {
++        get => _rescueSettings?.UseBossLoadout ?? true;
++        set { if (!_isInitializing) _rescueSettings?.SetUseBossLoadout(value); }
++    }
++
++    /// <summary>One account of the Watch Dog's Accounts tab.</summary>
++    public sealed record RescueAccountInfo(string Account, string Server, string Map, string Status, bool CanHelp, bool CanRequest);
++
++    /// <summary>The accounts on this PC that run the Watch Dog (VibeSkuffle or the plugin) and reported in the last seconds.</summary>
++    public IReadOnlyList<RescueAccountInfo> RescueAccounts()
++    {
++        DateTime now = DateTime.UtcNow;
++        List<RescueAccountInfo> list = new();
++        foreach (var a in WatchDog.Shared.RescueAccountHub.ReadAccounts())
++        {
++            var s = a.Status;
++            string status = !s.Enabled ? "Rescue Allies is off" : s.Calling ? "Help requested" : s.Phase.Length > 0 ? s.Phase : s.Helper;
++            bool canHelp = _rescueSettings?.IsAllowed(a.Account) ?? true;
++            list.Add(new RescueAccountInfo(a.Account, a.Server, a.Map, status, canHelp, s.Enabled && !s.Calling));
++        }
++        return list;
++    }
++
++    /// <summary>Asks the named account to request help in its current map (it needs Rescue Allies on). Returns what to tell the person.</summary>
++    public string RequestRescueHelpFor(string account) => WatchDog.Shared.RescueAccountHub.RequestManualHelp(account);
++
++    /// <summary>Lets or stops the named account from helping others.</summary>
++    public void SetAccountCanHelp(string account, bool allowed) => _rescueSettings?.SetAllowed(account, allowed);
++
 +    internal void BindRescueAccount(string? account)
 +    {
 +        account = account?.Trim() ?? "";
@@ -9550,12 +10174,17 @@ index 02c915c..b667280 100644
 +        OnPropertyChanged(nameof(AllowThisAccountToRescue));
 +        OnPropertyChanged(nameof(RescueDelayMinutes));
 +        OnPropertyChanged(nameof(RescueDeathsBeforeCalling));
++        OnPropertyChanged(nameof(RescueCooldownEnabled));
++        OnPropertyChanged(nameof(RescueCooldownMinutes));
++        OnPropertyChanged(nameof(RescueHelperDeathLimit));
++        OnPropertyChanged(nameof(RescueHoldLimitMinutes));
++        OnPropertyChanged(nameof(RescueUseBossLoadout));
 +    }
 +
      [ObservableProperty]
      private bool _restPackets;
  
-@@ -129,8 +191,9 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -129,8 +250,9 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
      [CallBinding("killLag", Get = false, HasSetter = true)]
      private bool _lagKiller;
  
@@ -9566,7 +10195,7 @@ index 02c915c..b667280 100644
  
      [ObjectBinding("ui.mcFPS.visible", HasSetter = true)]
      private bool _showFPS = false;
-@@ -172,7 +235,42 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -172,7 +294,42 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
      [ObservableProperty]
      private bool _headlessMode;
  
@@ -9610,7 +10239,7 @@ index 02c915c..b667280 100644
      {
          try
          {
-@@ -185,7 +283,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -185,7 +342,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
              }
              else
              {
@@ -9619,34 +10248,34 @@ index 02c915c..b667280 100644
                  _lazyFlash.Value.Call("setGameObject", "stage.quality", "HIGH");
                  _lazyFlash.Value.Call("setGameObject", "world.rootClass.mixer.soundTransform.volume", 1);
              }
-@@ -383,7 +481,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -383,7 +540,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
          StringCollection saveOptions = new();
          foreach (PropertyInfo pi in GetType().GetProperties())
          {
 -            if (pi.Name == nameof(OptionDictionary))
-+            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue) or nameof(RescueDelayMinutes) or nameof(RescueDeathsBeforeCalling))
++            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue) or nameof(RescueDelayMinutes) or nameof(RescueDeathsBeforeCalling) or nameof(RescueCooldownEnabled) or nameof(RescueCooldownMinutes) or nameof(RescueHelperDeathLimit) or nameof(RescueHoldLimitMinutes) or nameof(RescueUseBossLoadout))
                  continue;
              string key = pi.Name;
              object? value = pi.GetValue(this);
-@@ -402,7 +500,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -402,7 +559,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
  
          foreach (PropertyInfo pi in GetType().GetProperties())
          {
 -            if (pi.Name == nameof(OptionDictionary))
-+            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue) or nameof(RescueDelayMinutes) or nameof(RescueDeathsBeforeCalling))
++            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue) or nameof(RescueDelayMinutes) or nameof(RescueDeathsBeforeCalling) or nameof(RescueCooldownEnabled) or nameof(RescueCooldownMinutes) or nameof(RescueHelperDeathLimit) or nameof(RescueHoldLimitMinutes) or nameof(RescueUseBossLoadout))
                  continue;
              if (_userOptions.ContainsKey(pi.Name))
              {
-@@ -421,7 +519,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -421,7 +578,7 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
          ScriptOption defaults = new(_lazyFlash);
          foreach (PropertyInfo pi in GetType().GetProperties())
          {
 -            if (pi.Name == nameof(OptionDictionary))
-+            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue) or nameof(RescueDelayMinutes) or nameof(RescueDeathsBeforeCalling))
++            if (pi.Name is nameof(OptionDictionary) or nameof(RescueAllies) or nameof(AllowThisAccountToRescue) or nameof(RescueDelayMinutes) or nameof(RescueDeathsBeforeCalling) or nameof(RescueCooldownEnabled) or nameof(RescueCooldownMinutes) or nameof(RescueHelperDeathLimit) or nameof(RescueHoldLimitMinutes) or nameof(RescueUseBossLoadout))
                  continue;
  
              pi.SetValue(this, pi.GetValue(defaults), null);
-@@ -458,4 +556,4 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
+@@ -458,4 +615,4 @@ public partial class ScriptOption : ObservableRecipient, IScriptOption, IOptionD
          }
          return dict;
      }
@@ -10417,14 +11046,209 @@ index 0000000..56a8b56
 +        return manifest;
 +    }
 +}
+diff --git a/Skua.Core/Services/RescueShared/BossRescueLoadout.cs b/Skua.Core/Services/RescueShared/BossRescueLoadout.cs
+new file mode 100644
+index 0000000..6d85b76
+--- /dev/null
++++ b/Skua.Core/Services/RescueShared/BossRescueLoadout.cs
+@@ -0,0 +1,45 @@
++using Skua.Core.Models;
++
++namespace WatchDog.Shared;
++
++/// <summary>Reads the per-character Boss selection saved by Skua CoreBots options.</summary>
++internal sealed record BossRescueLoadout(string ClassName, string SkillMode, bool UseEquipment,
++    string Weapon, string Armor, string Helm, string Cape, string Pet, string GroundItem)
++{
++    internal static BossRescueLoadout? Read(string? account)
++    {
++        if (string.IsNullOrWhiteSpace(account)) return null;
++        string fileName = $"CBO_Storage({account}).txt";
++        string[] candidates =
++        [
++            Path.Combine(ClientFileSources.SkuaOptionsDIR, fileName),
++            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "VibeSkua", "options", fileName)
++        ];
++        string? path = candidates.FirstOrDefault(File.Exists);
++        if (path is null) return null;
++        try
++        {
++            Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
++            foreach (string line in File.ReadLines(path))
++            {
++                int colon = line.IndexOf(':');
++                if (colon <= 0) continue;
++                values[line[..colon].Trim()] = line[(colon + 1)..].Trim();
++            }
++            values.TryGetValue("BossClassSelect", out string? className);
++            values.TryGetValue("BossModeSelect", out string? mode);
++            values.TryGetValue("BossEquipCheck", out string? gear);
++            values.TryGetValue("Weapon4Select", out string? weapon);
++            values.TryGetValue("Armor4Select", out string? armor);
++            values.TryGetValue("Helm4Select", out string? helm);
++            values.TryGetValue("Cape4Select", out string? cape);
++            values.TryGetValue("Pet4Select", out string? pet);
++            values.TryGetValue("GroundItem4Select", out string? groundItem);
++            bool useEquipment = bool.TryParse(gear, out bool enabled) && enabled;
++            if (string.IsNullOrWhiteSpace(className) && !useEquipment) return null;
++            return new BossRescueLoadout(className ?? "", mode ?? "", useEquipment,
++                weapon ?? "", armor ?? "", helm ?? "", cape ?? "", pet ?? "", groundItem ?? "");
++        }
++        catch { return null; }
++    }
++}
+diff --git a/Skua.Core/Services/RescueShared/InternalsVisible.cs b/Skua.Core/Services/RescueShared/InternalsVisible.cs
+new file mode 100644
+index 0000000..66f3b64
+--- /dev/null
++++ b/Skua.Core/Services/RescueShared/InternalsVisible.cs
+@@ -0,0 +1,4 @@
++using System.Runtime.CompilerServices;
++
++// The Rust client's script host (Vsr.SkuaHost) drives the shared rescue code (the Boss class / gear setup of a helper).
++[assembly: InternalsVisibleTo("Vsr.SkuaHost")]
+diff --git a/Skua.Core/Services/RescueShared/RescueAccountHub.cs b/Skua.Core/Services/RescueShared/RescueAccountHub.cs
+new file mode 100644
+index 0000000..5c05b06
+--- /dev/null
++++ b/Skua.Core/Services/RescueShared/RescueAccountHub.cs
+@@ -0,0 +1,91 @@
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.Json;
++
++namespace WatchDog.Shared;
++
++/// <summary>Local file bridge between per-account Watch Dog workers in one VibeSkua host.</summary>
++internal static class RescueAccountHub
++{
++    internal sealed record AccountSnapshot(string Account, string Server, string Map, string Cell,
++        DateTime UpdatedUtc, RescueStatusSnapshot Status);
++
++    private sealed record ManualRequest(string Id, DateTime CreatedUtc);
++    private static string Root => Environment.GetEnvironmentVariable("WATCHDOG_ACCOUNT_HUB_ROOT") ??
++        Path.Combine(Path.GetTempPath(), "VibeSkuaTabs", "watchdog-accounts");
++
++    private static string Key(string account) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(account.Trim().ToUpperInvariant())))[..24];
++    private static string AccountPath(string account) => Path.Combine(Root, Key(account) + ".json");
++    private static string RequestPath(string account) => Path.Combine(Root, Key(account) + ".request");
++
++    internal static void Publish(string account, string server, string map, string cell, RescueStatusSnapshot status)
++    {
++        if (string.IsNullOrWhiteSpace(account)) return;
++        try
++        {
++            Directory.CreateDirectory(Root);
++            string path = AccountPath(account), temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
++            try
++            {
++                File.WriteAllText(temp, JsonSerializer.Serialize(new AccountSnapshot(account, server, map, cell, DateTime.UtcNow, status)), new UTF8Encoding(false));
++                File.Move(temp, path, true);
++            }
++            finally { if (File.Exists(temp)) File.Delete(temp); }
++        }
++        catch { }
++    }
++
++    internal static IReadOnlyList<AccountSnapshot> ReadAccounts()
++    {
++        try
++        {
++            if (!Directory.Exists(Root)) return [];
++            DateTime now = DateTime.UtcNow;
++            List<AccountSnapshot> result = [];
++            foreach (string path in Directory.GetFiles(Root, "*.json"))
++            {
++                try
++                {
++                    using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
++                    AccountSnapshot? snapshot = JsonSerializer.Deserialize<AccountSnapshot>(stream);
++                    if (snapshot is not null && now - snapshot.UpdatedUtc < TimeSpan.FromSeconds(12)) result.Add(snapshot);
++                }
++                catch { }
++            }
++            return result.OrderBy(a => a.Account, StringComparer.OrdinalIgnoreCase).ToArray();
++        }
++        catch { return []; }
++    }
++
++    internal static string RequestManualHelp(string account)
++    {
++        if (string.IsNullOrWhiteSpace(account)) return "Select an account first.";
++        AccountSnapshot? target = ReadAccounts().FirstOrDefault(a => a.Account.Equals(account, StringComparison.OrdinalIgnoreCase));
++        if (target is null) return $"{account} is no longer online in Watch Dog.";
++        if (!target.Status.Enabled) return $"Rescue Allies is off for {account}; enable it before requesting help.";
++        if (target.Status.Calling) return $"{account} already has a help request active.";
++        try
++        {
++            Directory.CreateDirectory(Root);
++            File.WriteAllText(RequestPath(account), JsonSerializer.Serialize(new ManualRequest(Guid.NewGuid().ToString("N"), DateTime.UtcNow)), new UTF8Encoding(false));
++            return $"Manual help request sent to {account}.";
++        }
++        catch (Exception ex) { return $"Couldn't send the request to {account}: {ex.Message}"; }
++    }
++
++    /// <summary>Consumes at most one fresh request per worker; stale files cannot trigger after a client restart.</summary>
++    internal static bool ConsumeManualHelpRequest(string account)
++    {
++        try
++        {
++            string path = RequestPath(account);
++            if (!File.Exists(path)) return false;
++            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
++            ManualRequest? request = JsonSerializer.Deserialize<ManualRequest>(stream);
++            stream.Dispose();
++            File.Delete(path);
++            return request is not null && DateTime.UtcNow - request.CreatedUtc < TimeSpan.FromSeconds(15);
++        }
++        catch { return false; }
++    }
++}
+diff --git a/Skua.Core/Services/RescueShared/RescueLog.cs b/Skua.Core/Services/RescueShared/RescueLog.cs
+new file mode 100644
+index 0000000..d597566
+--- /dev/null
++++ b/Skua.Core/Services/RescueShared/RescueLog.cs
+@@ -0,0 +1,28 @@
++using System.Text;
++
++namespace WatchDog;
++
++/// <summary>
++/// The log the shared rescue code writes to. In the Watch Dog plugin this is watchdog.log in the plugin folder; here it is the
++/// built-in watchdog's login-watchdog.log next to the program, so the rescue lines show up with the rest of the watchdog's.
++/// </summary>
++internal static class Log
++{
++    private static readonly object Lock = new();
++
++    public static void Write(string who, string message)
++    {
++        try
++        {
++            string path = Path.Combine(AppContext.BaseDirectory, "login-watchdog.log");
++            lock (Lock)
++            {
++                var info = new FileInfo(path);
++                if (info.Exists && info.Length > 1_000_000)
++                    info.Delete();
++                File.AppendAllText(path, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} [{who}]{message}{Environment.NewLine}", new UTF8Encoding(false));
++            }
++        }
++        catch { }
++    }
++}
 diff --git a/Skua.Core/Services/RescueShared/RescueSession.cs b/Skua.Core/Services/RescueShared/RescueSession.cs
 new file mode 100644
-index 0000000..63134db
+index 0000000..eeccc9b
 --- /dev/null
 +++ b/Skua.Core/Services/RescueShared/RescueSession.cs
-@@ -0,0 +1,171 @@
+@@ -0,0 +1,477 @@
 +using System.ComponentModel;
++using System.Reflection;
 +using Skua.Core.Interfaces;
++using Skua.Core.Models;
++using Skua.Core.Models.Items;
 +
 +namespace WatchDog.Shared;
 +
@@ -10435,6 +11259,9 @@ index 0000000..63134db
 +    private readonly IScriptMap _map;
 +    private readonly IScriptCombat _combat;
 +    private readonly IScriptSkill _skills;
++    private readonly IScriptInventory _inventory;
++    private readonly IScriptWait _wait;
++    private readonly IScriptMonster _monsters;
 +    private readonly IScriptOption _options;
 +    private readonly IFlashUtil _flash;
 +    private readonly IScriptManager _manager;
@@ -10447,6 +11274,15 @@ index 0000000..63134db
 +    private readonly System.Reflection.PropertyInfo? _pauseProperty;
 +    private bool _stoppedOriginal;
 +    private readonly bool _wasRunning, _wasPaused, _infiniteRange, _stopAttacking;
++    private readonly BossRescueLoadout? _bossLoadout;
++    private int[] _equippedBeforeRescue = [];
++    private int? _classBeforeRescue;
++    private ISkillProvider? _oldSkillProvider;
++    private int _oldSkillTimeout;
++    private Skua.Core.Models.Skills.SkillUseMode _oldSkillUseMode;
++    private bool _oldResetComboOnTargetChange;
++    private PropertyInfo? _resetComboProperty;
++    private bool _bossSetupApplied;
 +    private bool _ownChange, _begun, _finished, _finishing, _ownsCombat;
 +    private volatile bool _interrupted;
 +    internal string Room { get; }
@@ -10455,14 +11291,16 @@ index 0000000..63134db
 +    internal bool WasRunning => _wasRunning;
 +    internal bool WasPaused => _wasPaused;
 +    internal RescueSession(IScriptPlayer player, IScriptMap map, IScriptCombat combat, IScriptSkill skills,
++        IScriptInventory inventory, IScriptWait wait, IScriptMonster monsters, BossRescueLoadout? bossLoadout,
 +        IScriptOption options, IFlashUtil flash, IScriptManager manager, Func<bool> enabled, Func<bool>? userCancelled = null,
 +        IScriptSend? send = null)
 +    {
-+        _player = player; _map = map; _combat = combat; _skills = skills; _options = options;
++        _player = player; _map = map; _combat = combat; _skills = skills; _inventory = inventory; _wait = wait; _monsters = monsters; _bossLoadout = bossLoadout; _options = options;
 +        _flash = flash; _manager = manager; _enabled = enabled; _userCancelled = userCancelled ?? (() => false);
 +        _account = player.Username ?? ""; _server = ServerName(_flash); _script = manager.LoadedScript ?? "";
 +        _scriptToken = manager.ScriptCts; _wasRunning = manager.ScriptRunning; _wasPaused = IsPaused(manager);
 +        _pauseProperty = manager.GetType().GetProperty("ScriptPaused");
++        _resetComboProperty = skills.GetType().GetProperty("ResetComboOnTargetChange");
 +        _infiniteRange = options.InfiniteRange; _stopAttacking = combat.StopAttacking;
 +        Room = map.FullName; Cell = player.Cell; Pad = player.Pad;
 +        _send = send;
@@ -10486,7 +11324,8 @@ index 0000000..63134db
 +    internal bool Interrupted => _interrupted || _userCancelled() || !InOriginalSession ||
 +        !string.Equals(_script, _manager.LoadedScript, StringComparison.OrdinalIgnoreCase) ||
 +        !ReferenceEquals(_scriptToken, _manager.ScriptCts) || (_scriptToken?.IsCancellationRequested ?? false);
-+    internal bool CanContinue => _begun && !_finished && !_interrupted && !Interrupted && _enabled() && _player.Playing && _flash.IsWorldLoaded && (!_ownsCombat || !_combat.StopAttacking);
++    internal bool CanContinue => _begun && !_finished && !_interrupted && !Interrupted && _enabled() && (!_ownsCombat || !_combat.StopAttacking);
++    internal bool CanAct => CanContinue && _player.Playing && _flash.IsWorldLoaded;
 +    private void OnManagerChanged(object? sender, PropertyChangedEventArgs e)
 +    {
 +        if (_ownChange || !_begun || _finished) return;
@@ -10513,16 +11352,258 @@ index 0000000..63134db
 +            finally { _ownChange = false; }
 +        }
 +        _combat.CancelAutoAttack();
++        bool combatClearedForEquipment = await DisengageAsync("before applying the rescue class and gear");
++        if (!CanContinue) return false;
 +        await Task.Delay(250);
 +        if (!CanContinue) return false;
 +        _options.InfiniteRange = true;
 +        _combat.StopAttacking = false;
++        if (combatClearedForEquipment)
++            await ApplyBossSetupAsync();
++        else
++            Log.Write(_account, " continuing rescue with the current class and gear because combat could not be cleared safely.");
 +        _ownsCombat = true;
 +        return true;
 +    }
++
++    private string CombatSnapshot()
++    {
++        string target = _player.Target?.Name ?? "none";
++        return $"combat={_player.InCombat}, state={_player.State}, hasTarget={_player.HasTarget}, target={target}, map={_map.FullName}, cell={_player.Cell}";
++    }
++
++    private string? FindQuietCell(string currentCell)
++    {
++        HashSet<string> cellsWithLivingMonsters = _monsters.MapMonsters
++            .Where(monster => monster.Alive && !string.IsNullOrWhiteSpace(monster.Cell))
++            .Select(monster => monster.Cell)
++            .ToHashSet(StringComparer.OrdinalIgnoreCase);
++
++        return _map.Cells
++            .Where(cell => !string.IsNullOrWhiteSpace(cell) && !cell.Equals(currentCell, StringComparison.OrdinalIgnoreCase))
++            .Where(cell => !cellsWithLivingMonsters.Contains(cell))
++            .OrderBy(cell => cell.Equals("Enter", StringComparison.OrdinalIgnoreCase) ? 0 :
++                cell.Equals("Spawn", StringComparison.OrdinalIgnoreCase) ? 1 : 2)
++            .FirstOrDefault();
++    }
++
++    private async Task<bool> DisengageAsync(string purpose)
++    {
++        Log.Write(_account, $" disengage {purpose}: {CombatSnapshot()}.");
++        try
++        {
++            _combat.CancelTarget();
++            if (_player.InCombat)
++            {
++                Log.Write(_account, $" requesting Skua combat exit {purpose}.");
++                _combat.Exit();
++                for (int attempt = 0; attempt < 50 && _player.InCombat && !Interrupted; attempt++)
++                    await Task.Delay(200);
++                Log.Write(_account, $" after Skua combat exit: {CombatSnapshot()}.");
++            }
++
++            if (_player.InCombat && !Interrupted)
++            {
++                string? quietCell = FindQuietCell(_player.Cell);
++                if (quietCell is null)
++                {
++                    Log.Write(_account, $" no other quiet cell is available {purpose}: {CombatSnapshot()}.");
++                    return false;
++                }
++
++                Log.Write(_account, $" combat remained active; moving to quiet cell {quietCell} to drop monster aggro.");
++                _map.Jump(quietCell, "Spawn");
++                for (int attempt = 0; attempt < 50 && _player.InCombat && !Interrupted; attempt++)
++                    await Task.Delay(200);
++                Log.Write(_account, $" after quiet-cell move: {CombatSnapshot()}.");
++            }
++
++            if (Interrupted) return false;
++            if (_player.InCombat)
++            {
++                Log.Write(_account, $" combat did not clear {purpose}: {CombatSnapshot()}.");
++                return false;
++            }
++
++            Log.Write(_account, $" combat cleared {purpose}: {CombatSnapshot()}.");
++            return true;
++        }
++        catch (Exception ex)
++        {
++            Log.Write(_account, $" disengage failed {purpose}: {ex.Message}; {CombatSnapshot()}.");
++            return false;
++        }
++    }
++
++    private async Task ApplyBossSetupAsync()
++    {
++        if (_bossLoadout is not { } setup)
++        {
++            Log.Write(_account, " no Boss class or dedicated equipment loadout was found; keeping the current setup for rescue.");
++            return;
++        }
++        string className = setup.ClassName.Equals("[Current]", StringComparison.OrdinalIgnoreCase)
++            ? _player.CurrentClass?.Name ?? "" : setup.ClassName;
++        (string Slot, string Item)[] configuredSlots =
++        [
++            ("weapon", setup.Weapon), ("armor", setup.Armor), ("helm", setup.Helm),
++            ("cape", setup.Cape), ("pet", setup.Pet), ("ground item", setup.GroundItem)
++        ];
++        string slotSummary = string.Join(", ", configuredSlots.Select(s => $"{s.Slot}={DisplaySelection(s.Item)}"));
++        bool hasClass = className.Length > 0 && _inventory.Items.Any(i => i.Category == ItemCategory.Class && i.Name.Equals(className, StringComparison.OrdinalIgnoreCase));
++        Log.Write(_account, $" Boss rescue selection: class={DisplaySelection(className)}; skill mode={DisplaySelection(setup.SkillMode)}; dedicated gear={(setup.UseEquipment ? "on" : "off")} ({slotSummary}).");
++        if (!hasClass && !setup.UseEquipment)
++        {
++            Log.Write(_account, " Boss class was not available in inventory and dedicated equipment is off; keeping the current setup.");
++            return;
++        }
++
++        _classBeforeRescue = _player.CurrentClass?.ID;
++        _equippedBeforeRescue = _inventory.Items.Where(i => i.Equipped || i.Wearing).Select(i => i.ID)
++            .Concat(_classBeforeRescue is int classId ? [classId] : [])
++            .Distinct().ToArray();
++        _oldSkillProvider = _skills.OverrideProvider;
++        _oldSkillTimeout = _skills.SkillTimeout;
++        _oldSkillUseMode = _skills.SkillUseMode;
++        _oldResetComboOnTargetChange = _resetComboProperty?.GetValue(_skills) is true;
++
++        if (hasClass)
++        {
++            try
++            {
++                if (!string.IsNullOrWhiteSpace(setup.SkillMode))
++                {
++                    _skills.LoadAdvanced(className, setup.SkillMode, !setup.ClassName.Equals("[Current]", StringComparison.OrdinalIgnoreCase));
++                    _wait.ForItemEquip(className, 20);
++                    await Task.Delay(1000);
++                }
++                else if (!setup.ClassName.Equals("[Current]", StringComparison.OrdinalIgnoreCase))
++                {
++                    InventoryItem? classItem = _inventory.Items.FirstOrDefault(i => i.Category == ItemCategory.Class &&
++                        i.Name.Equals(className, StringComparison.OrdinalIgnoreCase));
++                    if (classItem is not null && !await EquipItemSlowlyAsync(classItem, "Boss class"))
++                        Log.Write(_account, $" couldn't confirm equipping Boss class '{className}'.");
++                }
++            }
++            catch (Exception ex) { Log.Write(_account, $" couldn't apply Boss class/skill mode: {ex.Message}"); }
++        }
++
++        if (setup.UseEquipment)
++        {
++            foreach ((string slot, string itemName) in configuredSlots)
++                await EquipConfiguredAsync(slot, itemName);
++        }
++        _bossSetupApplied = true;
++    }
++
++    private static string DisplaySelection(string? value) => string.IsNullOrWhiteSpace(value) ? "none" : value;
++
++    private async Task EquipConfiguredAsync(string slot, string itemName)
++    {
++        if (string.IsNullOrWhiteSpace(itemName)) return;
++        InventoryItem? item = _inventory.Items.FirstOrDefault(i => i.Name.Equals(itemName, StringComparison.OrdinalIgnoreCase));
++        if (item is null)
++        {
++            Log.Write(_account, $" skipped Boss {slot} '{itemName}' because it is not in inventory.");
++            return;
++        }
++        if (item.Equipped || item.Wearing) return;
++        if (!await EquipItemSlowlyAsync(item, $"Boss {slot}"))
++            Log.Write(_account, $" couldn't confirm equipping Boss {slot} '{itemName}'.");
++    }
++
++    private async Task<bool> EquipItemSlowlyAsync(InventoryItem item, string purpose)
++    {
++        for (int attempt = 0; attempt < 3 && _player.Playing && _flash.IsWorldLoaded; attempt++)
++        {
++            InventoryItem? current = _inventory.Items.FirstOrDefault(i => i.ID == item.ID);
++            if (current is { Equipped: true } or { Wearing: true }) return true;
++
++            // Skua's EquipItem waits for the server action lock but sends even if that wait times out.
++            // Gate the request here and leave extra room between successive equipment changes.
++            if (!_wait.ForActionCooldown(GameActions.EquipItem, 100))
++            {
++                Log.Write(_account, $" skipped {purpose} '{item.Name}' because the equip action cooldown did not clear.");
++                return false;
++            }
++            await Task.Delay(1000);
++            if (!_player.Playing || !_flash.IsWorldLoaded) return false;
++            try
++            {
++                _inventory.EquipItem(item.ID);
++                if (_wait.ForItemEquip(item.ID, 30))
++                {
++                    await Task.Delay(1000);
++                    return true;
++                }
++            }
++            catch (Exception ex) { Log.Write(_account, $" equip attempt for {purpose} '{item.Name}' failed: {ex.Message}"); }
++
++            if (attempt < 2) await Task.Delay(1500);
++        }
++        return false;
++    }
++
++    private async Task RestoreBossSetupAsync()
++    {
++        if (!_bossSetupApplied) return;
++        int[] restoreOrder = _classBeforeRescue is int classId
++            ? [classId, .. _equippedBeforeRescue.Where(id => id != classId)]
++            : _equippedBeforeRescue;
++        List<string> confirmed = [];
++        List<string> failed = [];
++        foreach (int id in restoreOrder)
++        {
++            InventoryItem? item = _inventory.Items.FirstOrDefault(i => i.ID == id);
++            string label = id == _classBeforeRescue ? $"class: {item?.Name ?? id.ToString()}" : item?.Name ?? $"item {id}";
++            if (item is null) { failed.Add(label); continue; }
++            if (item.Equipped || item.Wearing) { confirmed.Add(label); continue; }
++            if (await EquipItemSlowlyAsync(item, "original gear")) confirmed.Add(label);
++            else failed.Add(label);
++        }
++        _skills.OverrideProvider = _oldSkillProvider;
++        _skills.SkillTimeout = _oldSkillTimeout;
++        _skills.SkillUseMode = _oldSkillUseMode;
++        try { _resetComboProperty?.SetValue(_skills, _oldResetComboOnTargetChange); } catch { }
++        Log.Write(_account, confirmed.Count == 0
++            ? " no original class or gear items were confirmed restored after rescue."
++            : $" original setup confirmed: {string.Join(", ", confirmed)}.");
++        if (failed.Count > 0)
++            Log.Write(_account, $" could not confirm restoring: {string.Join(", ", failed)}; equip these manually if needed.");
++        _bossSetupApplied = false;
++    }
++    // For a host that runs the helper loop itself (the Rust client's script engine): only the class and gear part of a rescue,
++    // with the same disengage-first rules as BeginAsync / CompleteAsync.
++    internal async Task<string> ApplyBossForHostAsync()
++    {
++        if (_bossLoadout is null)
++        {
++            Log.Write(_account, " no Boss class or dedicated equipment loadout was found; keeping the current setup for rescue.");
++            return "none";
++        }
++        bool cleared = await DisengageAsync("before applying the rescue class and gear");
++        if (!cleared)
++        {
++            Log.Write(_account, " continuing rescue with the current class and gear because combat could not be cleared safely.");
++            return "combat";
++        }
++        await ApplyBossSetupAsync();
++        return _bossSetupApplied ? "applied" : "kept";
++    }
++
++    internal async Task RestoreBossForHostAsync()
++    {
++        if (!_bossSetupApplied) return;
++        bool cleared = await DisengageAsync("before restoring the saved class and gear");
++        if (cleared)
++            await RestoreBossSetupAsync();
++        else
++            Log.Write(_account, " could not safely restore the saved class and gear because combat remained active; equip the saved setup manually if needed.");
++    }
++
 +    internal void Fight()
 +    {
-+        if (!CanContinue) return;
++        if (!CanAct) return;
 +        _combat.Attack("*");
 +        for (int skill = 1; skill <= 4 && CanContinue; skill++)
 +            if (_skills.CanUseSkill(skill)) _skills.UseSkill(skill);
@@ -10538,7 +11619,52 @@ index 0000000..63134db
 +                string.Equals(_script, _manager.LoadedScript, StringComparison.OrdinalIgnoreCase);
 +            // A new script owns its combat/options; a manually stopped script only needs attack cleanup.
 +            if ((!sameRun && _manager.ScriptRunning) || (Interrupted && _manager.ScriptRunning && !IsPaused(_manager))) return;
++
++            bool readyToRestore = _player.Playing && _flash.IsWorldLoaded;
++            if (!readyToRestore)
++            {
++                Log.Write(_account, _bossSetupApplied
++                    ? " rescue ended while dead; waiting up to 2 minutes for respawn before restoring the saved class and gear."
++                    : " rescue ended while dead; waiting up to 2 minutes for respawn before finishing cleanup.");
++                long deadline = Environment.TickCount64 + 120_000;
++                while (!readyToRestore && Environment.TickCount64 < deadline)
++                {
++                    bool currentRun = ReferenceEquals(_scriptToken, _manager.ScriptCts) &&
++                        string.Equals(_script, _manager.LoadedScript, StringComparison.OrdinalIgnoreCase);
++                    bool otherScriptOwnsState = (!currentRun && _manager.ScriptRunning) ||
++                        (Interrupted && _manager.ScriptRunning && !IsPaused(_manager));
++                    if (!_player.LoggedIn || !InOriginalSession || otherScriptOwnsState) break;
++                    await Task.Delay(500);
++                    readyToRestore = _player.Playing && _flash.IsWorldLoaded;
++                }
++                bool currentRunAfterWait = ReferenceEquals(_scriptToken, _manager.ScriptCts) &&
++                    string.Equals(_script, _manager.LoadedScript, StringComparison.OrdinalIgnoreCase);
++                bool otherScriptOwnsStateAfterWait = (!currentRunAfterWait && _manager.ScriptRunning) ||
++                    (Interrupted && _manager.ScriptRunning && !IsPaused(_manager));
++                if (!_player.LoggedIn || !InOriginalSession || otherScriptOwnsStateAfterWait)
++                {
++                    Log.Write(_account, " skipped rescue restoration because the account logged out, changed session, or another script took control.");
++                    return;
++                }
++                if (!readyToRestore && _bossSetupApplied)
++                    Log.Write(_account, " could not restore the saved class and gear because the account did not respawn in time or its session changed; equip them manually if needed.");
++                else if (!readyToRestore)
++                    Log.Write(_account, " could not finish rescue cleanup because the account did not respawn in time or its session changed.");
++                else
++                    Log.Write(_account, " respawned; clearing combat before restoring the saved class and gear.");
++            }
++
 +            _combat.CancelAutoAttack();
++            if (readyToRestore)
++            {
++                bool combatClearedForRestore = await DisengageAsync("before restoring the saved class and gear");
++                if (combatClearedForRestore)
++                    await RestoreBossSetupAsync();
++                else if (_bossSetupApplied)
++                    Log.Write(_account, Interrupted
++                        ? " skipped restoring the saved class and gear because rescue was interrupted; equip the saved setup manually if needed."
++                        : " could not safely restore the saved class and gear because combat remained active; equip the saved setup manually if needed.");
++            }
 +            if (_options.InfiniteRange) _options.InfiniteRange = _infiniteRange;
 +            if (!_combat.StopAttacking) _combat.StopAttacking = _stopAttacking;
 +            try
@@ -10571,7 +11697,8 @@ index 0000000..63134db
 +            }
 +            finally
 +            {
-+                if (_wasRunning && !_wasPaused && !Interrupted && _manager.ScriptRunning && IsPaused(_manager))
++                if (_wasRunning && !_wasPaused && !Interrupted && _manager.ScriptRunning && IsPaused(_manager)
++                    && _player.Playing && _flash.IsWorldLoaded)
 +                {
 +                    _ownChange = true;
 +                    try { SetPaused(false); } finally { _ownChange = false; }
@@ -10596,7 +11723,7 @@ index 0000000..63134db
 +}
 diff --git a/Skua.Core/Services/RescueShared/RescueStatus.cs b/Skua.Core/Services/RescueShared/RescueStatus.cs
 new file mode 100644
-index 0000000..2e69345
+index 0000000..4a10f81
 --- /dev/null
 +++ b/Skua.Core/Services/RescueShared/RescueStatus.cs
 @@ -0,0 +1,25 @@
@@ -10604,7 +11731,7 @@ index 0000000..2e69345
 +
 +/// <summary>Observational process-local rescue status. Never issues game calls or writes preferences.</summary>
 +public sealed record RescueStatusSnapshot(DateTime UpdatedUtc, bool Enabled, bool Allowed, int Deaths,
-+    int ElapsedMs, int DelayMinutes, int DeathThreshold, bool CanRequest, bool Calling,
++    int ElapsedMs, int DelayMinutes, int DeathThreshold, bool CooldownEnabled, bool CanRequest, bool Calling,
 +    string Helper, string Phase, string Outcome, int[] CooldownSeconds);
 +
 +public static class RescueStatus
@@ -10617,9 +11744,9 @@ index 0000000..2e69345
 +        if (s is null || now - s.UpdatedUtc > TimeSpan.FromSeconds(10))
 +            return "Live rescue status unavailable — account may be offline, loading, or recovering.";
 +        if (!s.Enabled) return "Rescue Allies is off.";
-+        string request = s.Calling ? "Help requested; waiting for a kill or another normal stop condition." : !s.CanRequest
-+            ? "Requesting help requires an active, unpaused script." : $"Deaths: {s.Deaths}/{s.DeathThreshold}. Time since first death: {Math.Max(0,s.ElapsedMs)/60000}:{Math.Max(0,s.ElapsedMs)/1000%60:00} / {s.DelayMinutes} min. Timer requires at least two deaths.";
-+        string cooldown = s.CooldownSeconds.Length == 0 ? "" : $"\nCooldowns for {s.CooldownSeconds.Length} previously helped requester(s): " + string.Join(", ", s.CooldownSeconds.Select(v => $"{v/60}:{v%60:00}")) + ". Other requesters remain eligible.";
++        string request = s.Calling ? "Help request is active; helpers stay until this account leaves the map." : !s.CanRequest
++            ? "Automatic requests require an active, unpaused script. You can also request help manually while in game." : $"Deaths: {s.Deaths}/{s.DeathThreshold}. Time since first death: {Math.Max(0,s.ElapsedMs)/60000}:{Math.Max(0,s.ElapsedMs)/1000%60:00} / {s.DelayMinutes} min. Timer requires at least two deaths.";
++        string cooldown = !s.CooldownEnabled ? "\nHelper cooldown is off." : s.CooldownSeconds.Length == 0 ? "" : $"\nCooldowns for {s.CooldownSeconds.Length} previously helped requester(s): " + string.Join(", ", s.CooldownSeconds.Select(v => $"{v/60}:{v%60:00}")) + ". Other requesters remain eligible.";
 +        return request + "\nHelper: " + (s.Allowed ? s.Helper : "This account is excluded from helping; it can still receive help.")
 +            + (s.Phase.Length == 0 ? "" : "\nPhase: " + s.Phase) + cooldown
 +            + (s.Outcome.Length == 0 ? "" : "\nLast outcome: " + s.Outcome);
@@ -10627,10 +11754,10 @@ index 0000000..2e69345
 +}
 diff --git a/Skua.Core/Services/RescueShared/SharedRescueSettings.cs b/Skua.Core/Services/RescueShared/SharedRescueSettings.cs
 new file mode 100644
-index 0000000..a386ef4
+index 0000000..5f18532
 --- /dev/null
 +++ b/Skua.Core/Services/RescueShared/SharedRescueSettings.cs
-@@ -0,0 +1,130 @@
+@@ -0,0 +1,161 @@
 +using System.Security.Cryptography;
 +using System.Text;
 +using System.Text.Json;
@@ -10641,7 +11768,8 @@ index 0000000..a386ef4
 +internal sealed class SharedRescueSettings : IDisposable
 +{
 +    internal sealed record State(bool Enabled, string[] ExcludedAccounts, long Revision,
-+        int DelayMinutes = 15, int DeathsBeforeRescue = 10);
++        int DelayMinutes = 15, int DeathsBeforeRescue = 10, bool CooldownEnabled = true, int CooldownMinutes = 10,
++        int HelperDeathsWithoutKill = 5, int HoldLimitMinutes = 30, bool UseBossLoadout = true);
 +    private static readonly Lazy<SharedRescueSettings> Default = new(() => new(DefaultPath));
 +    internal static SharedRescueSettings Instance => Default.Value;
 +    internal static string DefaultPath => Path.Combine(
@@ -10673,6 +11801,19 @@ index 0000000..a386ef4
 +    internal bool Enabled { get { lock (_gate) return _state.Enabled; } }
 +    internal int DelayMinutes { get { lock (_gate) return _state.DelayMinutes; } }
 +    internal int DeathsBeforeRescue { get { lock (_gate) return _state.DeathsBeforeRescue; } }
++    internal int CooldownMinutes { get { lock (_gate) return _state.CooldownMinutes; } }
++    internal bool CooldownEnabled { get { lock (_gate) return _state.CooldownEnabled; } }
++    internal int HelperDeathsWithoutKill { get { lock (_gate) return _state.HelperDeathsWithoutKill; } }
++    /// <summary>Helpers are released after this many minutes without a kill or death of the caller (0 = never; the caller leaving the map always releases them).</summary>
++    internal int HoldLimitMinutes { get { lock (_gate) return _state.HoldLimitMinutes; } }
++    /// <summary>Helpers switch to the CoreBots Boss class and gear (default on).</summary>
++    internal bool UseBossLoadout { get { lock (_gate) return _state.UseBossLoadout; } }
++    internal void SetHoldLimitMinutes(int value)
++    {
++        if (value is < 0 or > 240) throw new ArgumentOutOfRangeException(nameof(value), "Use 0 to 240 minutes (0 = no limit).");
++        Update(s => s with { HoldLimitMinutes = value });
++    }
++    internal void SetUseBossLoadout(bool value) => Update(s => s with { UseBossLoadout = value });
 +    internal void SetDelayMinutes(int value)
 +    {
 +        if (value is < 1 or > 120) throw new ArgumentOutOfRangeException(nameof(value), "Use 1 to 120 minutes.");
@@ -10682,6 +11823,17 @@ index 0000000..a386ef4
 +    {
 +        if (value is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(value), "Use 1 to 100 deaths.");
 +        Update(s => s with { DeathsBeforeRescue = value });
++    }
++    internal void SetCooldownMinutes(int value)
++    {
++        if (value is < 1 or > 30) throw new ArgumentOutOfRangeException(nameof(value), "Use 1 to 30 minutes.");
++        Update(s => s with { CooldownMinutes = value });
++    }
++    internal void SetCooldownEnabled(bool value) => Update(s => s with { CooldownEnabled = value });
++    internal void SetHelperDeathsWithoutKill(int value)
++    {
++        if (value is < 1 or > 100) throw new ArgumentOutOfRangeException(nameof(value), "Use 1 to 100 deaths.");
++        Update(s => s with { HelperDeathsWithoutKill = value });
 +    }
 +    // Either threshold requests help. The timed path still requires repeated deaths without a kill.
 +    internal bool ShouldRequest(int deaths, int elapsedMilliseconds)
@@ -10711,7 +11863,10 @@ index 0000000..a386ef4
 +        return state with {
 +            ExcludedAccounts = (state.ExcludedAccounts ?? []).Where(a => !string.IsNullOrWhiteSpace(a)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
 +            DelayMinutes = state.DelayMinutes is >= 1 and <= 120 ? state.DelayMinutes : 15,
-+            DeathsBeforeRescue = state.DeathsBeforeRescue is >= 1 and <= 100 ? state.DeathsBeforeRescue : 10
++            DeathsBeforeRescue = state.DeathsBeforeRescue is >= 1 and <= 100 ? state.DeathsBeforeRescue : 10,
++            CooldownMinutes = state.CooldownMinutes is >= 1 and <= 30 ? state.CooldownMinutes : 10,
++            HelperDeathsWithoutKill = state.HelperDeathsWithoutKill is >= 1 and <= 100 ? state.HelperDeathsWithoutKill : 5,
++            HoldLimitMinutes = state.HoldLimitMinutes is >= 0 and <= 240 ? state.HoldLimitMinutes : 30
 +        };
 +    }
 +    private void Update(Func<State, State> change)
@@ -10737,6 +11892,9 @@ index 0000000..a386ef4
 +    }
 +    private static bool Same(State a, State b) => a.Enabled == b.Enabled &&
 +        a.DelayMinutes == b.DelayMinutes && a.DeathsBeforeRescue == b.DeathsBeforeRescue &&
++        a.CooldownEnabled == b.CooldownEnabled && a.CooldownMinutes == b.CooldownMinutes &&
++        a.HelperDeathsWithoutKill == b.HelperDeathsWithoutKill &&
++        a.HoldLimitMinutes == b.HoldLimitMinutes && a.UseBossLoadout == b.UseBossLoadout &&
 +        a.ExcludedAccounts.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).SequenceEqual(
 +            b.ExcludedAccounts.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
 +    private void OnFileChanged(object sender, FileSystemEventArgs args) => Reload();

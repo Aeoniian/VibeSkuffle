@@ -8,13 +8,13 @@ VibeSkuffle is [VibeSkua](https://github.com/NinjaXz/VibeSkua) (v2.1.2) with the
 army, plugins, hotkeys, the grabber and the packet tools. On top of that it gets back up by itself when something
 goes wrong: stuck logins, crashes, freezes, memory build-up, and a crashed tab window.
 
-> **Stable release: v1.0.4.** Download the [latest release](../../releases), or update directly through
+> **Stable release: v1.0.5.** Download the [latest release](../../releases), or update directly through
 > **Manager → Updater**. Report problems in [Issues](../../issues).
 
-v1.0.4 updates to VibeSkua 2.1.2 and adds a Calendar window, a Game Size button, a Grid View layout button,
-follow groups in the tab strip and Account drop-downs in the Script Loader and CoreBots options. The game window
-now restarts at 1650 MB of memory. See the [release notes](docs/RELEASE-v1.0.4.md); the previous
-[v1.0.3 notes](docs/RELEASE-v1.0.3.md) and [renderer testing details](docs/RENDERER-PERFORMANCE.md) are still available.
+v1.0.5 raises the memory restart to 4000 MB (1650 MB restarted busy windows too often), fixes the Accept AC Drops spam,
+adds Noxus2k-AQW's Watch Dog rescue changes and a Game-Only Full Screen (Shift+F11). The release ZIP is tidied: the two
+exes at the top, everything else in `source`. See the [release notes](docs/RELEASE-v1.0.5.md); the previous
+[v1.0.4 notes](docs/RELEASE-v1.0.4.md), [v1.0.3 notes](docs/RELEASE-v1.0.3.md) and [renderer testing details](docs/RENDERER-PERFORMANCE.md) are still available.
 
 ---
 

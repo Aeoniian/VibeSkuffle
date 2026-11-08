@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.5 (2026-11-07) - 4000 MB memory restart, Accept AC Drops, Watch Dog rescue changes and Game-Only Full Screen
+
+- The game window restarts for memory at 4000 MB (it was 1650 MB in v1.0.4, which restarted busy windows about every 30 minutes and logged the account back in each time); `SKUA_MEMORY_LIMIT_MB` still overrides it.
+- Accept AC Drops no longer asks again and again for drops the server refuses (full stacks, items already owned or in the bank): they are rejected, like in Pickup AC Drops And Send To Bank. Banking no longer stops after three pickups of the same item.
+- Watch Dog, with changes from Noxus2k-AQW (GitHub discussion #2): an Accounts tab with Can help and Request help, optional helper cooldown, helper death limit, helpers use their CoreBots Boss class and gear (switchable), rescue calls survive the caller's death and last until it leaves the map, and a hold limit.
+- New Game-Only Full Screen (Shift+F11). The release ZIP now has only the two exes at the top and everything else in `source`. See the [release notes](docs/RELEASE-v1.0.5.md).
+
 ## v1.0.4 (2026-11-03) - VibeSkua 2.1.2, Calendar, Game Size and 1650 MB memory restart
 
 - Updated to VibeSkua 2.1.2 (`d622a57`): redesigned Army Control Map Travel with presets and history, Army Queue drag-and-drop, Relogin Fallback and Relogin Watchdog options, script downloads at startup, redesigned Search Scripts and Scheduler, Junk Items filters and quantities, and refused drops staying listed until accepted.
