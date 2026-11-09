@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.53 (2026-11-08) - empty-room fix that actually triggers
+
+- The Watch Dog's empty-room rule from v1.0.52 never fired for the reported case: the character counted as loaded while the room had no monsters. It now also treats a map with no monsters at all as empty: after 90 seconds with a script running it jumps to the current cell, twice, and the third time rejoins the room if the character is not loaded. The Watch Dog logs when it first suspects an empty room. `SKUA_EMPTY_ROOM_SECONDS` still sets the time (0 = off). Thanks to Ramon Douglas for the video. See the [release notes](docs/RELEASE-v1.0.53.md).
+
 ## v1.0.52 (2026-11-08) - empty-room fix and Skip Cutscenes
 
 - **Watch Dog empty-room rule:** when a script is running but the character stays "not loaded" in its room for 90 seconds (no avatar, no monsters: a rare AQW load glitch, often after "Please slow down. Last action was too soon!"), it jumps to the current cell, the same fix as Jump > Current by hand, then joins the room again, three tries. `SKUA_EMPTY_ROOM_SECONDS` sets the time, 0 = off. Thanks to Ramon Douglas for the report.
